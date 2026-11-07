@@ -1,0 +1,9 @@
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+        - routes
+        - public
+    tmpDir: var/cache/phpstan
+    treatPhpDocTypesAsCertain: false

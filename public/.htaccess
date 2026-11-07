@@ -1,0 +1,29 @@
+# Front controller + defence in depth.
+# Only this directory is web-accessible; application code lives outside it.
+
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Do not rewrite real files (assets, manifest, service worker).
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+# Never serve dotfiles or backup/editor leftovers.
+<FilesMatch "(^\.|\.(env|ini|log|sql|bak|swp|old)$)">
+    Require all denied
+</FilesMatch>
+
+AddType application/manifest+json .webmanifest
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

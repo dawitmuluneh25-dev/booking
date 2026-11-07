@@ -1,0 +1,29 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Dependencies
+/vendor/
+
+# Runtime data
+/var/cache/*
+/var/logs/*
+!/var/cache/.gitkeep
+!/var/logs/.gitkeep
+
+# Local tooling (portable PHP/Composer live outside the repo)
+/.tools/
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Artifacts
+/build/
+/coverage/
+*.log
+*.sql.gz

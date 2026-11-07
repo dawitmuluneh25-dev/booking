@@ -1,0 +1,376 @@
+# Booking App
+
+A minimal, working PHP 8.3 booking application with a server-rendered UI and an
+installable PWA shell. Built from scratch: no code, schema or dependency was
+carried over from any earlier project.
+
+The baseline is deliberately small. It proves the whole vertical slice —
+routing, templating, escaping, CSRF, validation, UTC persistence and the PWA
+shell — so that features can be added without re-litigating the foundation.
+
+---
+
+## 1. What the baseline does
+
+| Capability | Where |
+|---|---|
+| Front controller, explicit route table | `public/index.php`, `routes/web.php` |
+| Request/response objects, safe error handling | `src/Http/` |
+| Content Security Policy and hardening headers | `src/Http/Kernel.php` |
+| Escaped PHP templates with one layout | `templates/`, `src/Support/View.php` |
+| Session cookies hardened, CSRF tokens | `src/Security/` |
+| Allowlist validation | `src/Validation/Validator.php` |
+| Booking request → stored as `requested` (never auto-confirmed) | `src/Domain/BookingService.php` |
+| Prepared statements only | `src/Repositories/PdoBookingRepository.php` |
+| Forward-only migrations with checksum ledger | `src/Database/Migrator.php` |
+| CLI: doctor, migrate, status, list | `bin/console` |
+| PWA: manifest, service worker, offline page | `public/manifest.webmanifest`, `public/sw.js` |
+| Unit + feature tests | `tests/` |
+
+Deliberately **not** included: user accounts, an admin panel, email/SMS,
+payments, file uploads, calendar conflict logic. Each is a feature to add on top
+of a foundation that already has tests, escaping and migrations in place.
+
+---
+
+## 2. Prerequisites
+
+| Requirement | Version | Notes |
+|---|---|---|
+| PHP | 8.3.x | CLI + web SAPI, with `pdo_mysql`, `mbstring`, `json`, `openssl` |
+| MySQL | 8.0.16+ or MariaDB 10.6+ | InnoDB; the app uses `utf8mb4` and `CHECK` constraints |
+| Composer | 2.x | Only needed to install dev dependencies |
+| Git | any recent | |
+
+Verify before anything else:
+
+```powershell
+php -v
+php -m | Select-String pdo_mysql,mbstring,openssl
+composer --version
+mysql --version
+```
+
+If `php -m` does not list `pdo_mysql`, stop and enable it (`extension=pdo_mysql`
+in `php.ini`) — the application will not start against the database without it.
+
+### 2.1 Windows without a system PHP
+
+If PHP is not installed, a portable copy works without administrator rights:
+
+```powershell
+# 1. Download the PHP 8.3 NTS zip from https://windows.php.net/downloads/releases/
+# 2. Extract it, e.g. to C:\tools\php83
+# 3. Create php.ini next to php.exe with these lines:
+#    extension_dir = "ext"
+#    extension=pdo_mysql
+#    extension=mbstring
+#    extension=openssl
+#    extension=fileinfo
+# 4. Put C:\tools\php83 on PATH for the session:
+$env:Path = "C:\tools\php83;$env:Path"
+```
+
+Composer can be run as a local PHAR without a global install:
+
+```powershell
+Invoke-WebRequest https://getcomposer.org/download/latest-stable/composer.phar -OutFile composer.phar
+php composer.phar --version
+```
+
+---
+
+## 3. Step-by-step setup
+
+### Step 1 — Create the repository
+
+```powershell
+cd C:\Users\dev\Desktop\booking
+mkdir booking-app
+cd booking-app
+git init -b main
+```
+
+### Step 2 — Add the scaffold
+
+Copy or create the files exactly as they are laid out in section 5, then confirm
+the tree:
+
+```powershell
+Get-ChildItem -Recurse -File | Where-Object { $_.FullName -notmatch '\\vendor\\|\\var\\cache\\' } |
+    Select-Object -ExpandProperty FullName
+```
+
+### Step 3 — Install dependencies
+
+```powershell
+composer install
+```
+
+This installs **dev tooling only** (PHPUnit, PHPStan, PHP_CodeSniffer). There are
+no runtime Composer packages: `composer install --no-dev` produces nothing but
+the autoloader, which keeps deployment to shared hosting trivial.
+
+### Step 4 — Create the environment file
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env`:
+
+| Key | Purpose |
+|---|---|
+| `APP_ENV` | `local`, `staging`, `production` |
+| `APP_DEBUG` | `true` locally; must be `false` in production |
+| `APP_URL` | Base URL used for links and redirects |
+| `APP_TIMEZONE` | IANA zone used for **display** (storage is always UTC) |
+| `DB_*` | MySQL connection |
+| `SESSION_SECURE` | `true` behind HTTPS |
+| `LOG_LEVEL` | `debug` locally, `warning` or higher in production |
+
+`.env` is git-ignored. Never commit it, and never place it inside `public/`.
+
+### Step 5 — Create the database and a least-privilege user
+
+```sql
+CREATE DATABASE booking_app CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+CREATE USER 'booking_app'@'localhost' IDENTIFIED BY 'replace-with-a-long-password';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
+    ON booking_app.* TO 'booking_app'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+> For production, split credentials: a migration user with DDL rights and a
+> runtime user without `CREATE`/`ALTER`/`DROP`. The runtime account should not be
+> able to change the schema.
+
+### Step 6 — Verify the environment
+
+```powershell
+php bin/console doctor
+```
+
+Expected output (abridged):
+
+```
+[ OK ] php                8.3.x
+[ OK ] ext-pdo_mysql      loaded
+[ OK ] .env               ...\booking-app\.env
+[ OK ] db-connect         8.0.x
+[ OK ] migrations         1 pending
+```
+
+`doctor` exits non-zero when any check fails, so it can gate a deployment.
+
+### Step 7 — Run migrations
+
+```powershell
+php bin/console migrate --dry-run   # preview
+php bin/console migrate             # apply
+php bin/console migrate:status      # verify
+```
+
+The runner records each file's SHA-256 in `schema_migrations`. Editing an applied
+migration is refused; add a new one instead.
+
+### Step 8 — Start the development server
+
+```powershell
+composer serve
+# equivalent: php -S 127.0.0.1:8000 -t public dev-router.php
+```
+
+`-t public` matters: it makes `public/` the document root so static assets are
+served directly, while `dev-router.php` forwards unknown paths to the front
+controller.
+
+Open <http://127.0.0.1:8000>.
+
+| URL | Expected |
+|---|---|
+| `/` | Landing page |
+| `/bookings/new` | Form |
+| `/bookings` | Upcoming list (empty initially) |
+| `/healthz` | `{"status":"ok","checks":{...}}` |
+
+### Step 9 — Exercise the slice
+
+1. Submit a booking with a future date/time.
+2. You are redirected to `/bookings/BK-…` with status `requested`.
+3. `/bookings` lists it.
+4. Submit again with a past date → inline validation errors, HTTP 422.
+5. Submit with the CSRF field removed (dev tools) → HTTP 419, nothing persisted.
+6. `/healthz` → 200; stop MySQL and it returns 503 with a generic body.
+
+### Step 10 — Run the quality gates
+
+```powershell
+composer test     # PHPUnit
+composer stan     # PHPStan level 8
+composer cs       # PSR-12
+composer check    # all three
+```
+
+### Step 11 — Commit
+
+```powershell
+git add .
+git commit -m "chore: scaffold booking app baseline"
+git tag v0.1.0
+```
+
+Verify nothing sensitive is staged:
+
+```powershell
+git status --short
+git ls-files | Select-String -Pattern '\.env$|vendor/|\.log$'
+```
+
+The last command must return nothing.
+
+### Step 12 — Deploy (outline)
+
+The full deployment procedure is a separate runbook; the shape is:
+
+1. Build on CI: `composer install --no-dev --optimize-autoloader`, `composer check`.
+2. Upload only `public/` into the document root; keep `src/`, `templates/`,
+   `database/`, `var/` and `vendor/` **one level above** it.
+3. Point the web root at `public/`, enable the rewrite rule, force HTTPS.
+4. Create `.env` on the server (never uploaded from a laptop), `APP_DEBUG=false`.
+5. Run `php bin/console migrate` from the shell, not from a web route.
+6. Hit `/healthz`, then smoke-test the booking flow.
+
+---
+
+## 4. Commands reference
+
+| Command | Purpose |
+|---|---|
+| `composer serve` | Built-in server with pretty URLs |
+| `composer test` | PHPUnit suite |
+| `composer stan` | Static analysis (level 8) |
+| `composer cs` / `composer cs:fix` | Code style check / fix |
+| `composer check` | Style + static analysis + tests |
+| `php bin/console doctor` | Runtime/database/migration health |
+| `php bin/console migrate [--dry-run]` | Apply pending migrations |
+| `php bin/console migrate:status` | Show applied/pending + checksum drift |
+| `php bin/console bookings:list` | Print the next 20 bookings |
+
+---
+
+## 5. Directory structure
+
+```text
+booking-app/
+├── bin/
+│   └── console                  # CLI entry point (doctor, migrate, list)
+├── database/
+│   └── migrations/
+│       └── 0001_create_bookings.sql
+├── public/                      # the only web-accessible directory
+│   ├── .htaccess                # rewrite + dotfile denial
+│   ├── index.php                # front controller
+│   ├── manifest.webmanifest
+│   ├── sw.js                    # static-assets-only service worker
+│   ├── offline.html
+│   └── assets/
+│       ├── css/app.css
+│       ├── js/app.js
+│       └── icons/               # 192, 512, maskable 512
+├── routes/
+│   └── web.php                  # explicit route table
+├── src/
+│   ├── Bootstrap/               # Env, Config, Application (composition root)
+│   ├── Controllers/
+│   ├── Database/                # Connection, Migrator
+│   ├── Domain/                  # Booking, BookingService, repository port
+│   ├── Http/                    # Request, Response, Router, Kernel, exceptions
+│   ├── Repositories/            # PDO implementation of the port
+│   ├── Security/                # Session, Csrf
+│   ├── Support/                 # View, Logger, helpers
+│   └── Validation/
+├── templates/
+│   ├── layout.php
+│   ├── home.php
+│   ├── bookings/{create,index,show}.php
+│   └── errors/{404,419,500}.php
+├── tests/
+│   ├── Unit/
+│   └── Feature/
+├── var/                         # runtime only, git-ignored contents
+│   ├── cache/
+│   └── logs/
+├── .editorconfig
+├── .env.example
+├── .gitignore
+├── composer.json
+├── dev-router.php               # router for `php -S`
+├── phpcs.xml
+├── phpstan.neon
+├── phpunit.xml
+└── README.md
+```
+
+**Rule that keeps the deployment safe:** nothing outside `public/` is ever
+reachable by URL. `src/`, `templates/`, `database/`, `var/` and `vendor/` sit one
+level above the document root.
+
+---
+
+## 6. Architecture decisions
+
+Recorded here so later changes are deliberate rather than accidental.
+
+| ID | Decision | Rationale |
+|---|---|---|
+| ADR-001 | Server-rendered PHP monolith, no SPA framework | Works on plain PHP hosting, no build step, no client state to secure |
+| ADR-002 | Zero runtime Composer dependencies | `--no-dev` deploys only the autoloader; smaller supply chain |
+| ADR-003 | MySQL only, no silent fallback | One dialect, one behaviour; a missing driver is a startup error |
+| ADR-004 | UTC in storage, IANA zone at the edges | Removes DST/offset bugs from persisted data |
+| ADR-005 | A request is not an appointment | New bookings are `requested`; confirmation is an explicit later transition |
+| ADR-006 | Service worker caches static assets only | A cached page must never imply a submission succeeded |
+| ADR-007 | Explicit route table, thin controllers | Every route declares method, handler and (later) authorization |
+| ADR-008 | Forward-only migrations with checksums | MySQL DDL cannot roll back atomically; drift must be detected |
+
+### Security posture in the baseline
+
+- Output escaped through `e()` in every template; no raw interpolation.
+- CSP with `default-src 'self'`, no inline scripts or styles.
+- `HttpOnly`, `SameSite=Lax` session cookie; `Secure` when HTTPS is detected.
+- CSRF token required on the only state-changing route (`POST /bookings`).
+- Prepared statements everywhere; identifiers never come from input.
+- Validation is an allowlist; unknown fields are ignored, not persisted.
+- Errors never expose stack traces when `APP_DEBUG=false`.
+- No secrets in the repository; `.env` is ignored and outside `public/`.
+
+---
+
+## 7. Baseline acceptance criteria
+
+The scaffold is "done" when all of these are true:
+
+- [ ] `composer install` completes with no runtime packages.
+- [ ] `php bin/console doctor` exits 0.
+- [ ] `php bin/console migrate` applies `0001` and `migrate:status` shows `yes`.
+- [ ] `/`, `/bookings/new`, `/bookings`, `/healthz` respond as expected.
+- [ ] A valid submission stores one row and shows a `BK-…` reference.
+- [ ] An invalid submission returns 422 with field-level messages and stores nothing.
+- [ ] A POST without a CSRF token returns 419 and stores nothing.
+- [ ] `composer check` passes (style, static analysis, tests).
+- [ ] `git status` is clean; no `.env`, `vendor/`, or log file is tracked.
+- [ ] Lighthouse installability check passes for the PWA manifest and service worker.
+
+---
+
+## 8. Next increments (in order)
+
+1. **Availability + conflict prevention** — slot table, unique constraint, transactional booking, concurrency test.
+2. **Status transitions** — `requested → confirmed | cancelled`, one service method per transition, audit row per change.
+3. **Accounts and roles** — password reset, session rotation, policy checks per route.
+4. **Notification outbox** — queue in the database, CLI dispatcher, retries, no provider call inside a request.
+5. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
+
+Each increment adds a migration, tests, and an ADR entry — no feature ships
+without all three.

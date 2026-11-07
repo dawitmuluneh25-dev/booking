@@ -1,0 +1,181 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use App\Bootstrap\Application;
+use App\Database\Migrator;
+
+$root = dirname(__DIR__);
+$autoload = $root . '/vendor/autoload.php';
+
+if (!is_file($autoload)) {
+    fwrite(STDERR, "Dependencies are not installed. Run: composer install\n");
+    exit(1);
+}
+
+require $autoload;
+
+$command = $argv[1] ?? 'help';
+$options = array_slice($argv, 2);
+$app = Application::boot($root);
+
+switch ($command) {
+    case 'doctor':
+        exit(doctor($app));
+
+    case 'migrate':
+        exit(runMigrations($app, in_array('--dry-run', $options, true)));
+
+    case 'migrate:status':
+        exit(migrationStatus($app));
+
+    case 'bookings:list':
+        exit(listBookings($app));
+
+    case 'help':
+    default:
+        echo <<<TXT
+        Booking console
+
+          php bin/console doctor              Check runtime, configuration and database
+          php bin/console migrate             Apply pending migrations
+          php bin/console migrate --dry-run   Show what would be applied
+          php bin/console migrate:status      List migrations and their state
+          php bin/console bookings:list       Print the next 20 bookings
+
+        TXT;
+        exit($command === 'help' ? 0 : 1);
+}
+
+function doctor(Application $app): int
+{
+    $failures = 0;
+
+    $report = static function (string $label, bool $ok, string $detail = '') use (&$failures): void {
+        if (!$ok) {
+            $failures++;
+        }
+        printf("[%s] %-18s %s\n", $ok ? ' OK ' : 'FAIL', $label, $detail);
+    };
+
+    $report('php', PHP_VERSION_ID >= 80300, PHP_VERSION);
+
+    foreach (['pdo', 'pdo_mysql', 'mbstring', 'json', 'openssl'] as $extension) {
+        $report('ext-' . $extension, extension_loaded($extension), extension_loaded($extension) ? 'loaded' : 'missing');
+    }
+
+    $envFile = $app->root('.env');
+    $report('.env', is_file($envFile), is_file($envFile) ? $envFile : 'copy .env.example to .env');
+
+    $config = $app->config()->database();
+    $report('db-config', $config['database'] !== '' && $config['username'] !== '', $config['database'] . ' @ ' . $config['host']);
+
+    try {
+        $pdo = $app->pdo();
+        $version = $pdo->query('SELECT VERSION()')?->fetchColumn();
+        $report('db-connect', true, is_string($version) ? $version : 'connected');
+
+        $migrator = new Migrator($pdo, $app->root('database/migrations'));
+        $pending = 0;
+        foreach ($migrator->status() as $migration) {
+            if (!$migration['applied']) {
+                $pending++;
+            } elseif (!$migration['checksum_ok']) {
+                $report('migration-' . $migration['version'], false, 'checksum drift');
+            }
+        }
+        $report('migrations', $pending === 0, $pending === 0 ? 'up to date' : $pending . ' pending');
+    } catch (Throwable $exception) {
+        $report('db-connect', false, $exception->getMessage());
+    }
+
+    echo PHP_EOL . ($failures === 0 ? "Environment looks ready.\n" : $failures . " check(s) failed.\n");
+
+    return $failures === 0 ? 0 : 1;
+}
+
+function runMigrations(Application $app, bool $dryRun): int
+{
+    try {
+        $migrator = new Migrator($app->pdo(), $app->root('database/migrations'));
+        $applied = $migrator->migrate($dryRun);
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Migration failed: ' . $exception->getMessage() . PHP_EOL);
+        fwrite(STDERR, "MySQL DDL may have partially applied. Inspect the schema before retrying.\n");
+
+        return 1;
+    }
+
+    if ($applied === []) {
+        echo "Nothing to apply.\n";
+
+        return 0;
+    }
+
+    foreach ($applied as $name) {
+        echo ($dryRun ? 'would apply ' : 'applied ') . $name . PHP_EOL;
+    }
+
+    return 0;
+}
+
+function migrationStatus(Application $app): int
+{
+    try {
+        $migrator = new Migrator($app->pdo(), $app->root('database/migrations'));
+        $rows = $migrator->status();
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Cannot read migration status: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    if ($rows === []) {
+        echo "No migration files found.\n";
+
+        return 0;
+    }
+
+    printf("%-8s %-40s %-9s %s\n", 'VERSION', 'FILE', 'APPLIED', 'CHECKSUM');
+    foreach ($rows as $row) {
+        printf(
+            "%-8s %-40s %-9s %s\n",
+            $row['version'],
+            $row['name'],
+            $row['applied'] ? 'yes' : 'no',
+            $row['checksum_ok'] ? 'ok' : 'DRIFT',
+        );
+    }
+
+    return 0;
+}
+
+function listBookings(Application $app): int
+{
+    try {
+        $bookings = $app->bookings()->upcoming(20);
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Cannot read bookings: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    if ($bookings === []) {
+        echo "No upcoming bookings.\n";
+
+        return 0;
+    }
+
+    foreach ($bookings as $booking) {
+        printf(
+            "%s  %s  %-12s %s\n",
+            $booking->reference,
+            $booking->scheduledAtUtc,
+            $booking->service,
+            $booking->patientName,
+        );
+    }
+
+    return 0;
+}
