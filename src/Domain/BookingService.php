@@ -21,6 +21,9 @@ final class BookingService
         'other' => 'Other',
     ];
 
+    /** Length of one appointment and the granularity of the booking grid. */
+    public const SLOT_MINUTES = 30;
+
     private const REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
     public function __construct(
@@ -62,8 +65,14 @@ final class BookingService
             throw new ValidationException(['scheduled_at' => 'Scheduled at must be a valid date and time.']);
         }
 
+        if ((int) $local->format('i') % self::SLOT_MINUTES !== 0 || (int) $local->format('s') !== 0) {
+            throw new ValidationException([
+                'scheduled_at' => 'Choose a time on the half hour, for example 09:00 or 09:30.',
+            ]);
+        }
+
         $utc = $local->setTimezone(new DateTimeZone('UTC'));
-        if ($utc < new DateTimeImmutable('-5 minutes', new DateTimeZone('UTC'))) {
+        if ($utc < new DateTimeImmutable('-' . self::SLOT_MINUTES . ' minutes', new DateTimeZone('UTC'))) {
             throw new ValidationException(['scheduled_at' => 'Choose a time in the future.']);
         }
 
@@ -78,7 +87,7 @@ final class BookingService
             createdAtUtc: gmdate('Y-m-d H:i:s'),
         );
 
-        $this->repository->create($booking);
+        $this->repository->create($booking, $utc->format('Y-m-d H:i:s'));
 
         return $booking;
     }

@@ -6,7 +6,10 @@ namespace App\Repositories;
 
 use App\Domain\Booking;
 use App\Domain\BookingRepository;
+use App\Domain\SlotUnavailableException;
 use PDO;
+use PDOException;
+use Throwable;
 
 final class PdoBookingRepository implements BookingRepository
 {
@@ -14,27 +17,59 @@ final class PdoBookingRepository implements BookingRepository
     {
     }
 
-    public function create(Booking $booking): void
+    public function create(Booking $booking, string $slotStartUtc): void
     {
-        $statement = $this->pdo->prepare(
-            'INSERT INTO bookings
-                (reference, patient_name, patient_phone, service, scheduled_at, notes, status, created_at, updated_at)
-             VALUES
-                (:reference, :patient_name, :patient_phone, :service,
-                 :scheduled_at, :notes, :status, :created_at, :updated_at)'
-        );
+        $this->pdo->beginTransaction();
 
-        $statement->execute([
-            'reference' => $booking->reference,
-            'patient_name' => $booking->patientName,
-            'patient_phone' => $booking->patientPhone,
-            'service' => $booking->service,
-            'scheduled_at' => $booking->scheduledAtUtc,
-            'notes' => $booking->notes,
-            'status' => $booking->status,
-            'created_at' => $booking->createdAtUtc,
-            'updated_at' => $booking->createdAtUtc,
-        ]);
+        try {
+            $statement = $this->pdo->prepare(
+                'INSERT INTO bookings
+                    (reference, patient_name, patient_phone, service, scheduled_at,
+                     notes, status, created_at, updated_at)
+                 VALUES
+                    (:reference, :patient_name, :patient_phone, :service,
+                     :scheduled_at, :notes, :status, :created_at, :updated_at)'
+            );
+
+            $statement->execute([
+                'reference' => $booking->reference,
+                'patient_name' => $booking->patientName,
+                'patient_phone' => $booking->patientPhone,
+                'service' => $booking->service,
+                'scheduled_at' => $booking->scheduledAtUtc,
+                'notes' => $booking->notes,
+                'status' => $booking->status,
+                'created_at' => $booking->createdAtUtc,
+                'updated_at' => $booking->createdAtUtc,
+            ]);
+
+            $bookingId = (int) $this->pdo->lastInsertId();
+
+            $slot = $this->pdo->prepare(
+                'INSERT INTO booking_slots (slot_start, booking_id, created_at)
+                 VALUES (:slot_start, :booking_id, :created_at)'
+            );
+            $slot->execute([
+                'slot_start' => $slotStartUtc,
+                'booking_id' => $bookingId,
+                'created_at' => $booking->createdAtUtc,
+            ]);
+
+            $this->pdo->commit();
+        } catch (PDOException $exception) {
+            $this->rollback();
+
+            // 1062 = duplicate entry: the slot primary key rejected the claim.
+            if (($exception->errorInfo[1] ?? null) === 1062) {
+                throw new SlotUnavailableException();
+            }
+
+            throw $exception;
+        } catch (Throwable $exception) {
+            $this->rollback();
+
+            throw $exception;
+        }
     }
 
     public function findByReference(string $reference): ?Booking
@@ -45,7 +80,6 @@ final class PdoBookingRepository implements BookingRepository
              WHERE reference = :reference
              LIMIT 1'
         );
-
         $statement->execute(['reference' => $reference]);
 
         $row = $statement->fetch();
@@ -76,5 +110,12 @@ final class PdoBookingRepository implements BookingRepository
         }
 
         return $bookings;
+    }
+
+    private function rollback(): void
+    {
+        if ($this->pdo->inTransaction()) {
+            $this->pdo->rollBack();
+        }
     }
 }

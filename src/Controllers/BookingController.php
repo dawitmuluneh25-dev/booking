@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\BookingService;
+use App\Domain\SlotUnavailableException;
 use App\Domain\ValidationException;
 use App\Http\HttpException;
 use App\Http\Request;
@@ -56,6 +57,12 @@ final class BookingController
             $booking = $this->service()->request($request->all());
         } catch (ValidationException $exception) {
             return $this->form($exception->errors, $request->all(), 422);
+        } catch (SlotUnavailableException) {
+            return $this->form(
+                ['scheduled_at' => 'That time was just taken. Please choose another.'],
+                $request->all(),
+                409,
+            );
         }
 
         Session::flash('notice', 'Booking request received.');

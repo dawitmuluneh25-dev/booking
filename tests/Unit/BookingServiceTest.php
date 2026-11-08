@@ -6,6 +6,7 @@ namespace Tests\Unit;
 
 use App\Domain\BookingRepository;
 use App\Domain\BookingService;
+use App\Domain\SlotUnavailableException;
 use App\Domain\ValidationException;
 use App\Validation\Validator;
 use DateTimeZone;
@@ -74,6 +75,55 @@ final class BookingServiceTest extends TestCase
 
         self::assertSame('Ada Lovelace', $booking->patientName);
         self::assertNull($booking->notes);
+    }
+
+    public function testItClaimsTheRequestedSlotInUtc(): void
+    {
+        $repository = new InMemoryBookingRepository();
+        $this->service($repository, 'Africa/Addis_Ababa')->request([
+            'patient_name' => 'Ada Lovelace',
+            'patient_phone' => '+251906373154',
+            'service' => 'consultation',
+            'scheduled_at' => '2030-05-01T09:30',
+        ]);
+
+        self::assertSame(['2030-05-01 06:30:00'], array_keys($repository->slots));
+    }
+
+    public function testItRejectsATimeOffTheSlotGrid(): void
+    {
+        $service = $this->service(new InMemoryBookingRepository());
+
+        try {
+            $service->request([
+                'patient_name' => 'Ada Lovelace',
+                'patient_phone' => '+251906373154',
+                'service' => 'consultation',
+                'scheduled_at' => '2030-05-01T09:15',
+            ]);
+            self::fail('Expected a ValidationException.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('scheduled_at', $exception->errors);
+            self::assertStringContainsString('half hour', $exception->errors['scheduled_at']);
+        }
+    }
+
+    public function testItSurfacesASlotConflict(): void
+    {
+        $repository = new InMemoryBookingRepository();
+        $service = $this->service($repository, 'Africa/Addis_Ababa');
+
+        $payload = [
+            'patient_name' => 'Ada Lovelace',
+            'patient_phone' => '+251906373154',
+            'service' => 'consultation',
+            'scheduled_at' => '2030-05-01T09:30',
+        ];
+
+        $service->request($payload);
+
+        $this->expectException(SlotUnavailableException::class);
+        $service->request($payload);
     }
 
     public function testItReturnsNullForAnUnknownReference(): void

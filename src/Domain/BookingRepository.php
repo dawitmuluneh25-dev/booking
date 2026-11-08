@@ -10,7 +10,12 @@ namespace App\Domain;
  */
 interface BookingRepository
 {
-    public function create(Booking $booking): void;
+    /**
+     * Persist the booking and claim its slot atomically.
+     *
+     * @throws SlotUnavailableException when the slot is already taken
+     */
+    public function create(Booking $booking, string $slotStartUtc): void;
 
     public function findByReference(string $reference): ?Booking;
 

@@ -86,11 +86,16 @@ $fieldError = static fn (string $key): ?string => $errors[$key] ?? null;
                 name="scheduled_at"
                 type="datetime-local"
                 value="<?= e($value('scheduled_at')) ?>"
+                step="1800"
                 required
-                <?php if ($fieldError('scheduled_at') !== null): ?>aria-invalid="true" aria-describedby="error-scheduled_at"<?php endif; ?>
+                <?php if ($fieldError('scheduled_at') !== null): ?>aria-invalid="true" aria-describedby="error-scheduled_at"<?php else: ?>aria-describedby="hint-scheduled_at"<?php endif; ?>
             >
             <?php if ($fieldError('scheduled_at') !== null): ?>
                 <p class="field-error" id="error-scheduled_at"><?= e($fieldError('scheduled_at')) ?></p>
+            <?php else: ?>
+                <p class="field-hint" id="hint-scheduled_at">
+                    Appointments start every 30 minutes and run for 30 minutes.
+                </p>
             <?php endif; ?>
         </div>
 
