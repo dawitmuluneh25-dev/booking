@@ -8,6 +8,7 @@ use App\Domain\Booking;
 use App\Domain\BookingRepository;
 use App\Domain\BookingStatus;
 use App\Domain\InvalidTransitionException;
+use App\Domain\OutboundMessage;
 use App\Domain\SlotUnavailableException;
 use PDO;
 use PDOException;
@@ -19,7 +20,7 @@ final class PdoBookingRepository implements BookingRepository
     {
     }
 
-    public function create(Booking $booking, string $slotStartUtc): void
+    public function create(Booking $booking, string $slotStartUtc, array $messages = []): void
     {
         $this->pdo->beginTransaction();
 
@@ -57,6 +58,8 @@ final class PdoBookingRepository implements BookingRepository
                 'created_at' => $booking->createdAtUtc,
             ]);
 
+            $this->enqueue($bookingId, $messages);
+
             $this->pdo->commit();
         } catch (PDOException $exception) {
             $this->rollback();
@@ -90,8 +93,13 @@ final class PdoBookingRepository implements BookingRepository
         return $row === false ? null : Booking::fromRow($row);
     }
 
-    public function transition(Booking $booking, BookingStatus $target, string $actor, ?string $reason): void
-    {
+    public function transition(
+        Booking $booking,
+        BookingStatus $target,
+        string $actor,
+        ?string $reason,
+        array $messages = [],
+    ): void {
         $this->pdo->beginTransaction();
 
         try {
@@ -133,6 +141,8 @@ final class PdoBookingRepository implements BookingRepository
                 );
                 $release->execute(['reference' => $booking->reference]);
             }
+
+            $this->enqueueForReference($booking->reference, $messages);
 
             $this->pdo->commit();
         } catch (Throwable $exception) {
@@ -193,6 +203,51 @@ final class PdoBookingRepository implements BookingRepository
         }
 
         return $map;
+    }
+
+    /** @param list<OutboundMessage> $messages */
+    private function enqueue(int $bookingId, array $messages): void
+    {
+        if ($messages === []) {
+            return;
+        }
+
+        $statement = $this->pdo->prepare(
+            "INSERT IGNORE INTO notification_outbox
+                (booking_id, channel, template, recipient, payload, status, attempts,
+                 available_at, created_at, updated_at)
+             VALUES
+                (:booking_id, :channel, :template, :recipient, :payload, 'pending', 0,
+                 UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
+
+        foreach ($messages as $message) {
+            $payload = json_encode($message->payload, JSON_UNESCAPED_SLASHES);
+
+            $statement->execute([
+                'booking_id' => $bookingId,
+                'channel' => $message->channel->value,
+                'template' => $message->template->value,
+                'recipient' => $message->recipient,
+                'payload' => $payload === false ? '{}' : $payload,
+            ]);
+        }
+    }
+
+    /** @param list<OutboundMessage> $messages */
+    private function enqueueForReference(string $reference, array $messages): void
+    {
+        if ($messages === []) {
+            return;
+        }
+
+        $lookup = $this->pdo->prepare('SELECT id FROM bookings WHERE reference = :reference');
+        $lookup->execute(['reference' => $reference]);
+        $bookingId = (int) $lookup->fetchColumn();
+
+        if ($bookingId > 0) {
+            $this->enqueue($bookingId, $messages);
+        }
     }
 
     private function rollback(): void

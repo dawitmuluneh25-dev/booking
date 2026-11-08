@@ -87,7 +87,11 @@ final class BookingService
             createdAtUtc: gmdate('Y-m-d H:i:s'),
         );
 
-        $this->repository->create($booking, $utc->format('Y-m-d H:i:s'));
+        $this->repository->create(
+            $booking,
+            $utc->format('Y-m-d H:i:s'),
+            [$this->notification(NotificationTemplate::BookingRequested, $booking)],
+        );
 
         return $booking;
     }
@@ -154,9 +158,36 @@ final class BookingService
             throw new InvalidTransitionException($booking->status, $target);
         }
 
-        $this->repository->transition($booking, $target, $actor, $reason);
+        $template = match ($target) {
+            BookingStatus::Confirmed => NotificationTemplate::BookingConfirmed,
+            BookingStatus::Cancelled => NotificationTemplate::BookingCancelled,
+            default => null,
+        };
+
+        $this->repository->transition(
+            $booking,
+            $target,
+            $actor,
+            $reason,
+            $template === null ? [] : [$this->notification($template, $booking)],
+        );
 
         return $booking->withStatus($target);
+    }
+
+    private function notification(NotificationTemplate $template, Booking $booking): OutboundMessage
+    {
+        return new OutboundMessage(
+            channel: NotificationChannel::Sms,
+            template: $template,
+            recipient: $booking->patientPhone,
+            payload: [
+                'reference' => $booking->reference,
+                // Local time with its zone: a patient must not have to convert UTC.
+                'scheduled_at' => $booking->scheduledAt($this->timezone->getName())->format('D j M Y, H:i T'),
+                'service' => $booking->service,
+            ],
+        );
     }
 
     /** @return list<Booking> */

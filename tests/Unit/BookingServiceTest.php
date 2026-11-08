@@ -9,6 +9,8 @@ use App\Domain\BookingRepository;
 use App\Domain\BookingService;
 use App\Domain\BookingStatus;
 use App\Domain\InvalidTransitionException;
+use App\Domain\NotificationChannel;
+use App\Domain\NotificationTemplate;
 use App\Domain\SlotUnavailableException;
 use App\Domain\ValidationException;
 use App\Validation\Validator;
@@ -127,6 +129,53 @@ final class BookingServiceTest extends TestCase
 
         $this->expectException(SlotUnavailableException::class);
         $service->request($payload);
+    }
+
+    public function testItEnqueuesARequestNotificationWithNoClinicalDetail(): void
+    {
+        $repository = new InMemoryBookingRepository();
+        $this->requestAt($this->service($repository, 'Africa/Addis_Ababa'), '2030-05-01T09:30');
+
+        self::assertCount(1, $repository->messages);
+        self::assertSame(NotificationTemplate::BookingRequested, $repository->messages[0]->template);
+        self::assertSame(NotificationChannel::Sms, $repository->messages[0]->channel);
+        self::assertSame(
+            ['reference', 'scheduled_at', 'service'],
+            array_keys($repository->messages[0]->payload),
+        );
+        self::assertStringContainsString('09:30', $repository->messages[0]->payload['scheduled_at']);
+        self::assertStringNotContainsString('UTC', $repository->messages[0]->payload['scheduled_at']);
+    }
+
+    public function testConfirmAndCancelEnqueueTheirOwnNotifications(): void
+    {
+        $repository = new InMemoryBookingRepository();
+        $service = $this->service($repository, 'Africa/Addis_Ababa');
+        $booking = $this->requestAt($service, '2030-05-01T09:30');
+
+        $service->confirm($booking->reference, 'cli:test');
+        $service->cancel($booking->reference, 'cli:test');
+
+        self::assertSame(
+            [
+                NotificationTemplate::BookingRequested,
+                NotificationTemplate::BookingConfirmed,
+                NotificationTemplate::BookingCancelled,
+            ],
+            array_map(static fn ($message): NotificationTemplate => $message->template, $repository->messages),
+        );
+    }
+
+    public function testCompletingABookingEnqueuesNothing(): void
+    {
+        $repository = new InMemoryBookingRepository();
+        $service = $this->service($repository, 'Africa/Addis_Ababa');
+        $booking = $this->requestAt($service, '2030-05-01T09:30');
+
+        $service->confirm($booking->reference, 'cli:test');
+        $service->complete($booking->reference, 'cli:test');
+
+        self::assertCount(2, $repository->messages);
     }
 
     public function testItConfirmsARequestedBookingAndKeepsTheSlot(): void

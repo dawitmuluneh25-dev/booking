@@ -6,12 +6,16 @@ namespace App\Bootstrap;
 
 use App\Database\Connection;
 use App\Domain\BookingService;
+use App\Domain\OutboxRepository;
 use App\Domain\UserRepository;
+use App\Notifications\LogTransport;
+use App\Notifications\OutboxDispatcher;
 use App\Http\Kernel;
 use App\Http\Request;
 use App\Http\Response;
 use App\Http\Router;
 use App\Repositories\PdoBookingRepository;
+use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoUserRepository;
 use App\Security\Auth;
 use App\Security\Gate;
@@ -39,6 +43,10 @@ final class Application
     private ?Auth $auth = null;
 
     private ?Gate $gate = null;
+
+    private ?OutboxRepository $outbox = null;
+
+    private ?OutboxDispatcher $dispatcher = null;
 
     private function __construct(
         private readonly Config $config,
@@ -117,6 +125,19 @@ final class Application
     public function gate(): Gate
     {
         return $this->gate ??= new Gate($this->auth());
+    }
+
+    public function outbox(): OutboxRepository
+    {
+        return $this->outbox ??= new PdoOutboxRepository($this->pdo());
+    }
+
+    public function dispatcher(): OutboxDispatcher
+    {
+        return $this->dispatcher ??= new OutboxDispatcher(
+            $this->outbox(),
+            new LogTransport($this->config->root('var/logs/notifications.log')),
+        );
     }
 
     public function bookings(): BookingService

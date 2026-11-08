@@ -28,6 +28,7 @@ Verified on PHP 8.3.36 and MySQL 8.4.9 Community (InnoDB, `utf8mb4_0900_ai_ci`).
 | Lifecycle transitions with an append-only event log | `src/Domain/BookingStatus.php`, `booking_events` |
 | Staff accounts, roles, login throttling, password reset | `src/Security/Auth.php`, `users`, `login_attempts`, `password_resets` |
 | Read-only availability calendar built from claimed slots | `/availability`, `src/Domain/DaySchedule.php` |
+| Transactional notification outbox with retries | `src/Notifications/`, `notification_outbox` |
 | Prepared statements only | `src/Repositories/PdoBookingRepository.php` |
 | Forward-only migrations with checksum ledger | `src/Database/Migrator.php` |
 | CLI: doctor, migrate, status, list | `bin/console` |
@@ -284,6 +285,8 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console user:create <email> <name> <admin\|staff>` | Create an account; prints a generated password once |
 | `php bin/console user:list` | List accounts |
 | `php bin/console user:reset-token <email>` | Print a one-time reset path (60 min TTL) |
+| `php bin/console outbox:list [--limit=20]` | Inspect queued notifications |
+| `php bin/console outbox:dispatch [--limit=20]` | Deliver due notifications (cron) |
 
 ---
 
@@ -300,7 +303,8 @@ booking-app/
 │       ├── 0002_create_booking_slots.sql
 │       ├── 0003_backfill_booking_slots.sql
 │       ├── 0004_create_booking_events.sql
-│       └── 0005_create_auth_tables.sql
+│       ├── 0005_create_auth_tables.sql
+│       └── 0006_create_notification_outbox.sql
 ├── public/                      # the only web-accessible directory
 │   ├── .htaccess                # rewrite + dotfile denial
 │   ├── index.php                # front controller
@@ -460,7 +464,31 @@ paths call the same service method.
 - `/bookings` requires a session; the public booking form and a booking's confirmation page
   remain reachable by reference.
 
-## 11. Routes
+## 11. Notifications
+
+Messages are written to `notification_outbox` **inside the transaction that changes the
+booking**, then delivered by a CLI worker. No provider is called from a web request: a slow
+gateway cannot delay or roll back a booking.
+
+| Concern | Behaviour |
+|---|---|
+| Enqueue | `booking_requested`, `booking_confirmed`, `booking_cancelled`; unique per booking + template + channel, so retries cannot duplicate |
+| Dispatch | `php bin/console outbox:dispatch`, claiming rows with `FOR UPDATE SKIP LOCKED` |
+| Retries | 1, 5, 15, then 60 minutes; after 5 attempts the row becomes `dead` and the command exits non-zero |
+| Crash recovery | Rows left in `sending` for over 10 minutes are requeued |
+| Content | Reference, local date/time and service only — no clinical detail |
+| Transport | `LogTransport` writes to `var/logs/notifications.log` with the recipient masked |
+
+Cron on the host (every minute):
+
+```cron
+* * * * * /usr/local/bin/php /home/ACCOUNT/booking/bin/console outbox:dispatch --limit=20
+```
+
+Swap `LogTransport` for an SMS/WhatsApp implementation of `NotificationTransport` when a
+provider is chosen; nothing else changes.
+
+## 12. Routes
 
 | Method | Path | Access |
 |---|---|---|
@@ -476,12 +504,12 @@ paths call the same service method.
 | GET | `/admin/users` | `users.manage` |
 | GET | `/healthz` | public, generic output |
 
-## 12. Next increments (in order)
+## 13. Next increments (in order)
 
-1. **Notification outbox** — queue in the database, CLI dispatcher, retries; no provider call inside a request.
-2. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
-3. **Data protection** — retention window for personal data, and an audit view over `booking_events`.
-4. **Configurable opening hours** — replace the `AvailabilityController` constants with a settings table.
+1. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
+2. **Data protection** — retention window for personal data, and an audit view over `booking_events`.
+3. **Configurable opening hours** — replace the `AvailabilityController` constants with a settings table.
+4. **Real transport** — implement `NotificationTransport` against the chosen SMS/WhatsApp provider.
 
 Each increment adds a migration, tests, and an ADR entry — no feature ships
 without all three.
