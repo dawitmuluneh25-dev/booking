@@ -19,7 +19,7 @@ final class AuthorisationException extends RuntimeException
     public function __construct(
         public readonly Role $role,
         public readonly Permission $permission,
-        string $reason = '',
+        public readonly string $reason = '',
     ) {
         parent::__construct(sprintf(
             'The %s role does not hold the %s permission.%s',
@@ -29,8 +29,15 @@ final class AuthorisationException extends RuntimeException
         ));
     }
 
+    /**
+     * The role holds the permission but may not use it here. Kept separate so the
+     * message does not claim a missing permission the user actually has.
+     */
     public static function forObject(Role $role, Permission $permission, string $reason): self
     {
-        return new self($role, $permission, $reason);
+        $exception = new self($role, $permission, $reason);
+        $exception->message = sprintf('The %s role may not %s.', $role->value, lcfirst($reason));
+
+        return $exception;
     }
 }

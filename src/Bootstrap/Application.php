@@ -14,11 +14,13 @@ use App\Domain\ClinicCalendar;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\IdempotencyStore;
+use App\Domain\ApproveForScheduling;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\ReferralRepository;
 use App\Domain\RetentionRepository;
 use App\Domain\SubmitElectiveReferral;
 use App\Domain\Transaction;
+use App\Domain\TriageReferral;
 use App\Domain\RetentionService;
 use App\Domain\UserRepository;
 use App\Notifications\CurlHttpClient;
@@ -68,6 +70,10 @@ final class Application
     private ?SubmitElectiveReferral $submitReferral = null;
 
     private ?RecordClinicalDecision $recordDecision = null;
+
+    private ?TriageReferral $triageReferral = null;
+
+    private ?ApproveForScheduling $approveForScheduling = null;
 
     private ?Kernel $kernel = null;
 
@@ -178,6 +184,16 @@ final class Application
             new Validator(),
             $this->transaction(),
         );
+    }
+
+    public function triageReferral(): TriageReferral
+    {
+        return $this->triageReferral ??= new TriageReferral($this->referrals(), new Validator());
+    }
+
+    public function approveForScheduling(): ApproveForScheduling
+    {
+        return $this->approveForScheduling ??= new ApproveForScheduling($this->referrals());
     }
 
     public function idempotency(): IdempotencyStore
