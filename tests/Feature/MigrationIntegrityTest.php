@@ -42,6 +42,7 @@ final class MigrationIntegrityTest extends TestCase
         'bookings',
         'clinic_closures',
         'clinic_hours',
+        'idempotency_keys',
         'notification_outbox',
         'resource_availability',
         'resource_slots',

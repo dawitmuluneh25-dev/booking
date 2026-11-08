@@ -13,8 +13,10 @@ use App\Domain\BookingService;
 use App\Domain\ClinicCalendar;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
+use App\Domain\IdempotencyStore;
 use App\Domain\ReferralRepository;
 use App\Domain\RetentionRepository;
+use App\Domain\SubmitElectiveReferral;
 use App\Domain\Transaction;
 use App\Domain\RetentionService;
 use App\Domain\UserRepository;
@@ -30,6 +32,7 @@ use App\Http\Router;
 use App\Repositories\PdoAuditRepository;
 use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
+use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoReferralRepository;
 use App\Repositories\PdoRetentionRepository;
@@ -58,6 +61,10 @@ final class Application
     private ?Transaction $transaction = null;
 
     private ?ReferralRepository $referrals = null;
+
+    private ?IdempotencyStore $idempotency = null;
+
+    private ?SubmitElectiveReferral $submitReferral = null;
 
     private ?Kernel $kernel = null;
 
@@ -159,6 +166,20 @@ final class Application
     public function referrals(): ReferralRepository
     {
         return $this->referrals ??= new PdoReferralRepository($this->pdo(), $this->transaction());
+    }
+
+    public function idempotency(): IdempotencyStore
+    {
+        return $this->idempotency ??= new PdoIdempotencyStore($this->pdo());
+    }
+
+    public function submitReferral(): SubmitElectiveReferral
+    {
+        return $this->submitReferral ??= new SubmitElectiveReferral(
+            $this->referrals(),
+            new Validator(),
+            $this->idempotency(),
+        );
     }
 
     public function users(): UserRepository

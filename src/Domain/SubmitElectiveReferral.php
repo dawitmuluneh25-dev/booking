@@ -30,9 +30,12 @@ final class SubmitElectiveReferral
 
     private const URGENCIES = ['routine', 'priority'];
 
+    private const SCOPE = 'referral.submit';
+
     public function __construct(
         private readonly ReferralRepository $repository,
         private readonly Validator $validator,
+        private readonly IdempotencyStore $idempotency,
     ) {
     }
 
@@ -41,8 +44,12 @@ final class SubmitElectiveReferral
      *
      * @throws AuthorisationException|ValidationException|ReferralTransitionException
      */
-    public function execute(Actor $actor, array $input, ?string $nowUtc = null): Referral
-    {
+    public function execute(
+        Actor $actor,
+        array $input,
+        ?string $nowUtc = null,
+        ?string $idempotencyKey = null,
+    ): Referral {
         if (!$actor->can(Permission::ReferralSubmit)) {
             throw new AuthorisationException($actor->role, Permission::ReferralSubmit);
         }
@@ -113,6 +120,35 @@ final class SubmitElectiveReferral
 
         $createdAtUtc = $nowUtc ?? gmdate('Y-m-d H:i:s');
 
+        // Claimed after validation, so a rejected form does not burn the key: the
+        // patient corrects the mistake and resubmits with the same token.
+        if ($idempotencyKey !== null) {
+            $claim = $this->idempotency->claim(
+                self::SCOPE,
+                $idempotencyKey,
+                Idempotency::fingerprint($data),
+                $actor,
+                $createdAtUtc,
+            );
+
+            if ($claim->state === IdempotencyState::Conflict) {
+                throw new IdempotencyConflictException(self::SCOPE, $claim->reason);
+            }
+
+            if ($claim->state === IdempotencyState::Replay && $claim->reference !== null) {
+                $existing = $this->repository->findByReference($claim->reference);
+
+                if ($existing === null) {
+                    throw new IdempotencyConflictException(
+                        self::SCOPE,
+                        'The recorded request could not be found.',
+                    );
+                }
+
+                return $existing;
+            }
+        }
+
         $referral = new Referral(
             id: 0,
             reference: $this->reference(),
@@ -136,7 +172,13 @@ final class SubmitElectiveReferral
             createdAtUtc: $createdAtUtc,
         );
 
-        return $this->repository->create($referral, $actor, $createdAtUtc);
+        $stored = $this->repository->create($referral, $actor, $createdAtUtc);
+
+        if ($idempotencyKey !== null) {
+            $this->idempotency->complete(self::SCOPE, $idempotencyKey, $stored->reference, $createdAtUtc);
+        }
+
+        return $stored;
     }
 
     /**

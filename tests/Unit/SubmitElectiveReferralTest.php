@@ -6,12 +6,14 @@ namespace Tests\Unit;
 
 use App\Domain\Actor;
 use App\Domain\AuthorisationException;
+use App\Domain\IdempotencyConflictException;
 use App\Domain\ReferralStatus;
 use App\Domain\Role;
 use App\Domain\SubmitElectiveReferral;
 use App\Domain\ValidationException;
 use App\Validation\Validator;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\InMemoryIdempotencyStore;
 use Tests\Support\InMemoryReferralRepository;
 
 final class SubmitElectiveReferralTest extends TestCase
@@ -20,12 +22,15 @@ final class SubmitElectiveReferralTest extends TestCase
 
     private InMemoryReferralRepository $repository;
 
+    private InMemoryIdempotencyStore $idempotency;
+
     private SubmitElectiveReferral $command;
 
     protected function setUp(): void
     {
         $this->repository = new InMemoryReferralRepository();
-        $this->command = new SubmitElectiveReferral($this->repository, new Validator());
+        $this->idempotency = new InMemoryIdempotencyStore();
+        $this->command = new SubmitElectiveReferral($this->repository, new Validator(), $this->idempotency);
     }
 
     public function testPatientSubmissionStartsAtSubmittedAndNeverAtApproved(): void
@@ -195,6 +200,53 @@ final class SubmitElectiveReferralTest extends TestCase
             ['procedure_code' => 'Fluoroscopic Biopsy; DROP TABLE'] + $this->validInput(),
             self::NOW,
         );
+    }
+
+    public function testTheSameTokenReturnsTheFirstReferralInsteadOfASecond(): void
+    {
+        $actor = new Actor(7, Role::Patient);
+        $token = 'submission-token-0001';
+
+        $first = $this->command->execute($actor, $this->validInput(), self::NOW, $token);
+        $second = $this->command->execute($actor, $this->validInput(), self::NOW, $token);
+
+        self::assertSame($first->id, $second->id);
+        self::assertSame($first->reference, $second->reference);
+        self::assertSame(1, $this->repository->count());
+        self::assertCount(1, $this->repository->historyFor($first->id));
+    }
+
+    public function testTheSameTokenWithDifferentDetailsIsRefused(): void
+    {
+        $actor = new Actor(7, Role::Patient);
+        $token = 'submission-token-0002';
+
+        $this->command->execute($actor, $this->validInput(), self::NOW, $token);
+
+        $this->expectException(IdempotencyConflictException::class);
+        $this->command->execute(
+            $actor,
+            ['patient_name' => 'Someone Else'] + $this->validInput(),
+            self::NOW,
+            $token,
+        );
+    }
+
+    public function testARejectedSubmissionDoesNotBurnTheToken(): void
+    {
+        $actor = new Actor(7, Role::Patient);
+        $token = 'submission-token-0003';
+
+        try {
+            $this->command->execute($actor, ['patient_name' => ''] + $this->validInput(), self::NOW, $token);
+        } catch (ValidationException) {
+            // The patient corrects the form and submits again with the same token.
+        }
+
+        $referral = $this->command->execute($actor, $this->validInput(), self::NOW, $token);
+
+        self::assertSame(ReferralStatus::Submitted, $referral->status);
+        self::assertSame(1, $this->repository->count());
     }
 
     /** @return array<string, string> */
