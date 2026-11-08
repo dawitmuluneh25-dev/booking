@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Bootstrap;
 
 use App\Database\Connection;
+use App\Database\DatabaseBackup;
+use App\Database\Migrator;
 use App\Domain\BookingService;
 use App\Domain\OutboxRepository;
 use App\Domain\UserRepository;
@@ -20,7 +22,9 @@ use App\Repositories\PdoUserRepository;
 use App\Security\Auth;
 use App\Security\Gate;
 use App\Security\PasswordHasher;
+use App\Support\Diagnostics;
 use App\Support\Logger;
+use App\Support\LogReader;
 use App\Support\View;
 use App\Validation\Validator;
 use DateTimeZone;
@@ -47,6 +51,14 @@ final class Application
     private ?OutboxRepository $outbox = null;
 
     private ?OutboxDispatcher $dispatcher = null;
+
+    private ?LogReader $logReader = null;
+
+    private ?Migrator $migrator = null;
+
+    private ?DatabaseBackup $backups = null;
+
+    private ?Diagnostics $diagnostics = null;
 
     private function __construct(
         private readonly Config $config,
@@ -137,6 +149,42 @@ final class Application
         return $this->dispatcher ??= new OutboxDispatcher(
             $this->outbox(),
             new LogTransport($this->config->root('var/logs/notifications.log')),
+        );
+    }
+
+    public function logReader(): LogReader
+    {
+        return $this->logReader ??= new LogReader($this->config->logDirectory());
+    }
+
+    public function migrator(): Migrator
+    {
+        return $this->migrator ??= new Migrator($this->pdo(), $this->root('database/migrations'));
+    }
+
+    public function backups(): DatabaseBackup
+    {
+        return $this->backups ??= new DatabaseBackup(
+            $this->pdo(),
+            $this->config->database()['database'],
+            $this->config->backupDirectory(),
+            function (string $database): PDO {
+                $configuration = $this->config->database();
+                $configuration['database'] = $database;
+
+                return Connection::create($configuration, $database === '');
+            },
+        );
+    }
+
+    public function diagnostics(): Diagnostics
+    {
+        return $this->diagnostics ??= new Diagnostics(
+            $this->pdo(),
+            $this->migrator(),
+            $this->backups(),
+            $this->logReader(),
+            $this->root(),
         );
     }
 

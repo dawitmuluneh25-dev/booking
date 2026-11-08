@@ -34,8 +34,8 @@
                 <a href="/bookings">Upcoming</a>
                 <a href="/availability">Availability</a>
             <?php endif; ?>
-            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::UsersManage)): ?>
-                <a href="/admin/users">Users</a>
+            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::SystemMaintain)): ?>
+                <a href="/admin">Admin</a>
             <?php endif; ?>
         </nav>
         <div class="header-account">

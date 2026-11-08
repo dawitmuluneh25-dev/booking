@@ -397,6 +397,34 @@ tbody tr:last-child td { border-bottom: 0; }
     color: var(--text-muted);
 }
 
+.state {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.state-ok {
+    color: #1b5e3f;
+    border-color: #9fd3b6;
+    background: #e8f5ee;
+}
+
+.state-warn {
+    color: #8a5a00;
+    border-color: #e2c07a;
+    background: #fdf3e0;
+}
+
+.state-fail {
+    color: #8c1d18;
+    border-color: #e3a39f;
+    background: #fbe9e7;
+}
+
 .badge-requested {
     background: var(--surface-alt);
     border-color: var(--border);

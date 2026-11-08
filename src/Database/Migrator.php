@@ -89,7 +89,7 @@ final class Migrator
                 continue;
             }
 
-            foreach ($this->statements($file) as $statement) {
+            foreach (SqlScript::split($this->contents($file)) as $statement) {
                 $this->pdo->exec($statement);
             }
 
@@ -144,90 +144,16 @@ final class Migrator
 
     private function checksum(string $file): string
     {
+        return hash('sha256', $this->contents($file));
+    }
+
+    private function contents(string $file): string
+    {
         $contents = file_get_contents($file);
         if ($contents === false) {
             throw new RuntimeException('Cannot read migration: ' . basename($file));
         }
 
-        return hash('sha256', $contents);
-    }
-
-    /**
-     * Split a file into statements, ignoring semicolons inside quotes and
-     * comments. Deliberately unsupported: stored procedures and DELIMITER.
-     *
-     * @return list<string>
-     */
-    private function statements(string $file): array
-    {
-        $sql = file_get_contents($file);
-        if ($sql === false) {
-            throw new RuntimeException('Cannot read migration: ' . basename($file));
-        }
-
-        $statements = [];
-        $buffer = '';
-        $length = strlen($sql);
-        $quote = null;
-
-        for ($i = 0; $i < $length; $i++) {
-            $char = $sql[$i];
-            $next = $sql[$i + 1] ?? '';
-
-            if ($quote !== null) {
-                $buffer .= $char;
-                if ($char === '\\' && $quote !== '`') {
-                    $buffer .= $next;
-                    $i++;
-                    continue;
-                }
-                if ($char === $quote) {
-                    $quote = null;
-                }
-                continue;
-            }
-
-            if ($char === '-' && $next === '-') {
-                $end = strpos($sql, "\n", $i);
-                $i = $end === false ? $length : $end;
-                continue;
-            }
-
-            if ($char === '#' && $buffer === '') {
-                $end = strpos($sql, "\n", $i);
-                $i = $end === false ? $length : $end;
-                continue;
-            }
-
-            if ($char === '/' && $next === '*') {
-                $end = strpos($sql, '*/', $i);
-                $i = $end === false ? $length : $end + 1;
-                continue;
-            }
-
-            if ($char === "'" || $char === '"' || $char === '`') {
-                $quote = $char;
-                $buffer .= $char;
-                continue;
-            }
-
-            if ($char === ';') {
-                $trimmed = trim($buffer);
-                if ($trimmed !== '') {
-                    $statements[] = $trimmed;
-                }
-                $buffer = '';
-                continue;
-            }
-
-            $buffer .= $char;
-        }
-
-        $trimmed = trim($buffer);
-        if ($trimmed !== '') {
-            $statements[] = $trimmed;
-        }
-
-        return $statements;
+        return $contents;
     }
 }

@@ -21,7 +21,12 @@ enum Role: string
     public function permissions(): array
     {
         return match ($this) {
-            self::Admin => [Permission::BookingsManage, Permission::UsersManage],
+            self::Admin => [
+                Permission::BookingsManage,
+                Permission::UsersManage,
+                Permission::ClinicConfigure,
+                Permission::SystemMaintain,
+            ],
             self::Staff => [Permission::BookingsManage],
         };
     }

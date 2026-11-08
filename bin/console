@@ -63,6 +63,21 @@ switch ($command) {
     case 'outbox:dispatch':
         exit(dispatchOutbox($app, $options));
 
+    case 'db:backup':
+        exit(createBackup($app, $options));
+
+    case 'db:backups':
+        exit(listBackups($app));
+
+    case 'db:restore-drill':
+        exit(restoreDrill($app, $options));
+
+    case 'logs:review':
+        exit(reviewLogs($app, $options));
+
+    case 'diag':
+        exit(printDiagnostics($app));
+
     case 'help':
     default:
         echo <<<TXT
@@ -84,6 +99,12 @@ switch ($command) {
 
           php bin/console outbox:list [--limit=20]
           php bin/console outbox:dispatch [--limit=20]
+
+          php bin/console diag                  Print the operational checks
+          php bin/console db:backup [--prune=14]
+          php bin/console db:backups
+          php bin/console db:restore-drill [--file=…] [--database=…_drill] [--keep]
+          php bin/console logs:review [--level=error] [--limit=30]
 
         user:create prints a generated password once when --password is omitted.
         outbox:dispatch is meant to run from cron, never from a web request.
@@ -469,6 +490,176 @@ function issueResetToken(Application $app, array $options): int
     echo "/password/reset/{$token}\n";
 
     return 0;
+}
+
+function createBackup(Application $app, array $options): int
+{
+    $prune = null;
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--prune=')) {
+            $prune = max(1, (int) substr($option, 8));
+        }
+    }
+
+    try {
+        $file = $app->backups()->create();
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Backup failed: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    printf(
+        "written %s (%s, %d tables, %d rows)\n",
+        $file->name,
+        $file->humanSize(),
+        $file->tables,
+        $file->rows,
+    );
+
+    try {
+        if ($prune !== null) {
+            printf("pruned %d old backup(s), keeping %d\n", $app->backups()->prune($prune), $prune);
+        }
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Prune failed: ' . $exception->getMessage() . PHP_EOL);
+    }
+
+    return 0;
+}
+
+function listBackups(Application $app): int
+{
+    $files = $app->backups()->all(50);
+
+    if ($files === []) {
+        echo "No backups yet. Run: php bin/console db:backup\n";
+
+        return 0;
+    }
+
+    printf("%-34s %-10s %s\n", 'FILE', 'SIZE', 'WRITTEN (UTC)');
+    foreach ($files as $file) {
+        printf("%-34s %-10s %s\n", $file->name, $file->humanSize(), gmdate('Y-m-d H:i', $file->modifiedAt));
+    }
+
+    return 0;
+}
+
+function restoreDrill(Application $app, array $options): int
+{
+    $path = '';
+    $target = null;
+    $keep = false;
+
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--file=')) {
+            $path = substr($option, 7);
+        }
+        if (str_starts_with($option, '--database=')) {
+            $target = substr($option, 11);
+        }
+        if ($option === '--keep') {
+            $keep = true;
+        }
+    }
+
+    try {
+        $file = $path === '' ? $app->backups()->latest() : $app->backups()->open($path);
+
+        if ($file === null) {
+            fwrite(STDERR, "No backup found. Run: php bin/console db:backup\n");
+
+            return 1;
+        }
+
+        echo 'restoring ' . $file->name . PHP_EOL;
+        $result = $app->backups()->verify($file, $target, $keep);
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Restore drill failed: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    printf(
+        "%s: %d tables, %d rows\n",
+        $result['target'],
+        $result['tables'],
+        $result['rows'],
+    );
+
+    if ($result['mismatches'] !== []) {
+        fwrite(STDERR, "Row counts do not match:\n");
+        foreach ($result['mismatches'] as $mismatch) {
+            fwrite(STDERR, '  ' . $mismatch . PHP_EOL);
+        }
+
+        return 1;
+    }
+
+    echo $result['dropped'] ? "scratch database dropped\n" : "scratch database left in place\n";
+    echo "backup verified: the file restores to identical row counts\n";
+
+    return 0;
+}
+
+function reviewLogs(Application $app, array $options): int
+{
+    $level = 'error';
+    $limit = 30;
+
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--level=')) {
+            $level = strtolower(substr($option, 8));
+        }
+        if (str_starts_with($option, '--limit=')) {
+            $limit = max(1, min((int) substr($option, 8), 200));
+        }
+    }
+
+    $records = $app->logReader()->recent($level, $limit);
+
+    if ($records === []) {
+        echo 'No ' . $level . ' entries in the retained logs.' . PHP_EOL;
+
+        return 0;
+    }
+
+    foreach ($records as $record) {
+        printf(
+            "%s  %-7s %s  %s\n",
+            str_replace('T', ' ', substr($record->timestamp, 0, 19)),
+            strtoupper($record->level),
+            $record->message,
+            $record->contextLine(),
+        );
+    }
+
+    return 0;
+}
+
+function printDiagnostics(Application $app): int
+{
+    $failed = 0;
+
+    try {
+        $checks = $app->diagnostics()->checks();
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Diagnostics unavailable: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    foreach ($checks as $check) {
+        if ($check['state'] === 'fail') {
+            $failed++;
+        }
+        printf("[%-4s] %-22s %s\n", strtoupper($check['state']), $check['label'], $check['value']);
+    }
+
+    echo PHP_EOL . ($failed === 0 ? "No failing checks.\n" : $failed . " check(s) failing.\n");
+
+    return $failed === 0 ? 0 : 1;
 }
 
 function generatePassword(): string

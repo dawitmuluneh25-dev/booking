@@ -27,3 +27,7 @@ Thumbs.db
 /coverage/
 *.log
 *.sql.gz
+
+# Backups
+/var/backups/*
+!/var/backups/.gitkeep

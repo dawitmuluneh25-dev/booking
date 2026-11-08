@@ -25,19 +25,34 @@ final class Connection
      *     charset: string
      * } $config
      */
-    public static function create(array $config): PDO
+    public static function create(array $config, bool $administrative = false): PDO
     {
-        if ($config['database'] === '' || $config['username'] === '') {
+        if ($config['username'] === '') {
             throw new RuntimeException('Database credentials are not configured.');
         }
 
+        if ($config['database'] === '' && !$administrative) {
+            throw new RuntimeException('DB_NAME is not configured.');
+        }
+
         $dsn = sprintf(
-            'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+            'mysql:host=%s;port=%d;%scharset=%s',
             $config['host'],
             $config['port'],
-            $config['database'],
+            $config['database'] === '' ? '' : 'dbname=' . $config['database'] . ';',
             $config['charset'],
         );
+
+        if ($administrative) {
+            // Administrative connection: used only to create or drop a scratch
+            // schema for a restore drill, never to serve a request.
+            return new PDO($dsn, $config['username'], $config['password'], [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::ATTR_TIMEOUT => 5,
+            ]);
+        }
 
         $pdo = new PDO($dsn, $config['username'], $config['password'], [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,

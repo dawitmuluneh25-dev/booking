@@ -81,6 +81,45 @@ final class Config
         return $this->root('var/logs/app.log');
     }
 
+    public function logDirectory(): string
+    {
+        return $this->root('var/logs');
+    }
+
+    public function backupDirectory(): string
+    {
+        return $this->root('var/backups');
+    }
+
+    /** Days after which the personal data of a finished booking is redacted. */
+    public function retentionDays(): int
+    {
+        return max(1, Env::int('RETENTION_DAYS', 730));
+    }
+
+    /** `log` (development) or `http` (a gateway bridge you operate). */
+    public function notificationDriver(): string
+    {
+        $driver = strtolower((string) Env::get('NOTIFY_DRIVER', 'log'));
+
+        return in_array($driver, ['log', 'http'], true) ? $driver : 'log';
+    }
+
+    public function notificationUrl(): string
+    {
+        return (string) Env::get('NOTIFY_HTTP_URL', '');
+    }
+
+    public function notificationToken(): string
+    {
+        return (string) Env::get('NOTIFY_HTTP_TOKEN', '');
+    }
+
+    public function notificationTimeout(): int
+    {
+        return max(1, min(Env::int('NOTIFY_HTTP_TIMEOUT', 5), 30));
+    }
+
     public function isProduction(): bool
     {
         return $this->environment() === 'production';

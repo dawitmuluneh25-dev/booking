@@ -21,4 +21,12 @@ final class RoleTest extends TestCase
         self::assertTrue(Role::Staff->can(Permission::BookingsManage));
         self::assertFalse(Role::Staff->can(Permission::UsersManage));
     }
+
+    public function testOnlyAdminCanConfigureTheClinicOrReadDiagnostics(): void
+    {
+        self::assertTrue(Role::Admin->can(Permission::ClinicConfigure));
+        self::assertTrue(Role::Admin->can(Permission::SystemMaintain));
+        self::assertFalse(Role::Staff->can(Permission::ClinicConfigure));
+        self::assertFalse(Role::Staff->can(Permission::SystemMaintain));
+    }
 }

@@ -12,4 +12,6 @@ enum Permission: string
 {
     case BookingsManage = 'bookings.manage';
     case UsersManage = 'users.manage';
+    case ClinicConfigure = 'clinic.configure';
+    case SystemMaintain = 'system.maintain';
 }
