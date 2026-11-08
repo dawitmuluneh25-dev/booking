@@ -182,6 +182,27 @@ final class BookAppointmentTest extends TestCase
         );
     }
 
+    public function testTheProcedureCoordinatorCanBook(): void
+    {
+        // The coordinator arranges the session, so creating the appointment is
+        // theirs; the referral must still have been released by staff first.
+        $referral = $this->approvedReferral();
+
+        $appointment = $this->command->execute(
+            new Actor(5, Role::Coordinator),
+            $referral->id,
+            ['resource_id' => 2, 'starts_at' => '2026-11-20 11:00:00', 'duration_minutes' => 30],
+            self::NOW,
+        );
+
+        self::assertSame($referral->id, $appointment->referralId);
+        self::assertCount(2, $this->appointments->occupiedSlots(2));
+
+        $reloaded = $this->referrals->findById($referral->id);
+        self::assertNotNull($reloaded);
+        self::assertSame(ReferralStatus::ConvertedToAppointment, $reloaded->status);
+    }
+
     public function testAPatientCannotBook(): void
     {
         $referral = $this->approvedReferral();

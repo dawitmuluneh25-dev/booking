@@ -144,7 +144,11 @@ enum ReferralStatus: string
             self::Declined,
             self::AlternativePathway => [Role::Radiologist],
             self::ApprovedForScheduling => [Role::Staff, Role::Admin],
-            self::ConvertedToAppointment => [Role::Staff, Role::Admin],
+            // The procedure coordinator arranges the session itself, so booking is
+            // theirs as well as the desk's. Releasing for scheduling stays with
+            // staff and admin: deciding that a referral is ready to be booked is
+            // reception's call, not the person who then finds it a room.
+            self::ConvertedToAppointment => [Role::Staff, Role::Admin, Role::Coordinator],
             self::Closed => [Role::Staff, Role::Admin],
             self::Cancelled => [Role::Patient, Role::Physician, Role::Staff, Role::Admin],
             self::Submitted => [],

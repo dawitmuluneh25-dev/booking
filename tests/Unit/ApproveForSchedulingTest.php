@@ -78,6 +78,16 @@ final class ApproveForSchedulingTest extends TestCase
         $this->command->execute(new Actor(7, Role::Patient), $referral->id, self::NOW);
     }
 
+    public function testTheCoordinatorCannotReleaseForScheduling(): void
+    {
+        // The coordinator books the session once it is released; deciding that a
+        // referral is ready to be booked is reception's call.
+        $referral = $this->approvedReferral();
+
+        $this->expectException(ReferralTransitionException::class);
+        $this->command->execute(new Actor(5, Role::Coordinator), $referral->id, self::NOW);
+    }
+
     public function testTheReferrerCannotReleaseIt(): void
     {
         $referral = $this->approvedReferral();
