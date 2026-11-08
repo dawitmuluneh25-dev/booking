@@ -1,6 +1,7 @@
 <?php
 /**
  * @var string|null $error
+ * @var string|null $notice
  * @var string      $email
  * @var string      $next
  */
@@ -9,6 +10,10 @@
     <p class="eyebrow">Staff access</p>
     <h1>Sign in</h1>
     <p class="muted">Managing bookings requires an account.</p>
+
+    <?php if ($notice !== null): ?>
+        <div class="alert alert-success" role="status"><?= e($notice) ?></div>
+    <?php endif; ?>
 
     <?php if ($error !== null): ?>
         <div class="alert alert-error" role="alert"><?= e($error) ?></div>

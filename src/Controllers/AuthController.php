@@ -60,7 +60,10 @@ final class AuthController
         $this->auth->logout();
         Session::flash('notice', 'Signed out.');
 
-        return Response::redirect('/');
+        // The sign-in page owns the notice: redirecting to `/` left the flash
+        // in the session, and the next page that rendered a notice claimed the
+        // user had just signed out after they had signed back in.
+        return Response::redirect('/login');
     }
 
     private function loginForm(Request $request, ?string $error, ?string $email, int $status): Response
@@ -68,6 +71,7 @@ final class AuthController
         return Response::html($this->view->render('auth/login', [
             'title' => 'Staff sign in',
             'error' => $error,
+            'notice' => Session::pullFlash('notice'),
             'email' => $email ?? '',
             'next' => $this->safeNext($request),
             'currentUser' => null,

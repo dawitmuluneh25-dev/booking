@@ -42,8 +42,8 @@
                 <tbody>
                     <?php foreach ($bookings as $booking): ?>
                         <tr>
-                            <td><a href="/bookings/<?= e(rawurlencode($booking->reference)) ?>"><?= e($booking->reference) ?></a></td>
-                            <td><?= e($booking->scheduledAt($timezone)->format('D j M Y, H:i')) ?></td>
+                            <td class="cell-ref"><a href="/bookings/<?= e(rawurlencode($booking->reference)) ?>"><?= e($booking->reference) ?></a></td>
+                            <td class="cell-when"><?= e($booking->scheduledAt($timezone)->format('D j M Y, H:i')) ?></td>
                             <td><?= e($booking->serviceLabel()) ?></td>
                             <td><?= e($booking->patientName) ?></td>
                             <td>

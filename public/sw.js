@@ -9,7 +9,7 @@
  * No page containing submitted data is ever stored, so a stale cache can never
  * present a booking as if it were current.
  */
-const CACHE_NAME = 'booking-shell-v3';
+const CACHE_NAME = 'booking-shell-v6';
 
 const PRECACHE = [
     '/offline.html',
