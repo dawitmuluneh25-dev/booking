@@ -14,6 +14,7 @@ use App\Domain\ClinicCalendar;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\IdempotencyStore;
+use App\Domain\RecordClinicalDecision;
 use App\Domain\ReferralRepository;
 use App\Domain\RetentionRepository;
 use App\Domain\SubmitElectiveReferral;
@@ -65,6 +66,8 @@ final class Application
     private ?IdempotencyStore $idempotency = null;
 
     private ?SubmitElectiveReferral $submitReferral = null;
+
+    private ?RecordClinicalDecision $recordDecision = null;
 
     private ?Kernel $kernel = null;
 
@@ -166,6 +169,15 @@ final class Application
     public function referrals(): ReferralRepository
     {
         return $this->referrals ??= new PdoReferralRepository($this->pdo(), $this->transaction());
+    }
+
+    public function recordClinicalDecision(): RecordClinicalDecision
+    {
+        return $this->recordDecision ??= new RecordClinicalDecision(
+            $this->referrals(),
+            new Validator(),
+            $this->transaction(),
+        );
     }
 
     public function idempotency(): IdempotencyStore

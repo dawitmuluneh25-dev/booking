@@ -39,4 +39,18 @@ interface ReferralRepository
         ?string $reason,
         string $occurredAtUtc,
     ): Referral;
+
+    /**
+     * The decision that currently stands: the row nothing supersedes.
+     *
+     * Newest-by-timestamp would be wrong after a correction, because the corrected
+     * row is not necessarily the later one.
+     */
+    public function currentDecision(int $referralId): ?ClinicalDecision;
+
+    /**
+     * Append a decision. The row is never updated afterwards; the database allows
+     * each decision to be superseded once, which keeps the chain linear.
+     */
+    public function recordDecision(ClinicalDecision $decision): ClinicalDecision;
 }

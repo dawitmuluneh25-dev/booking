@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Actor;
+use App\Domain\ClinicalDecision;
 use App\Domain\Referral;
 use App\Domain\ReferralRepository;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
+use RuntimeException;
 
 /**
  * A referral store with the same guarantees as the PDO adapter, without MySQL.
@@ -24,6 +26,9 @@ final class InMemoryReferralRepository implements ReferralRepository
 
     /** @var list<array{referral_id: int, from: ?string, to: string, actor_role: string, reason: ?string, occurred_at: string}> */
     private array $history = [];
+
+    /** @var list<ClinicalDecision> */
+    private array $decisions = [];
 
     private int $nextId = 1;
 
@@ -86,6 +91,10 @@ final class InMemoryReferralRepository implements ReferralRepository
             throw ReferralTransitionException::forActor($stored->status, $target, $actor->role);
         }
 
+        if ($stored->status->requiresReason($target) && ($reason === null || trim($reason) === '')) {
+            throw ReferralTransitionException::forMissingReason($stored->status, $target);
+        }
+
         $moved = $stored->withStatus($target, $stored->version + 1);
         $this->referrals[$moved->id] = $moved;
 
@@ -120,6 +129,51 @@ final class InMemoryReferralRepository implements ReferralRepository
         }
 
         return $rows;
+    }
+
+    public function currentDecision(int $referralId): ?ClinicalDecision
+    {
+        $standing = null;
+
+        foreach ($this->decisions as $decision) {
+            if ($decision->referralId !== $referralId) {
+                continue;
+            }
+
+            if ($this->isSuperseded($decision->id)) {
+                continue;
+            }
+
+            if ($standing === null || $decision->decidedAtUtc >= $standing->decidedAtUtc) {
+                $standing = $decision;
+            }
+        }
+
+        return $standing;
+    }
+
+    public function recordDecision(ClinicalDecision $decision): ClinicalDecision
+    {
+        if ($decision->supersedesId !== null && $this->isSuperseded($decision->supersedesId)) {
+            // Mirrors uq_decisions_supersedes: a decision is replaced at most once.
+            throw new RuntimeException('That decision has already been superseded.');
+        }
+
+        $stored = $decision->withIdentity(count($this->decisions) + 1);
+        $this->decisions[] = $stored;
+
+        return $stored;
+    }
+
+    private function isSuperseded(int $decisionId): bool
+    {
+        foreach ($this->decisions as $decision) {
+            if ($decision->supersedesId === $decisionId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function count(): int

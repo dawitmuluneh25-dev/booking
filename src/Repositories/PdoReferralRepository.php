@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Domain\Actor;
+use App\Domain\ClinicalDecision;
 use App\Domain\Referral;
 use App\Domain\ReferralRepository;
 use App\Domain\ReferralStatus;
@@ -121,6 +122,10 @@ final class PdoReferralRepository implements ReferralRepository
             throw ReferralTransitionException::forActor($referral->status, $target, $actor->role);
         }
 
+        if ($referral->status->requiresReason($target) && ($reason === null || trim($reason) === '')) {
+            throw ReferralTransitionException::forMissingReason($referral->status, $target);
+        }
+
         return $this->transaction->run(
             function () use ($referral, $target, $actor, $reason, $occurredAtUtc): Referral {
                 $sets = [
@@ -175,6 +180,63 @@ final class PdoReferralRepository implements ReferralRepository
                 );
 
                 return $referral->withStatus($target, $referral->version + 1);
+            },
+        );
+    }
+
+    public function currentDecision(int $referralId): ?ClinicalDecision
+    {
+        // "Not superseded" beats "newest", because a correction is not always the
+        // later row and the standing decision is the one nobody replaced.
+        $statement = $this->pdo->prepare(
+            'SELECT d.* FROM clinical_decisions d
+              WHERE d.referral_id = :referral_id
+                AND NOT EXISTS (
+                    SELECT 1 FROM clinical_decisions s WHERE s.supersedes_decision_id = d.id
+                )
+              ORDER BY d.decided_at DESC, d.id DESC
+              LIMIT 1'
+        );
+        $statement->execute(['referral_id' => $referralId]);
+
+        /** @var array<string, mixed>|false $row */
+        $row = $statement->fetch();
+
+        return $row === false ? null : ClinicalDecision::fromRow($row);
+    }
+
+    public function recordDecision(ClinicalDecision $decision): ClinicalDecision
+    {
+        return $this->transaction->run(
+            function () use ($decision): ClinicalDecision {
+                $insert = $this->pdo->prepare(
+                    'INSERT INTO clinical_decisions
+                        (referral_id, decision_type, rationale, approved_technique, modality,
+                         sedation, estimated_duration_minutes, preprocedure_conditions,
+                         redirect_destination, information_requested, decided_by_user_id,
+                         decided_at, supersedes_decision_id)
+                     VALUES
+                        (:referral_id, :decision_type, :rationale, :technique, :modality,
+                         :sedation, :duration, :preprocedure, :redirect, :information,
+                         :decided_by, :decided_at, :supersedes)'
+                );
+                $insert->execute([
+                    'referral_id' => $decision->referralId,
+                    'decision_type' => $decision->type->value,
+                    'rationale' => $decision->rationale,
+                    'technique' => $decision->technique,
+                    'modality' => $decision->modality,
+                    'sedation' => $decision->sedation,
+                    'duration' => $decision->estimatedDurationMinutes,
+                    'preprocedure' => $decision->preprocedureConditions,
+                    'redirect' => $decision->redirectDestination,
+                    'information' => $decision->informationRequested,
+                    'decided_by' => $decision->decidedByUserId,
+                    'decided_at' => $decision->decidedAtUtc,
+                    'supersedes' => $decision->supersedesId,
+                ]);
+
+                return $decision->withIdentity((int) $this->pdo->lastInsertId());
             },
         );
     }

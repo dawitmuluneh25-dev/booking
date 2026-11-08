@@ -9,6 +9,8 @@ use App\Bootstrap\Env;
 use App\Database\Connection;
 use App\Database\PdoTransaction;
 use App\Domain\Actor;
+use App\Domain\ClinicalDecision;
+use App\Domain\ClinicalDecisionType;
 use App\Domain\Referral;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
@@ -65,6 +67,13 @@ final class ReferralRepositoryTest extends TestCase
         // to orphan it, then the referrals, then the probe account.
         if ($this->pdo !== null) {
             foreach ($this->createdReferralIds as $id) {
+                // Decisions point at referrals with ON DELETE RESTRICT, and their
+                // own supersede chain points at themselves, so clear the chain from
+                // the newest row backwards.
+                $this->pdo->exec(
+                    'DELETE FROM clinical_decisions WHERE referral_id = ' . $id
+                    . ' ORDER BY supersedes_decision_id IS NULL, id DESC'
+                );
                 $this->pdo->exec('DELETE FROM referral_status_history WHERE referral_id = ' . $id);
                 $this->pdo->exec('DELETE FROM referrals WHERE id = ' . $id);
             }
@@ -188,6 +197,89 @@ final class ReferralRepositoryTest extends TestCase
         } catch (PDOException) {
             self::assertSame('submitted', $this->reload($referral->id)->status->value);
         }
+    }
+
+    public function testADecisionIsStoredAndBecomesTheStandingDecision(): void
+    {
+        $referral = $this->moveToClinicalReview();
+
+        $decision = $this->repository()->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Approved, null),
+        );
+
+        self::assertGreaterThan(0, $decision->id);
+        self::assertSame(ClinicalDecisionType::Approved, $decision->type);
+
+        $standing = $this->repository()->currentDecision($referral->id);
+        self::assertNotNull($standing);
+        self::assertSame($decision->id, $standing->id);
+        self::assertSame('45', (string) $standing->estimatedDurationMinutes);
+        self::assertNull($standing->supersedesId);
+    }
+
+    public function testADecisionCanBeSupersededOnceAndNotTwice(): void
+    {
+        $referral = $this->moveToClinicalReview();
+
+        $first = $this->repository()->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Deferred, null),
+        );
+
+        $second = $this->repository()->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Approved, $first->id),
+        );
+
+        $standing = $this->repository()->currentDecision($referral->id);
+        self::assertNotNull($standing);
+        self::assertSame($second->id, $standing->id);
+
+        // uq_decisions_supersedes: rewriting history by replacing the same decision
+        // twice is refused by the database, not merely by the command.
+        $this->expectException(PDOException::class);
+        $this->repository()->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Declined, $first->id),
+        );
+    }
+
+    private function moveToClinicalReview(): Referral
+    {
+        $referral = $this->createReferral();
+        $staff = new Actor($this->actorUserId, Role::Staff);
+
+        $steps = [
+            ReferralStatus::Received,
+            ReferralStatus::AdministrativeReview,
+            ReferralStatus::ClinicalReview,
+        ];
+
+        foreach ($steps as $step) {
+            $referral = $this->repository()->transition($referral, $step, $staff, null, self::NOW);
+        }
+
+        return $referral;
+    }
+
+    private function decision(
+        int $referralId,
+        ClinicalDecisionType $type,
+        ?int $supersedesId,
+    ): ClinicalDecision {
+        return new ClinicalDecision(
+            id: 0,
+            referralId: $referralId,
+            type: $type,
+            rationale: 'Two centimetre segment VI lesion, safe window, suitable for percutaneous biopsy.',
+            technique: 'Percutaneous core biopsy',
+            modality: 'Ultrasound',
+            sedation: 'Local anaesthetic',
+            estimatedDurationMinutes: 45,
+            preprocedureConditions: null,
+            redirectDestination: null,
+            informationRequested: null,
+            decidedByUserId: $this->actorUserId,
+            decidedAtUtc: self::NOW,
+            supersedesId: $supersedesId,
+        );
     }
 
     private function repository(): PdoReferralRepository
