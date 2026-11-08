@@ -12,6 +12,10 @@
 !/var/cache/.gitkeep
 !/var/logs/.gitkeep
 
+# Application data — may hold patient records, so it must never be committed.
+# Only the schema (database/migrations) belongs in version control.
+/var/data/
+
 # Local tooling (portable PHP/Composer live outside the repo)
 /.tools/
 
