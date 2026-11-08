@@ -11,6 +11,7 @@ use App\Database\PdoTransaction;
 use App\Domain\Actor;
 use App\Domain\Role;
 use App\Domain\UrgentCase;
+use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
 use App\Domain\UrgentStatus;
 use App\Domain\UrgentTransitionException;
@@ -138,6 +139,61 @@ final class UrgentCaseRepositoryTest extends TestCase
 
         $this->expectException(UrgentTransitionException::class);
         $this->repository()->acknowledge($stale, $staff, 'application', null, self::NOW);
+    }
+
+    public function testAContactAttemptIsStoredAndTheCaseBecomesContacting(): void
+    {
+        $case = $this->create();
+        $staff = new Actor($this->actorUserId, Role::Staff);
+        $case = $this->repository()->acknowledge($case, $staff, 'application', null, self::NOW);
+
+        $moved = $this->repository()->recordContactAttempt(
+            $case,
+            new UrgentContactAttempt(
+                caseId: $case->id,
+                attemptedByUserId: $this->actorUserId,
+                contactRole: 'patient_family',
+                contactName: 'Tesfaye Alemu',
+                contactPhone: '+251911222444',
+                channel: 'telephone',
+                outcome: 'answered',
+                notes: null,
+                attemptedAtUtc: self::NOW,
+            ),
+        );
+
+        self::assertSame(UrgentCoordination::Contacting, $moved->coordination);
+
+        $statement = $this->pdo()->prepare(
+            'SELECT contact_phone, outcome FROM urgent_contact_attempts WHERE urgent_case_id = :id'
+        );
+        $statement->execute(['id' => $case->id]);
+        $row = $statement->fetch();
+        self::assertIsArray($row);
+        $phone = is_scalar($row['contact_phone'] ?? null) ? (string) $row['contact_phone'] : '';
+        $outcome = is_scalar($row['outcome'] ?? null) ? (string) $row['outcome'] : '';
+
+        self::assertSame('+251911222444', $phone);
+        self::assertSame('answered', $outcome);
+    }
+
+    public function testTheDatabaseRefusesATelephoneAttemptWithNoNumber(): void
+    {
+        $case = $this->create();
+        $refused = false;
+
+        try {
+            $this->pdo()->exec(
+                'INSERT INTO urgent_contact_attempts
+                    (urgent_case_id, attempted_by_user_id, contact_role, channel, outcome, attempted_at)
+                 VALUES (' . $case->id . ', ' . $this->actorUserId
+                . ", 'hospital', 'telephone', 'no_answer', UTC_TIMESTAMP())"
+            );
+        } catch (PDOException) {
+            $refused = true;
+        }
+
+        self::assertTrue($refused, 'A telephone attempt without a number was stored.');
     }
 
     public function testAStaleUrgencyTransitionIsRefused(): void

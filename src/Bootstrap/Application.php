@@ -15,7 +15,13 @@ use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\IdempotencyStore;
 use App\Domain\AcknowledgeUrgentCase;
+use App\Domain\AppointmentRepository;
 use App\Domain\ApproveForScheduling;
+use App\Domain\BookAppointment;
+use App\Domain\CompleteProcedureSession;
+use App\Domain\EscalateUrgentCase;
+use App\Domain\RecordPatientArrival;
+use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\RegisterUrgentCase;
 use App\Domain\ReferralRepository;
@@ -35,6 +41,7 @@ use App\Http\Kernel;
 use App\Http\Request;
 use App\Http\Response;
 use App\Http\Router;
+use App\Repositories\PdoAppointmentRepository;
 use App\Repositories\PdoAuditRepository;
 use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
@@ -80,6 +87,18 @@ final class Application
     private ?ApproveForScheduling $approveForScheduling = null;
 
     private ?UrgentCaseRepository $urgentCases = null;
+
+    private ?AppointmentRepository $appointments = null;
+
+    private ?BookAppointment $bookAppointment = null;
+
+    private ?RecordPatientArrival $recordArrival = null;
+
+    private ?CompleteProcedureSession $completeSession = null;
+
+    private ?RecordUrgentContactAttempt $recordUrgentContact = null;
+
+    private ?EscalateUrgentCase $escalateUrgent = null;
 
     private ?RegisterUrgentCase $registerUrgent = null;
 
@@ -219,6 +238,40 @@ final class Application
     public function acknowledgeUrgentCase(): AcknowledgeUrgentCase
     {
         return $this->acknowledgeUrgent ??= new AcknowledgeUrgentCase($this->urgentCases());
+    }
+
+    public function appointments(): AppointmentRepository
+    {
+        return $this->appointments ??= new PdoAppointmentRepository($this->pdo(), $this->transaction());
+    }
+
+    public function bookAppointment(): BookAppointment
+    {
+        return $this->bookAppointment ??= new BookAppointment(
+            $this->referrals(),
+            $this->appointments(),
+            $this->transaction(),
+        );
+    }
+
+    public function recordPatientArrival(): RecordPatientArrival
+    {
+        return $this->recordArrival ??= new RecordPatientArrival($this->appointments());
+    }
+
+    public function completeProcedureSession(): CompleteProcedureSession
+    {
+        return $this->completeSession ??= new CompleteProcedureSession($this->appointments());
+    }
+
+    public function recordUrgentContactAttempt(): RecordUrgentContactAttempt
+    {
+        return $this->recordUrgentContact ??= new RecordUrgentContactAttempt($this->urgentCases());
+    }
+
+    public function escalateUrgentCase(): EscalateUrgentCase
+    {
+        return $this->escalateUrgent ??= new EscalateUrgentCase($this->urgentCases());
     }
 
     public function idempotency(): IdempotencyStore

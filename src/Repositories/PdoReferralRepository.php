@@ -6,6 +6,7 @@ namespace App\Repositories;
 
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
+use App\Domain\OutboundMessage;
 use App\Domain\Referral;
 use App\Domain\ReferralRepository;
 use App\Domain\ReferralStatus;
@@ -42,10 +43,15 @@ final class PdoReferralRepository implements ReferralRepository
     ) {
     }
 
-    public function create(Referral $referral, Actor $actor, string $occurredAtUtc): Referral
-    {
+    /** @param list<OutboundMessage> $messages */
+    public function create(
+        Referral $referral,
+        Actor $actor,
+        string $occurredAtUtc,
+        array $messages = [],
+    ): Referral {
         return $this->transaction->run(
-            function () use ($referral, $actor, $occurredAtUtc): Referral {
+            function () use ($referral, $actor, $occurredAtUtc, $messages): Referral {
                 $insert = $this->pdo->prepare(
                     'INSERT INTO referrals
                         (reference, status, version, patient_name, patient_phone, patient_dob,
@@ -88,6 +94,7 @@ final class PdoReferralRepository implements ReferralRepository
                 // The opening row records who created the request, not just that it
                 // exists; a submission without its history row would break the chain.
                 $this->appendHistory($id, null, $referral->status, $actor, null, $occurredAtUtc);
+                $this->enqueue($id, $messages);
 
                 return $referral->withIdentity($id);
             },
@@ -252,6 +259,41 @@ final class PdoReferralRepository implements ReferralRepository
         $row = $statement->fetch();
 
         return $row === false ? null : Referral::fromRow($row);
+    }
+
+    /**
+     * Insert the notifications inside the caller's transaction. `INSERT IGNORE`
+     * plus the unique key on (referral_id, template, channel) makes enqueueing
+     * idempotent, so a retried submission does not send twice.
+     *
+     * @param list<OutboundMessage> $messages
+     */
+    private function enqueue(int $referralId, array $messages): void
+    {
+        if ($messages === []) {
+            return;
+        }
+
+        $statement = $this->pdo->prepare(
+            "INSERT IGNORE INTO notification_outbox
+                (referral_id, channel, template, recipient, payload, status, attempts,
+                 available_at, created_at, updated_at)
+             VALUES
+                (:referral_id, :channel, :template, :recipient, :payload, 'pending', 0,
+                 UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
+
+        foreach ($messages as $message) {
+            $payload = json_encode($message->payload, JSON_UNESCAPED_SLASHES);
+
+            $statement->execute([
+                'referral_id' => $referralId,
+                'channel' => $message->channel->value,
+                'template' => $message->template->value,
+                'recipient' => $message->recipient,
+                'payload' => $payload === false ? '{}' : $payload,
+            ]);
+        }
     }
 
     private function appendHistory(

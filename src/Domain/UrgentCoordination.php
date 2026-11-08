@@ -79,8 +79,8 @@ enum UrgentCoordination: string
             self::Acknowledged => [Role::Staff, Role::Coordinator, Role::Radiologist, Role::Admin],
             self::Contacting => [Role::Staff, Role::Coordinator, Role::Radiologist],
             self::Coordinating,
-            self::Escalated,
             self::Resolved => [Role::Coordinator, Role::Radiologist],
+            self::Escalated => $this->escalationActors(),
             self::Unacknowledged => [],
         };
     }
@@ -91,17 +91,30 @@ enum UrgentCoordination: string
     }
 
     /**
-     * Whether coordination work may proceed. Contact and escalation are allowed
-     * before acknowledgement — a child must not wait for a formality — but the
-     * case cannot be reported resolved without someone having owned it.
+     * Whether the case may be reported resolved.
+     *
+     * Resolving requires that somebody owns the case; every other target is
+     * governed by the transition table alone, and this method deliberately says
+     * nothing about them. An earlier version claimed escalation could skip
+     * acknowledgement, which contradicted that table — an unacknowledged case is
+     * surfaced by the urgent fallback list instead (WF-13), not by escalating it
+     * past the state nobody has picked up.
      */
     public function canProgressTo(self $target): bool
     {
-        if ($target === self::Resolved) {
-            return $this !== self::Unacknowledged;
-        }
+        return $target !== self::Resolved || $this !== self::Unacknowledged;
+    }
 
-        return true;
+    /**
+     * Roles that may escalate. Separate from llowedActors() because escalation
+     * recurs: a case already escalated can be escalated again, and at that point
+     * the transition table has no edge left to consult.
+     *
+     * @return list<Role>
+     */
+    public function escalationActors(): array
+    {
+        return [Role::Coordinator, Role::Radiologist];
     }
 
     public function isTerminal(): bool

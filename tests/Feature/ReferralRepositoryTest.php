@@ -11,6 +11,9 @@ use App\Database\PdoTransaction;
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
+use App\Domain\NotificationChannel;
+use App\Domain\NotificationTemplate;
+use App\Domain\OutboundMessage;
 use App\Domain\Referral;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
@@ -298,6 +301,105 @@ final class ReferralRepositoryTest extends TestCase
         }
 
         return $this->pdo;
+    }
+
+    public function testTheConfirmationIsEnqueuedWithTheReferral(): void
+    {
+        $referral = $this->repository()->create(
+            $this->referralEntity('RF-OUTBOX-1'),
+            new Actor($this->actorUserId, Role::Patient),
+            self::NOW,
+            [
+                new OutboundMessage(
+                    channel: NotificationChannel::Sms,
+                    template: NotificationTemplate::ReferralReceived,
+                    recipient: '+251911000333',
+                    payload: ['reference' => 'RF-OUTBOX-1'],
+                ),
+            ],
+        );
+        $this->createdReferralIds[] = $referral->id;
+
+        $statement = $this->pdo()->prepare(
+            'SELECT referral_id, channel, template FROM notification_outbox WHERE referral_id = :id'
+        );
+        $statement->execute(['id' => $referral->id]);
+        $row = $statement->fetch();
+
+        self::assertIsArray($row);
+        $channel = is_scalar($row['channel'] ?? null) ? (string) $row['channel'] : '';
+        $template = is_scalar($row['template'] ?? null) ? (string) $row['template'] : '';
+
+        self::assertSame('sms', $channel);
+        self::assertSame('referral_received', $template);
+    }
+
+    public function testAFailedOuterScopeLeavesNeitherTheReferralNorItsNotification(): void
+    {
+        // The notification is written inside the caller's unit of work, so a command
+        // that fails after enqueueing must not leave a referral without its message
+        // — or a message without its referral (WF-14).
+        $reference = 'RF-OUTBOX-2';
+
+        try {
+            (new PdoTransaction($this->pdo()))->run(
+                function () use ($reference): void {
+                    $this->repository()->create(
+                        $this->referralEntity($reference),
+                        new Actor($this->actorUserId, Role::Patient),
+                        self::NOW,
+                        [
+                            new OutboundMessage(
+                                channel: NotificationChannel::Sms,
+                                template: NotificationTemplate::ReferralReceived,
+                                recipient: '+251911000333',
+                                payload: ['reference' => $reference],
+                            ),
+                        ],
+                    );
+
+                    throw new RuntimeException('A later step in the command failed.');
+                },
+            );
+        } catch (RuntimeException) {
+            // Expected: the outer scope gave up.
+        }
+
+        $referrals = $this->pdo()->prepare('SELECT COUNT(*) FROM referrals WHERE reference = :reference');
+        $referrals->execute(['reference' => $reference]);
+        self::assertSame(0, (int) $referrals->fetchColumn());
+
+        $messages = $this->pdo()->prepare(
+            'SELECT COUNT(*) FROM notification_outbox WHERE payload LIKE :needle'
+        );
+        $messages->execute(['needle' => '%' . $reference . '%']);
+        self::assertSame(0, (int) $messages->fetchColumn());
+    }
+
+    private function referralEntity(string $reference): Referral
+    {
+        return new Referral(
+            id: 0,
+            reference: $reference,
+            status: ReferralStatus::Submitted,
+            version: 1,
+            patientName: 'Selamawit Girma',
+            patientPhone: '+251911000333',
+            patientDob: '1991-04-12',
+            guardianName: null,
+            guardianPhone: null,
+            guardianRelationship: null,
+            procedureCode: 'fluoroscopic_biopsy',
+            requestedUrgency: 'routine',
+            clinicalSummary: 'Six weeks of right upper quadrant pain; 2 cm hepatic lesion.',
+            targetSite: 'Liver, segment VI',
+            referringPhysicianName: null,
+            referringFacility: null,
+            referringPhysicianPhone: null,
+            submittedByUserId: $this->actorUserId,
+            submittedOnBehalfOf: 'self',
+            createdAtUtc: self::NOW,
+        );
     }
 
     private function createReferral(): Referral

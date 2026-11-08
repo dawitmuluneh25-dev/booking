@@ -172,7 +172,22 @@ final class SubmitElectiveReferral
             createdAtUtc: $createdAtUtc,
         );
 
-        $stored = $this->repository->create($referral, $actor, $createdAtUtc);
+        // The confirmation is enqueued in the same transaction as the referral and
+        // names only the reference; delivery happens later and its failure must not
+        // undo a submission that has already been accepted (WF-14).
+        $message = new OutboundMessage(
+            channel: NotificationChannel::Sms,
+            template: NotificationTemplate::ReferralReceived,
+            recipient: $data['guardian_phone'] !== '' && $data['guardian_phone'] !== $data['patient_phone']
+                ? $data['guardian_phone']
+                : $data['patient_phone'],
+            payload: [
+                'reference' => $referral->reference,
+                'procedure' => $referral->procedureCode,
+            ],
+        );
+
+        $stored = $this->repository->create($referral, $actor, $createdAtUtc, [$message]);
 
         if ($idempotencyKey !== null) {
             $this->idempotency->complete(self::SCOPE, $idempotencyKey, $stored->reference, $createdAtUtc);

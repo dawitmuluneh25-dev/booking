@@ -70,6 +70,13 @@ final class OutboundMessage
                 $reference,
                 $when,
             ),
+            // A referral acknowledgement says only that the request arrived. It
+            // carries no clinical judgement and no appointment time, because
+            // neither exists yet (WF-01, WF-11).
+            NotificationTemplate::ReferralReceived => sprintf(
+                'We received referral %s. The clinical team will review it and contact you.',
+                $reference,
+            ),
         };
     }
 }

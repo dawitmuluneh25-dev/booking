@@ -41,4 +41,26 @@ interface UrgentCaseRepository
         ?string $note,
         string $occurredAtUtc,
     ): UrgentCase;
+
+    /**
+     * Append a contact attempt and, when the case was only acknowledged, move
+     * coordination to `contacting` in the same transaction (WF-06).
+     */
+    public function recordContactAttempt(
+        UrgentCase $case,
+        UrgentContactAttempt $attempt,
+    ): UrgentCase;
+
+    /**
+     * Append an escalation. Escalation recurs, so this never replaces an earlier
+     * one; a case already escalated stays escalated and gains another row.
+     */
+    public function escalate(
+        UrgentCase $case,
+        Actor $actor,
+        int $level,
+        string $reason,
+        ?int $assignToUserId,
+        string $occurredAtUtc,
+    ): UrgentCase;
 }

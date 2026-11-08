@@ -13,6 +13,7 @@ enum NotificationTemplate: string
     case BookingRequested = 'booking_requested';
     case BookingConfirmed = 'booking_confirmed';
     case BookingCancelled = 'booking_cancelled';
+    case ReferralReceived = 'referral_received';
 
     public function label(): string
     {
@@ -20,6 +21,7 @@ enum NotificationTemplate: string
             self::BookingRequested => 'Booking request received',
             self::BookingConfirmed => 'Booking confirmed',
             self::BookingCancelled => 'Booking cancelled',
+            self::ReferralReceived => 'Referral received',
         };
     }
 }

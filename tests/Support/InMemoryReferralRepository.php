@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
+use App\Domain\OutboundMessage;
 use App\Domain\Referral;
 use App\Domain\ReferralRepository;
 use App\Domain\ReferralStatus;
@@ -32,8 +33,13 @@ final class InMemoryReferralRepository implements ReferralRepository
 
     private int $nextId = 1;
 
-    public function create(Referral $referral, Actor $actor, string $occurredAtUtc): Referral
-    {
+    /** @param list<OutboundMessage> $messages */
+    public function create(
+        Referral $referral,
+        Actor $actor,
+        string $occurredAtUtc,
+        array $messages = [],
+    ): Referral {
         $stored = $referral->withIdentity($this->nextId);
         $this->nextId++;
         $this->referrals[$stored->id] = $stored;

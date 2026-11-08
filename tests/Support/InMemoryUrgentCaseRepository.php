@@ -7,6 +7,8 @@ namespace Tests\Support;
 use App\Domain\Actor;
 use App\Domain\UrgentCase;
 use App\Domain\UrgentCaseRepository;
+use App\Domain\UrgentCaseNotFoundException;
+use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
 use App\Domain\UrgentStatus;
 use App\Domain\UrgentTransitionException;
@@ -26,6 +28,12 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
 
     /** @var list<array{case_id: int, user_id: int, channel: string, note: ?string}> */
     private array $acknowledgements = [];
+
+    /** @var list<array{case_id: int, user_id: int, contact_role: string, channel: string, outcome: string, phone: ?string}> */
+    private array $contacts = [];
+
+    /** @var list<array{case_id: int, level: int, reason: string, assignee: ?int}> */
+    private array $escalations = [];
 
     public function create(UrgentCase $case, Actor $actor, string $occurredAtUtc): UrgentCase
     {
@@ -138,6 +146,124 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
         $this->cases[$moved->id] = $moved;
 
         return $moved;
+    }
+
+    public function recordContactAttempt(
+        UrgentCase $case,
+        UrgentContactAttempt $attempt,
+    ): UrgentCase {
+        $stored = $this->cases[$case->id] ?? null;
+
+        if ($stored === null) {
+            throw new UrgentCaseNotFoundException($case->id);
+        }
+
+        $target = UrgentCoordination::Contacting;
+        $moves = $stored->coordination->canTransitionTo($target);
+
+        if (!$moves && $stored->coordination !== UrgentCoordination::Contacting) {
+            throw UrgentTransitionException::forCoordination(
+                $stored->coordination,
+                $target,
+                'This case is ' . $stored->coordination->value . ' and cannot take a new contact attempt.',
+            );
+        }
+
+        $this->contacts[] = [
+            'case_id' => $stored->id,
+            'user_id' => $attempt->attemptedByUserId,
+            'contact_role' => $attempt->contactRole,
+            'channel' => $attempt->channel,
+            'outcome' => $attempt->outcome,
+            'phone' => $attempt->contactPhone,
+        ];
+
+        if (!$moves) {
+            return $stored;
+        }
+
+        $moved = $stored->withCoordination($target, $stored->version + 1);
+        $this->cases[$moved->id] = $moved;
+
+        return $moved;
+    }
+
+    public function escalate(
+        UrgentCase $case,
+        Actor $actor,
+        int $level,
+        string $reason,
+        ?int $assignToUserId,
+        string $occurredAtUtc,
+    ): UrgentCase {
+        $stored = $this->cases[$case->id] ?? null;
+
+        if ($stored === null) {
+            throw new UrgentCaseNotFoundException($case->id);
+        }
+
+        $target = UrgentCoordination::Escalated;
+        $moves = $stored->coordination->canTransitionTo($target);
+
+        if (!$moves && $stored->coordination !== UrgentCoordination::Escalated) {
+            throw UrgentTransitionException::forCoordination(
+                $stored->coordination,
+                $target,
+                'This case is ' . $stored->coordination->value . ' and cannot be escalated.',
+            );
+        }
+
+        if (!in_array($actor->role, $stored->coordination->escalationActors(), true)) {
+            throw UrgentTransitionException::forCoordination(
+                $stored->coordination,
+                $target,
+                sprintf('The %s role may not escalate this case.', $actor->role->value),
+            );
+        }
+
+        $this->escalations[] = [
+            'case_id' => $stored->id,
+            'level' => $level,
+            'reason' => $reason,
+            'assignee' => $assignToUserId,
+        ];
+
+        if (!$moves) {
+            return $stored;
+        }
+
+        $moved = $stored->withCoordination($target, $stored->version + 1);
+        $this->cases[$moved->id] = $moved;
+
+        return $moved;
+    }
+
+    /** @return list<array{case_id: int, level: int, reason: string, assignee: ?int}> */
+    public function escalationsFor(int $caseId): array
+    {
+        $rows = [];
+
+        foreach ($this->escalations as $row) {
+            if ($row['case_id'] === $caseId) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /** @return list<array{case_id: int, user_id: int, contact_role: string, channel: string, outcome: string, phone: ?string}> */
+    public function contactsFor(int $caseId): array
+    {
+        $rows = [];
+
+        foreach ($this->contacts as $row) {
+            if ($row['case_id'] === $caseId) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
     }
 
     /** @return list<array{case_id: int, from: ?string, to: string, actor_role: string, reason: ?string}> */

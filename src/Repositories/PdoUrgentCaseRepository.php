@@ -8,6 +8,7 @@ use App\Domain\Actor;
 use App\Domain\Transaction;
 use App\Domain\UrgentCase;
 use App\Domain\UrgentCaseRepository;
+use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
 use App\Domain\UrgentStatus;
 use App\Domain\UrgentTransitionException;
@@ -206,6 +207,159 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
                         $case->coordination,
                         $target,
                         'Another person acknowledged this case first.',
+                    );
+                }
+
+                return $case->withCoordination($target, $case->version + 1);
+            },
+        );
+    }
+
+    public function recordContactAttempt(
+        UrgentCase $case,
+        UrgentContactAttempt $attempt,
+    ): UrgentCase {
+        $target = UrgentCoordination::Contacting;
+        $moves = $case->coordination->canTransitionTo($target);
+
+        if (!$moves && $case->coordination !== UrgentCoordination::Contacting) {
+            throw UrgentTransitionException::forCoordination(
+                $case->coordination,
+                $target,
+                'This case is ' . $case->coordination->value . ' and cannot take a new contact attempt.',
+            );
+        }
+
+        return $this->transaction->run(
+            function () use ($case, $attempt, $target, $moves): UrgentCase {
+                $insert = $this->pdo->prepare(
+                    'INSERT INTO urgent_contact_attempts
+                        (urgent_case_id, attempted_by_user_id, contact_role, contact_name,
+                         contact_phone, channel, outcome, notes, attempted_at)
+                     VALUES
+                        (:case_id, :user_id, :contact_role, :contact_name,
+                         :contact_phone, :channel, :outcome, :notes, :attempted_at)'
+                );
+                $insert->execute([
+                    'case_id' => $case->id,
+                    'user_id' => $attempt->attemptedByUserId,
+                    'contact_role' => $attempt->contactRole,
+                    'contact_name' => $attempt->contactName,
+                    'contact_phone' => $attempt->contactPhone,
+                    'channel' => $attempt->channel,
+                    'outcome' => $attempt->outcome,
+                    'notes' => $attempt->notes,
+                    'attempted_at' => $attempt->attemptedAtUtc,
+                ]);
+
+                if (!$moves) {
+                    return $case;
+                }
+
+                $update = $this->pdo->prepare(
+                    'UPDATE urgent_cases
+                        SET coordination_status = :target, version = version + 1, updated_at = :updated_at
+                      WHERE id = :id AND version = :version AND coordination_status = :expected'
+                );
+                $update->execute([
+                    'target' => $target->value,
+                    'updated_at' => $attempt->attemptedAtUtc,
+                    'id' => $case->id,
+                    'version' => $case->version,
+                    'expected' => $case->coordination->value,
+                ]);
+
+                if ($update->rowCount() !== 1) {
+                    throw UrgentTransitionException::forCoordination(
+                        $case->coordination,
+                        $target,
+                        'Another person updated this case first.',
+                    );
+                }
+
+                return $case->withCoordination($target, $case->version + 1);
+            },
+        );
+    }
+
+    public function escalate(
+        UrgentCase $case,
+        Actor $actor,
+        int $level,
+        string $reason,
+        ?int $assignToUserId,
+        string $occurredAtUtc,
+    ): UrgentCase {
+        $target = UrgentCoordination::Escalated;
+        $moves = $case->coordination->canTransitionTo($target);
+
+        // Escalating an already escalated case adds a row without moving it: the
+        // second escalation is a fact about the case, not a new state.
+        if (!$moves && $case->coordination !== UrgentCoordination::Escalated) {
+            throw UrgentTransitionException::forCoordination(
+                $case->coordination,
+                $target,
+                'This case is ' . $case->coordination->value . ' and cannot be escalated.',
+            );
+        }
+
+        if (!in_array($actor->role, $case->coordination->escalationActors(), true)) {
+            throw UrgentTransitionException::forCoordination(
+                $case->coordination,
+                $target,
+                sprintf('The %s role may not escalate this case.', $actor->role->value),
+            );
+        }
+
+        return $this->transaction->run(
+            function () use (
+                $case,
+                $actor,
+                $level,
+                $reason,
+                $assignToUserId,
+                $target,
+                $moves,
+                $occurredAtUtc,
+            ): UrgentCase {
+                $insert = $this->pdo->prepare(
+                    'INSERT INTO urgent_escalations
+                        (urgent_case_id, escalated_by_user_id, assigned_to_user_id,
+                         escalation_level, reason, escalated_at)
+                     VALUES
+                        (:case_id, :user_id, :assignee, :level, :reason, :escalated_at)'
+                );
+                $insert->execute([
+                    'case_id' => $case->id,
+                    'user_id' => $actor->userId,
+                    'assignee' => $assignToUserId,
+                    'level' => $level,
+                    'reason' => $reason,
+                    'escalated_at' => $occurredAtUtc,
+                ]);
+
+                if (!$moves) {
+                    return $case;
+                }
+
+                $update = $this->pdo->prepare(
+                    'UPDATE urgent_cases
+                        SET coordination_status = :target, version = version + 1, updated_at = :updated_at
+                      WHERE id = :id AND version = :version AND coordination_status = :expected'
+                );
+                $update->execute([
+                    'target' => $target->value,
+                    'updated_at' => $occurredAtUtc,
+                    'id' => $case->id,
+                    'version' => $case->version,
+                    'expected' => $case->coordination->value,
+                ]);
+
+                if ($update->rowCount() !== 1) {
+                    throw UrgentTransitionException::forCoordination(
+                        $case->coordination,
+                        $target,
+                        'Another person updated this case first.',
                     );
                 }
 

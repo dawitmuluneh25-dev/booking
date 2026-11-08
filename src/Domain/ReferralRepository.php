@@ -20,7 +20,19 @@ interface ReferralRepository
      * assigned id. `$occurredAtUtc` is passed in rather than read from the clock
      * inside the repository so a test can pin it.
      */
-    public function create(Referral $referral, Actor $actor, string $occurredAtUtc): Referral;
+    /**
+     * Persist the referral, its opening history row and any notifications in one
+     * transaction (WF-14): a message that cannot be enqueued must not leave a
+     * referral behind, and a message that cannot be delivered must not undo one.
+     *
+     * @param list<OutboundMessage> $messages
+     */
+    public function create(
+        Referral $referral,
+        Actor $actor,
+        string $occurredAtUtc,
+        array $messages = [],
+    ): Referral;
 
     public function findByReference(string $reference): ?Referral;
 
