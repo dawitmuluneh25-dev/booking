@@ -20,7 +20,7 @@ final class Booking
         public readonly string $service,
         public readonly string $scheduledAtUtc,
         public readonly ?string $notes,
-        public readonly string $status,
+        public readonly BookingStatus $status,
         public readonly string $createdAtUtc,
     ) {
     }
@@ -35,8 +35,22 @@ final class Booking
             service: self::text($row, 'service'),
             scheduledAtUtc: self::text($row, 'scheduled_at'),
             notes: self::nullableText($row, 'notes'),
-            status: self::text($row, 'status'),
+            status: BookingStatus::from(self::text($row, 'status')),
             createdAtUtc: self::text($row, 'created_at'),
+        );
+    }
+
+    public function withStatus(BookingStatus $status): self
+    {
+        return new self(
+            reference: $this->reference,
+            patientName: $this->patientName,
+            patientPhone: $this->patientPhone,
+            service: $this->service,
+            scheduledAtUtc: $this->scheduledAtUtc,
+            notes: $this->notes,
+            status: $status,
+            createdAtUtc: $this->createdAtUtc,
         );
     }
 

@@ -25,6 +25,7 @@ Verified on PHP 8.3.36 and MySQL 8.4.9 Community (InnoDB, `utf8mb4_0900_ai_ci`).
 | Allowlist validation | `src/Validation/Validator.php` |
 | Booking request → stored as `requested` (never auto-confirmed) | `src/Domain/BookingService.php` |
 | One booking per 30-minute slot, enforced by the database | `booking_slots` primary key, `PdoBookingRepository::create()` |
+| Lifecycle transitions with an append-only event log | `src/Domain/BookingStatus.php`, `booking_events` |
 | Prepared statements only | `src/Repositories/PdoBookingRepository.php` |
 | Forward-only migrations with checksum ledger | `src/Database/Migrator.php` |
 | CLI: doctor, migrate, status, list | `bin/console` |
@@ -261,6 +262,10 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console migrate [--dry-run]` | Apply pending migrations |
 | `php bin/console migrate:status` | Show applied/pending + checksum drift |
 | `php bin/console bookings:list` | Print the next 20 bookings |
+| `php bin/console booking:show <ref>` | Show one booking |
+| `php bin/console booking:confirm <ref>` | `requested → confirmed` |
+| `php bin/console booking:cancel <ref> [--reason="…"]` | `requested/confirmed → cancelled`, releases the slot |
+| `php bin/console booking:complete <ref>` | `confirmed → completed`, keeps the slot |
 
 ---
 
@@ -274,7 +279,9 @@ booking-app/
 ├── database/
 │   └── migrations/
 │       ├── 0001_create_bookings.sql
-│       └── 0002_create_booking_slots.sql
+│       ├── 0002_create_booking_slots.sql
+│       ├── 0003_backfill_booking_slots.sql
+│       └── 0004_create_booking_events.sql
 ├── public/                      # the only web-accessible directory
 │   ├── .htaccess                # rewrite + dotfile denial
 │   ├── index.php                # front controller
@@ -366,6 +373,10 @@ The scaffold is "done" when all of these are true:
 - [ ] A POST without a CSRF token returns 419 and stores nothing.
 - [ ] A second claim on a taken slot returns 409 and stores nothing.
 - [ ] Five concurrent claims on one slot produce exactly one booking.
+- [ ] `booking:confirm` moves `requested → confirmed` and keeps the slot.
+- [ ] `booking:cancel` releases the slot; the same time can be booked again.
+- [ ] `booking:complete` on a cancelled booking fails with a non-zero exit code.
+- [ ] Every transition leaves exactly one `booking_events` row.
 - [ ] `composer check` passes (style, static analysis, tests).
 - [ ] `git status` is clean; no `.env`, `vendor/`, or log file is tracked.
 - [ ] Lighthouse installability check passes for the PWA manifest and service worker.
@@ -379,16 +390,34 @@ The scaffold is "done" when all of these are true:
   practitioners turn `booking_slots` into `(resource_id, slot_start)`.
 - The UI never decides availability. `INSERT` into `booking_slots` is the authoritative
   claim; a duplicate-key rejection surfaces as HTTP 409 with the form preserved.
-- Cancelling a booking must delete its slot row in the same transaction. Until status
-  transitions exist there is no release path, so slots are immutable once claimed.
+- Cancelling deletes the slot row in the same transaction as the status change, so the
+  time becomes bookable again immediately.
 
-## 9. Next increments (in order)
+## 9. Lifecycle
 
-1. **Status transitions** — `requested → confirmed | cancelled`; releasing slots on cancellation; one service method per transition plus an audit row.
-2. **Accounts and roles** — password reset, session rotation, per-route policy checks.
-3. **Availability view** — read-only slot calendar so staff can see what is free.
-4. **Notification outbox** — queue in the database, CLI dispatcher, retries; no provider call inside a request.
-5. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
+| From | Allowed to | Effect |
+|---|---|---|
+| `requested` | `confirmed` | slot stays claimed |
+| `requested` | `cancelled` | slot released |
+| `confirmed` | `completed` | slot stays claimed (the appointment happened) |
+| `confirmed` | `cancelled` | slot released |
+| `cancelled` / `completed` | — | terminal |
+
+Rules are declared once in `BookingStatus`; every caller inherits them. Each change writes
+an append-only `booking_events` row (from, to, actor, reason, timestamp). The guarded
+`UPDATE … WHERE status = :expected` means a stale read cannot silently overwrite a newer
+state: the loser gets `InvalidTransitionException`.
+
+**Transitions are CLI-only until authentication exists.** There is deliberately no public
+HTTP endpoint for confirm/cancel — an unauthenticated cancel would be a denial-of-service
+primitive against real appointments.
+
+## 10. Next increments (in order)
+
+1. **Accounts and roles** — password reset, session rotation, per-route policy checks; then expose confirm/cancel behind authorisation.
+2. **Availability view** — read-only slot calendar so staff can see what is free.
+3. **Notification outbox** — queue in the database, CLI dispatcher, retries; no provider call inside a request.
+4. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
 
 Each increment adds a migration, tests, and an ADR entry — no feature ships
 without all three.

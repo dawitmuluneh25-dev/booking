@@ -6,6 +6,8 @@ namespace App\Repositories;
 
 use App\Domain\Booking;
 use App\Domain\BookingRepository;
+use App\Domain\BookingStatus;
+use App\Domain\InvalidTransitionException;
 use App\Domain\SlotUnavailableException;
 use PDO;
 use PDOException;
@@ -38,7 +40,7 @@ final class PdoBookingRepository implements BookingRepository
                 'service' => $booking->service,
                 'scheduled_at' => $booking->scheduledAtUtc,
                 'notes' => $booking->notes,
-                'status' => $booking->status,
+                'status' => $booking->status->value,
                 'created_at' => $booking->createdAtUtc,
                 'updated_at' => $booking->createdAtUtc,
             ]);
@@ -88,6 +90,58 @@ final class PdoBookingRepository implements BookingRepository
         return $row === false ? null : Booking::fromRow($row);
     }
 
+    public function transition(Booking $booking, BookingStatus $target, string $actor, ?string $reason): void
+    {
+        $this->pdo->beginTransaction();
+
+        try {
+            $update = $this->pdo->prepare(
+                'UPDATE bookings
+                 SET status = :target, updated_at = UTC_TIMESTAMP()
+                 WHERE reference = :reference AND status = :expected'
+            );
+            $update->execute([
+                'target' => $target->value,
+                'reference' => $booking->reference,
+                'expected' => $booking->status->value,
+            ]);
+
+            // 0 rows: someone else changed the status between read and write.
+            if ($update->rowCount() !== 1) {
+                throw new InvalidTransitionException($booking->status, $target);
+            }
+
+            $event = $this->pdo->prepare(
+                'INSERT INTO booking_events (booking_id, from_status, to_status, actor, reason, created_at)
+                 SELECT id, :from_status, :to_status, :actor, :reason, UTC_TIMESTAMP()
+                 FROM bookings
+                 WHERE reference = :reference'
+            );
+            $event->execute([
+                'from_status' => $booking->status->value,
+                'to_status' => $target->value,
+                'actor' => $actor,
+                'reason' => $reason,
+                'reference' => $booking->reference,
+            ]);
+
+            if ($target === BookingStatus::Cancelled) {
+                $release = $this->pdo->prepare(
+                    'DELETE s FROM booking_slots AS s
+                     JOIN bookings AS b ON b.id = s.booking_id
+                     WHERE b.reference = :reference'
+                );
+                $release->execute(['reference' => $booking->reference]);
+            }
+
+            $this->pdo->commit();
+        } catch (Throwable $exception) {
+            $this->rollback();
+
+            throw $exception;
+        }
+    }
+
     /** @return list<Booking> */
     public function upcoming(int $limit): array
     {
@@ -99,7 +153,7 @@ final class PdoBookingRepository implements BookingRepository
              ORDER BY scheduled_at ASC
              LIMIT :limit'
         );
-        $statement->bindValue('cancelled', 'cancelled');
+        $statement->bindValue('cancelled', BookingStatus::Cancelled->value);
         $statement->bindValue('limit', max(1, min($limit, 100)), PDO::PARAM_INT);
         $statement->execute();
 

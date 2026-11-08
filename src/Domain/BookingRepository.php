@@ -19,6 +19,16 @@ interface BookingRepository
 
     public function findByReference(string $reference): ?Booking;
 
+    /**
+     * Apply a lifecycle change atomically: update the status only if it is
+     * still the expected one, record an event, and release the slot when
+     * cancelling.
+     *
+     * @throws InvalidTransitionException when the stored status has changed
+     *                                    since the booking was read
+     */
+    public function transition(Booking $booking, BookingStatus $target, string $actor, ?string $reason): void;
+
     /** @return list<Booking> */
     public function upcoming(int $limit): array;
 }

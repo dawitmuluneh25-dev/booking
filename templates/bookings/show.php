@@ -15,7 +15,11 @@
     <dl class="details">
         <div>
             <dt>Status</dt>
-            <dd><span class="badge badge-pending"><?= e($booking->status) ?></span></dd>
+            <dd>
+                <span class="badge badge-<?= e($booking->status->value) ?>">
+                    <?= e($booking->status->label()) ?>
+                </span>
+            </dd>
         </div>
         <div>
             <dt>Requested time</dt>

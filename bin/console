@@ -33,6 +33,18 @@ switch ($command) {
     case 'bookings:list':
         exit(listBookings($app));
 
+    case 'booking:show':
+        exit(showBooking($app, $options));
+
+    case 'booking:confirm':
+        exit(changeStatus($app, 'confirm', $options));
+
+    case 'booking:cancel':
+        exit(changeStatus($app, 'cancel', $options));
+
+    case 'booking:complete':
+        exit(changeStatus($app, 'complete', $options));
+
     case 'help':
     default:
         echo <<<TXT
@@ -43,6 +55,12 @@ switch ($command) {
           php bin/console migrate --dry-run   Show what would be applied
           php bin/console migrate:status      List migrations and their state
           php bin/console bookings:list       Print the next 20 bookings
+          php bin/console booking:show BK-…   Show one booking
+          php bin/console booking:confirm BK-… [--actor=you]
+          php bin/console booking:cancel BK-… [--actor=you] [--reason="…"]
+          php bin/console booking:complete BK-… [--actor=you]
+
+        Lifecycle changes are CLI-only until authentication exists.
 
         TXT;
         exit($command === 'help' ? 0 : 1);
@@ -149,6 +167,93 @@ function migrationStatus(Application $app): int
     }
 
     return 0;
+}
+
+function showBooking(Application $app, array $options): int
+{
+    $reference = firstArgument($options);
+    if ($reference === '') {
+        fwrite(STDERR, "Usage: booking:show <reference>\n");
+
+        return 1;
+    }
+
+    try {
+        $booking = $app->bookings()->find($reference);
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Cannot read booking: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    if ($booking === null) {
+        fwrite(STDERR, "No booking with reference {$reference}.\n");
+
+        return 1;
+    }
+
+    printf("reference : %s\n", $booking->reference);
+    printf("status    : %s\n", $booking->status->value);
+    printf("when (UTC): %s\n", $booking->scheduledAtUtc);
+    printf("service   : %s\n", $booking->service);
+    printf("name      : %s\n", $booking->patientName);
+    printf("phone     : %s\n", $booking->patientPhone);
+
+    return 0;
+}
+
+function changeStatus(Application $app, string $action, array $options): int
+{
+    $reference = firstArgument($options);
+    $actor = 'cli';
+    $reason = null;
+
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--actor=')) {
+            $actor = substr($option, 8);
+        }
+        if (str_starts_with($option, '--reason=')) {
+            $reason = substr($option, 9);
+        }
+    }
+
+    if ($reference === '') {
+        fwrite(STDERR, "Usage: booking:{$action} <reference>\n");
+
+        return 1;
+    }
+
+    try {
+        $service = $app->bookings();
+        $booking = match ($action) {
+            'confirm' => $service->confirm($reference, $actor),
+            'cancel' => $service->cancel($reference, $actor, $reason),
+            'complete' => $service->complete($reference, $actor),
+        };
+    } catch (Throwable $exception) {
+        fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    printf("%s  →  %s\n", $booking->reference, $booking->status->value);
+
+    if ($action === 'cancel') {
+        echo "slot released\n";
+    }
+
+    return 0;
+}
+
+function firstArgument(array $options): string
+{
+    foreach ($options as $option) {
+        if (!str_starts_with($option, '--')) {
+            return trim($option);
+        }
+    }
+
+    return '';
 }
 
 function listBookings(Application $app): int

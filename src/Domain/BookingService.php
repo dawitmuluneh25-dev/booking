@@ -83,7 +83,7 @@ final class BookingService
             service: $data['service'],
             scheduledAtUtc: $utc->format('Y-m-d H:i:s'),
             notes: $data['notes'] === '' ? null : $data['notes'],
-            status: 'requested',
+            status: BookingStatus::Requested,
             createdAtUtc: gmdate('Y-m-d H:i:s'),
         );
 
@@ -95,6 +95,68 @@ final class BookingService
     public function find(string $reference): ?Booking
     {
         return $this->repository->findByReference($reference);
+    }
+
+    /**
+     * Confirm a request. Cancelling later releases the slot.
+     *
+     * @throws BookingNotFoundException|InvalidTransitionException
+     */
+    public function confirm(string $reference, string $actor): Booking
+    {
+        return $this->transition($reference, BookingStatus::Confirmed, $actor, null);
+    }
+
+    /**
+     * Cancel a request or confirmed booking. The slot is released in the same
+     * transaction, so the time becomes bookable again immediately.
+     *
+     * @throws BookingNotFoundException|InvalidTransitionException
+     */
+    public function cancel(string $reference, string $actor, ?string $reason = null): Booking
+    {
+        $reason = $reason === null ? null : trim($reason);
+
+        return $this->transition($reference, BookingStatus::Cancelled, $actor, $reason === '' ? null : $reason);
+    }
+
+    /**
+     * Mark a confirmed booking as completed. The slot stays claimed: the
+     * appointment happened.
+     *
+     * @throws BookingNotFoundException|InvalidTransitionException
+     */
+    public function complete(string $reference, string $actor): Booking
+    {
+        return $this->transition($reference, BookingStatus::Completed, $actor, null);
+    }
+
+    /**
+     * @throws BookingNotFoundException|InvalidTransitionException
+     */
+    private function transition(string $reference, BookingStatus $target, string $actor, ?string $reason): Booking
+    {
+        $actor = trim($actor);
+        if ($actor === '' || mb_strlen($actor) > 120) {
+            throw new \InvalidArgumentException('Actor must be between 1 and 120 characters.');
+        }
+
+        if ($reason !== null && mb_strlen($reason) > 500) {
+            throw new \InvalidArgumentException('Reason must be at most 500 characters.');
+        }
+
+        $booking = $this->repository->findByReference($reference);
+        if ($booking === null) {
+            throw new BookingNotFoundException($reference);
+        }
+
+        if (!$booking->status->canTransitionTo($target)) {
+            throw new InvalidTransitionException($booking->status, $target);
+        }
+
+        $this->repository->transition($booking, $target, $actor, $reason);
+
+        return $booking->withStatus($target);
     }
 
     /** @return list<Booking> */

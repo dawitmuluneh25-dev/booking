@@ -389,10 +389,28 @@ tbody tr:last-child td { border-bottom: 0; }
     color: var(--text-muted);
 }
 
-.badge-pending {
+.badge-requested {
+    background: var(--surface-alt);
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+
+.badge-confirmed {
     background: var(--success-bg);
     border-color: var(--success-border);
     color: var(--success-text);
+}
+
+.badge-cancelled {
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+    color: var(--danger-text);
+}
+
+.badge-completed {
+    background: var(--surface-alt);
+    border-color: var(--border);
+    color: var(--text);
 }
 
 /* Details list */

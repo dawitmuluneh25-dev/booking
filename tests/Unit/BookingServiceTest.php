@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use App\Domain\BookingNotFoundException;
 use App\Domain\BookingRepository;
 use App\Domain\BookingService;
+use App\Domain\BookingStatus;
+use App\Domain\InvalidTransitionException;
 use App\Domain\SlotUnavailableException;
 use App\Domain\ValidationException;
 use App\Validation\Validator;
@@ -30,7 +33,7 @@ final class BookingServiceTest extends TestCase
 
         self::assertCount(1, $repository->created);
         self::assertSame('2030-05-01 06:30:00', $booking->scheduledAtUtc);
-        self::assertSame('requested', $booking->status);
+        self::assertSame(BookingStatus::Requested, $booking->status);
         self::assertMatchesRegularExpression('/^BK-\d{6}-[A-Z2-9]{6}$/', $booking->reference);
     }
 
@@ -126,6 +129,73 @@ final class BookingServiceTest extends TestCase
         $service->request($payload);
     }
 
+    public function testItConfirmsARequestedBookingAndKeepsTheSlot(): void
+    {
+        $repository = new InMemoryBookingRepository();
+        $service = $this->service($repository, 'Africa/Addis_Ababa');
+        $booking = $this->requestAt($service, '2030-05-01T09:30');
+
+        $confirmed = $service->confirm($booking->reference, 'cli:test');
+
+        self::assertSame(BookingStatus::Confirmed, $confirmed->status);
+        self::assertSame(BookingStatus::Confirmed, $service->find($booking->reference)?->status);
+        self::assertArrayHasKey('2030-05-01 06:30:00', $repository->slots);
+        self::assertSame('confirmed', $repository->events[0]['to']);
+        self::assertSame('cli:test', $repository->events[0]['actor']);
+    }
+
+    public function testItReleasesTheSlotWhenCancelled(): void
+    {
+        $repository = new InMemoryBookingRepository();
+        $service = $this->service($repository, 'Africa/Addis_Ababa');
+        $booking = $this->requestAt($service, '2030-05-01T09:30');
+
+        $service->cancel($booking->reference, 'cli:test', 'patient request');
+
+        self::assertSame(BookingStatus::Cancelled, $service->find($booking->reference)?->status);
+        self::assertArrayNotHasKey('2030-05-01 06:30:00', $repository->slots);
+        self::assertSame('patient request', $repository->events[0]['reason']);
+    }
+
+    public function testItCompletesAConfirmedBookingAndKeepsTheSlot(): void
+    {
+        $repository = new InMemoryBookingRepository();
+        $service = $this->service($repository, 'Africa/Addis_Ababa');
+        $booking = $this->requestAt($service, '2030-05-01T09:30');
+
+        $service->confirm($booking->reference, 'cli:test');
+        $completed = $service->complete($booking->reference, 'cli:test');
+
+        self::assertSame(BookingStatus::Completed, $completed->status);
+        self::assertArrayHasKey('2030-05-01 06:30:00', $repository->slots);
+    }
+
+    public function testItRefusesToConfirmACancelledBooking(): void
+    {
+        $service = $this->service(new InMemoryBookingRepository());
+        $booking = $this->requestAt($service, '2030-05-01T09:30');
+        $service->cancel($booking->reference, 'cli:test');
+
+        $this->expectException(InvalidTransitionException::class);
+        $service->confirm($booking->reference, 'cli:test');
+    }
+
+    public function testItRejectsAnUnknownBookingForTransitions(): void
+    {
+        $this->expectException(BookingNotFoundException::class);
+
+        $this->service(new InMemoryBookingRepository())->cancel('BK-000000-ZZZZZZ', 'cli:test');
+    }
+
+    public function testItValidatesTheActorLabel(): void
+    {
+        $service = $this->service(new InMemoryBookingRepository());
+        $booking = $this->requestAt($service, '2030-05-01T09:30');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $service->confirm($booking->reference, '');
+    }
+
     public function testItReturnsNullForAnUnknownReference(): void
     {
         self::assertNull($this->service(new InMemoryBookingRepository())->find('BK-000000-XXXXXX'));
@@ -134,5 +204,15 @@ final class BookingServiceTest extends TestCase
     private function service(BookingRepository $repository, string $timezone = 'UTC'): BookingService
     {
         return new BookingService($repository, new Validator(), new DateTimeZone($timezone));
+    }
+
+    private function requestAt(BookingService $service, string $localDateTime): \App\Domain\Booking
+    {
+        return $service->request([
+            'patient_name' => 'Ada Lovelace',
+            'patient_phone' => '+251906373154',
+            'service' => 'consultation',
+            'scheduled_at' => $localDateTime,
+        ]);
     }
 }

@@ -37,7 +37,11 @@
                             <td><?= e($booking->scheduledAt($timezone)->format('D j M Y, H:i')) ?></td>
                             <td><?= e($booking->serviceLabel()) ?></td>
                             <td><?= e($booking->patientName) ?></td>
-                            <td><span class="badge"><?= e($booking->status) ?></span></td>
+                            <td>
+                                <span class="badge badge-<?= e($booking->status->value) ?>">
+                                    <?= e($booking->status->label()) ?>
+                                </span>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
