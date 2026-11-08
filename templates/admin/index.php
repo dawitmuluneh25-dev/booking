@@ -21,6 +21,12 @@
         </article>
 
         <article class="card">
+            <h3>Audit trail</h3>
+            <p>Every status change with who made it and when.</p>
+            <a class="link" href="/admin/audit">Review history</a>
+        </article>
+
+        <article class="card">
             <h3>Diagnostics</h3>
             <p>Schema state, notification backlog, backups and recent errors.</p>
             <a class="link" href="/admin/diagnostics">Open diagnostics</a>

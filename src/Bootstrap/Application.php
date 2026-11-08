@@ -7,8 +7,12 @@ namespace App\Bootstrap;
 use App\Database\Connection;
 use App\Database\DatabaseBackup;
 use App\Database\Migrator;
+use App\Domain\AuditRepository;
 use App\Domain\BookingService;
 use App\Domain\OutboxRepository;
+use App\Domain\RetentionPolicy;
+use App\Domain\RetentionRepository;
+use App\Domain\RetentionService;
 use App\Domain\UserRepository;
 use App\Notifications\LogTransport;
 use App\Notifications\OutboxDispatcher;
@@ -16,8 +20,10 @@ use App\Http\Kernel;
 use App\Http\Request;
 use App\Http\Response;
 use App\Http\Router;
+use App\Repositories\PdoAuditRepository;
 use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoOutboxRepository;
+use App\Repositories\PdoRetentionRepository;
 use App\Repositories\PdoUserRepository;
 use App\Security\Auth;
 use App\Security\Gate;
@@ -59,6 +65,8 @@ final class Application
     private ?DatabaseBackup $backups = null;
 
     private ?Diagnostics $diagnostics = null;
+
+    private ?RetentionRepository $retentionRepository = null;
 
     private function __construct(
         private readonly Config $config,
@@ -150,6 +158,24 @@ final class Application
             $this->outbox(),
             new LogTransport($this->config->root('var/logs/notifications.log')),
         );
+    }
+
+    public function retentionRepository(): RetentionRepository
+    {
+        return $this->retentionRepository ??= new PdoRetentionRepository($this->pdo());
+    }
+
+    public function retention(): RetentionService
+    {
+        return new RetentionService(
+            $this->retentionRepository(),
+            new RetentionPolicy($this->config->retentionDays()),
+        );
+    }
+
+    public function audit(): AuditRepository
+    {
+        return new PdoAuditRepository($this->pdo());
     }
 
     public function logReader(): LogReader

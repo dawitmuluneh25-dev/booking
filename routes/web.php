@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 use App\Bootstrap\Application;
+use App\Controllers\AdminAuditController;
 use App\Controllers\AdminController;
 use App\Controllers\AdminDiagnosticsController;
 use App\Controllers\AdminUserController;
@@ -27,6 +28,14 @@ return static function (Application $app): void {
     $reset = new PasswordResetController($app->view(), $app->auth());
     $adminUsers = new AdminUserController($app->view(), $app->users(), $app->auth(), $app->gate());
     $admin = new AdminController($app->view(), $app->auth(), $app->gate());
+
+    $audit = new AdminAuditController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->audit(),
+        $app->retentionRepository(),
+    );
 
     $diagnostics = new AdminDiagnosticsController(
         $app->view(),
@@ -85,6 +94,7 @@ return static function (Application $app): void {
 
     $router->get('/admin', static fn (Request $request) => $admin->index($request));
     $router->get('/admin/users', static fn (Request $request) => $adminUsers->index($request));
+    $router->get('/admin/audit', static fn (Request $request) => $audit->index($request));
     $router->get(
         '/admin/diagnostics',
         static fn (Request $request) => $diagnostics->index($request),
