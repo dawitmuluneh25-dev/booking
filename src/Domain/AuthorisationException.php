@@ -1,0 +1,36 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain;
+
+use RuntimeException;
+
+/**
+ * Raised when the actor may not perform the action at all.
+ *
+ * Kept distinct from a transition refusal on purpose: "you are not allowed to do
+ * this kind of thing" and "this referral is not in a state where that is
+ * possible" are different answers, and a route should be able to turn the first
+ * into 403 and the second into 409 without inspecting a message string.
+ */
+final class AuthorisationException extends RuntimeException
+{
+    public function __construct(
+        public readonly Role $role,
+        public readonly Permission $permission,
+        string $reason = '',
+    ) {
+        parent::__construct(sprintf(
+            'The %s role does not hold the %s permission.%s',
+            $role->value,
+            $permission->value,
+            $reason === '' ? '' : ' ' . $reason,
+        ));
+    }
+
+    public static function forObject(Role $role, Permission $permission, string $reason): self
+    {
+        return new self($role, $permission, $reason);
+    }
+}
