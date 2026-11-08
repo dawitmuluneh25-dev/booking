@@ -14,4 +14,11 @@ enum Permission: string
     case UsersManage = 'users.manage';
     case ClinicConfigure = 'clinic.configure';
     case SystemMaintain = 'system.maintain';
+    case ReferralSubmit = 'referral.submit';
+    case ReferralTriage = 'referral.triage';
+    case ClinicalReview = 'clinical.review';
+    case ClinicalApprove = 'clinical.approve';
+    case ProcedureCoordinate = 'procedure.coordinate';
+    case UrgentCoordinate = 'urgent.coordinate';
+    case ScheduleManage = 'schedule.manage';
 }
