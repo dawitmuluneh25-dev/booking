@@ -355,6 +355,12 @@ function dispatchOutbox(Application $app, array $options): int
         }
     }
 
+    if ($app->config()->notificationDriver() === 'http' && $app->config()->notificationUrl() === '') {
+        fwrite(STDERR, "NOTIFY_DRIVER=http but NOTIFY_HTTP_URL is empty. Set it in .env.\n");
+
+        return 1;
+    }
+
     try {
         $result = $app->dispatcher()->dispatch($limit);
     } catch (Throwable $exception) {

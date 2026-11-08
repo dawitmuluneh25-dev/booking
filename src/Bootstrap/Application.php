@@ -15,7 +15,10 @@ use App\Domain\RetentionPolicy;
 use App\Domain\RetentionRepository;
 use App\Domain\RetentionService;
 use App\Domain\UserRepository;
+use App\Notifications\CurlHttpClient;
+use App\Notifications\HttpTransport;
 use App\Notifications\LogTransport;
+use App\Notifications\NotificationTransport;
 use App\Notifications\OutboxDispatcher;
 use App\Http\Kernel;
 use App\Http\Request;
@@ -158,10 +161,25 @@ final class Application
 
     public function dispatcher(): OutboxDispatcher
     {
-        return $this->dispatcher ??= new OutboxDispatcher(
-            $this->outbox(),
-            new LogTransport($this->config->root('var/logs/notifications.log')),
-        );
+        return $this->dispatcher ??= new OutboxDispatcher($this->outbox(), $this->transport());
+    }
+
+    /**
+     * Development writes messages to a log; production posts them to the
+     * gateway bridge. A provider is never called from a web request.
+     */
+    public function transport(): NotificationTransport
+    {
+        if ($this->config->notificationDriver() === 'http') {
+            return new HttpTransport(
+                new CurlHttpClient(),
+                $this->config->notificationUrl(),
+                $this->config->notificationToken(),
+                $this->config->notificationTimeout(),
+            );
+        }
+
+        return new LogTransport($this->config->root('var/logs/notifications.log'));
     }
 
     public function retentionRepository(): RetentionRepository
