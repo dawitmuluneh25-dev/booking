@@ -60,6 +60,7 @@ final class MigrationIntegrityTest extends TestCase
     private const URGENT_TABLES = [
         'urgent_acknowledgements',
         'urgent_cases',
+        'urgent_status_history',
         'urgent_contact_attempts',
         'urgent_escalations',
         'urgent_events',

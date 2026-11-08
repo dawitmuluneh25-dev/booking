@@ -14,13 +14,16 @@ use App\Domain\ClinicCalendar;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\IdempotencyStore;
+use App\Domain\AcknowledgeUrgentCase;
 use App\Domain\ApproveForScheduling;
 use App\Domain\RecordClinicalDecision;
+use App\Domain\RegisterUrgentCase;
 use App\Domain\ReferralRepository;
 use App\Domain\RetentionRepository;
 use App\Domain\SubmitElectiveReferral;
 use App\Domain\Transaction;
 use App\Domain\TriageReferral;
+use App\Domain\UrgentCaseRepository;
 use App\Domain\RetentionService;
 use App\Domain\UserRepository;
 use App\Notifications\CurlHttpClient;
@@ -37,6 +40,7 @@ use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
+use App\Repositories\PdoUrgentCaseRepository;
 use App\Repositories\PdoReferralRepository;
 use App\Repositories\PdoRetentionRepository;
 use App\Repositories\PdoUserRepository;
@@ -74,6 +78,12 @@ final class Application
     private ?TriageReferral $triageReferral = null;
 
     private ?ApproveForScheduling $approveForScheduling = null;
+
+    private ?UrgentCaseRepository $urgentCases = null;
+
+    private ?RegisterUrgentCase $registerUrgent = null;
+
+    private ?AcknowledgeUrgentCase $acknowledgeUrgent = null;
 
     private ?Kernel $kernel = null;
 
@@ -194,6 +204,21 @@ final class Application
     public function approveForScheduling(): ApproveForScheduling
     {
         return $this->approveForScheduling ??= new ApproveForScheduling($this->referrals());
+    }
+
+    public function urgentCases(): UrgentCaseRepository
+    {
+        return $this->urgentCases ??= new PdoUrgentCaseRepository($this->pdo(), $this->transaction());
+    }
+
+    public function registerUrgentCase(): RegisterUrgentCase
+    {
+        return $this->registerUrgent ??= new RegisterUrgentCase($this->urgentCases(), new Validator());
+    }
+
+    public function acknowledgeUrgentCase(): AcknowledgeUrgentCase
+    {
+        return $this->acknowledgeUrgent ??= new AcknowledgeUrgentCase($this->urgentCases());
     }
 
     public function idempotency(): IdempotencyStore
