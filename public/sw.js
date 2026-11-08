@@ -9,7 +9,7 @@
  * No page containing submitted data is ever stored, so a stale cache can never
  * present a booking as if it were current.
  */
-const CACHE_NAME = 'booking-shell-v1';
+const CACHE_NAME = 'booking-shell-v2';
 
 const PRECACHE = [
     '/offline.html',
@@ -57,20 +57,19 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
+    // Network-first with a cache fallback: stylesheet and script changes must
+    // take effect on a normal reload, and offline still works from cache.
     if (url.pathname.startsWith('/assets/')) {
         event.respondWith(
-            caches.match(request).then((cached) => {
-                if (cached) {
-                    return cached;
-                }
-                return fetch(request).then((response) => {
+            fetch(request)
+                .then((response) => {
                     if (response.ok) {
                         const copy = response.clone();
                         caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
                     }
                     return response;
-                });
-            })
+                })
+                .catch(() => caches.match(request))
         );
     }
 });
