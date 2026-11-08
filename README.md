@@ -29,15 +29,22 @@ Verified on PHP 8.3.36 and MySQL 8.4.9 Community (InnoDB, `utf8mb4_0900_ai_ci`).
 | Staff accounts, roles, login throttling, password reset | `src/Security/Auth.php`, `users`, `login_attempts`, `password_resets` |
 | Read-only availability calendar built from claimed slots | `/availability`, `src/Domain/DaySchedule.php` |
 | Transactional notification outbox with retries | `src/Notifications/`, `notification_outbox` |
+| Configurable opening hours and one-off closures | `clinic_hours`, `clinic_closures`, `/admin/hours` |
+| Retention window that redacts finished bookings | `src/Domain/RetentionPolicy.php`, `retention:purge` |
+| Read-only audit trail over every status change | `/admin/audit`, `booking_events` |
+| Operator diagnostics: schema, outbox, backups, errors | `/admin/diagnostics`, `src/Support/Diagnostics.php` |
+| Logical backup and restore drill without `mysqldump` | `src/Database/DatabaseBackup.php`, `db:*` commands |
 | Prepared statements only | `src/Repositories/PdoBookingRepository.php` |
 | Forward-only migrations with checksum ledger | `src/Database/Migrator.php` |
-| CLI: doctor, migrate, status, list | `bin/console` |
+| CLI: doctor, migrate, bookings, users, outbox, backup, retention | `bin/console` |
 | PWA: manifest, service worker, offline page | `public/manifest.webmanifest`, `public/sw.js` |
 | Unit + feature tests | `tests/` |
 
-Deliberately **not** included: user accounts, an admin panel, email/SMS,
-payments, file uploads, calendar conflict logic. Each is a feature to add on top
-of a foundation that already has tests, escaping and migrations in place.
+Deliberately **not** included: self-service sign-up, payments, file uploads,
+multi-practitioner calendars, an email provider for password resets, and any
+provider-specific SMS integration (the HTTP bridge is provider-neutral). Each is
+a feature to add on top of a foundation that already has tests, escaping and
+migrations in place.
 
 ---
 
@@ -287,6 +294,13 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console user:reset-token <email>` | Print a one-time reset path (60 min TTL) |
 | `php bin/console outbox:list [--limit=20]` | Inspect queued notifications |
 | `php bin/console outbox:dispatch [--limit=20]` | Deliver due notifications (cron) |
+| `php bin/console diag` | Print the operational checks (exits 1 on a failure) |
+| `php bin/console db:backup [--prune=14]` | Write a gzipped logical backup to `var/backups/` |
+| `php bin/console db:backups` | List backups with size and age |
+| `php bin/console db:restore-drill [--file=…] [--database=…_drill] [--keep]` | Restore into a scratch schema and compare row counts |
+| `php bin/console logs:review [--level=error] [--limit=30]` | Read the JSON-lines application log |
+| `php bin/console retention:plan` | Show the cutoff and how many bookings are eligible |
+| `php bin/console retention:purge [--days=730] [--yes]` | Redact finished bookings; refuses to act without `--yes` |
 
 ---
 
@@ -304,7 +318,9 @@ booking-app/
 │       ├── 0003_backfill_booking_slots.sql
 │       ├── 0004_create_booking_events.sql
 │       ├── 0005_create_auth_tables.sql
-│       └── 0006_create_notification_outbox.sql
+│       ├── 0006_create_notification_outbox.sql
+│       ├── 0007_add_retention.sql
+│       └── 0008_create_clinic_calendar.sql
 ├── public/                      # the only web-accessible directory
 │   ├── .htaccess                # rewrite + dotfile denial
 │   ├── index.php                # front controller
@@ -320,18 +336,19 @@ booking-app/
 ├── src/
 │   ├── Bootstrap/               # Env, Config, Application (composition root)
 │   ├── Controllers/
-│   ├── Database/                # Connection, Migrator
-│   ├── Domain/                  # Booking, BookingService, repository port
+│   ├── Database/                # Connection, Migrator, SqlScript, DatabaseBackup
+│   ├── Domain/                  # Booking, BookingService, ports, retention, calendar
 │   ├── Http/                    # Request, Response, Router, Kernel, exceptions
-│   ├── Repositories/            # PDO implementation of the port
-│   ├── Security/                # Session, Csrf
-│   ├── Support/                 # View, Logger, helpers
+│   ├── Notifications/           # outbox dispatcher, log + HTTP transports
+│   ├── Repositories/            # PDO implementations of the ports
+│   ├── Security/                # Session, Csrf, Auth, Gate, PasswordHasher
+│   ├── Support/                 # View, Logger, LogReader, Diagnostics, helpers
 │   └── Validation/
 ├── templates/
 │   ├── layout.php
 │   ├── home.php
 │   ├── auth/{login,reset}.php
-│   ├── admin/users.php
+│   ├── admin/{index,users,hours,audit,diagnostics}.php
 │   ├── availability/index.php
 │   ├── bookings/{create,index,show}.php
 │   └── errors/{403,404,410,419,500,503}.php
@@ -339,6 +356,7 @@ booking-app/
 │   ├── Unit/
 │   └── Feature/
 ├── var/                         # runtime only, git-ignored contents
+│   ├── backups/                  # logical backups, git-ignored
 │   ├── cache/
 │   └── logs/
 ├── .editorconfig
@@ -372,6 +390,10 @@ Recorded here so later changes are deliberate rather than accidental.
 | ADR-006 | Service worker caches static assets only | A cached page must never imply a submission succeeded |
 | ADR-007 | Explicit route table, thin controllers | Every route declares method, handler and (later) authorization |
 | ADR-008 | Forward-only migrations with checksums | MySQL DDL cannot roll back atomically; drift must be detected |
+| ADR-009 | Backups are written in PHP, not by `mysqldump` | Shared hosting disables `exec()`, and a backup that only restores on the machine that wrote it is not a backup |
+| ADR-010 | Retention redacts instead of deleting | The schedule, status and audit history stay useful; the person is removed. Refuses windows under 30 days |
+| ADR-011 | Opening hours are data, not constants | The clinic changes its week without a deployment; the same table drives the calendar and booking validation |
+| ADR-012 | Notifications leave through a bridge we own | Provider choice, credentials and sender IDs stay in the bridge; the app posts one minimal JSON payload and never calls a provider from a request |
 
 ### Security posture in the baseline
 
@@ -411,6 +433,14 @@ The scaffold is "done" when all of these are true:
 - [ ] `/availability` shows 18 half-hour slots for a default day, with claimed slots marked booked.
 - [ ] A booked slot on the calendar links to the same booking the list shows.
 - [ ] An invalid `?date=` falls back to today instead of erroring.
+- [ ] `/availability` reflects the configured week: a closed Saturday shows no slots.
+- [ ] A request outside opening hours returns 422 and stores nothing.
+- [ ] A one-off closed day rejects a request even inside the weekly window.
+- [ ] A `staff` account gets 403 on `/admin`, `/admin/hours`, `/admin/audit` and `/admin/diagnostics`.
+- [ ] `php bin/console db:backup` writes a file; `db:restore-drill` reports identical row counts.
+- [ ] `retention:purge` without `--yes` changes nothing and exits non-zero.
+- [ ] A redacted booking keeps its reference, slot and history but has no name, phone or notes.
+- [ ] `php bin/console diag` and `/admin/diagnostics` agree, and a dead outbox row fails the check.
 - [ ] `composer check` passes (style, static analysis, tests).
 - [ ] `git status` is clean; no `.env`, `vendor/`, or log file is tracked.
 - [ ] Lighthouse installability check passes for the PWA manifest and service worker.
@@ -420,6 +450,9 @@ The scaffold is "done" when all of these are true:
 ## 8. Booking rules
 
 - Appointments start on a 30-minute grid and last 30 minutes (`BookingService::SLOT_MINUTES`).
+- A request must fit inside the configured opening hours for that weekday and must not fall on a
+  one-off closure. The check lives in `BookingService`, so the public form, the CLI and any future
+  client share it; the database is still the authority on the slot itself.
 - The appointment is single-calendar: one occupied slot per start time. Multiple rooms or
   practitioners turn `booking_slots` into `(resource_id, slot_start)`.
 - The UI never decides availability. `INSERT` into `booking_slots` is the authoritative
@@ -447,10 +480,13 @@ paths call the same service method.
 
 ## 10. Accounts and roles
 
-| Role | Bookings | Users |
-|---|---|---|
-| `admin` | confirm, cancel | list accounts |
-| `staff` | confirm, cancel | — |
+| Role | Bookings | Users | Opening hours | Diagnostics and audit |
+|---|---|---|---|---|
+| `admin` | confirm, cancel | list accounts | edit | read |
+| `staff` | confirm, cancel | — | — | — |
+
+Permissions are named capabilities (`bookings.manage`, `users.manage`, `clinic.configure`,
+`system.maintain`); roles only map to them, and route handlers ask for the permission.
 
 - Accounts are **created from the console only** — no self-service sign-up, no default admin.
 - Passwords hash with Argon2id where available, else the platform default; minimum 12 characters.
@@ -477,7 +513,7 @@ gateway cannot delay or roll back a booking.
 | Retries | 1, 5, 15, then 60 minutes; after 5 attempts the row becomes `dead` and the command exits non-zero |
 | Crash recovery | Rows left in `sending` for over 10 minutes are requeued |
 | Content | Reference, local date/time and service only — no clinical detail |
-| Transport | `LogTransport` writes to `var/logs/notifications.log` with the recipient masked |
+| Transport | `LogTransport` writes to `var/logs/notifications.log` with the recipient masked; `HttpTransport` posts the message to a gateway bridge |
 
 Cron on the host (every minute):
 
@@ -485,8 +521,30 @@ Cron on the host (every minute):
 * * * * * /usr/local/bin/php /home/ACCOUNT/booking/bin/console outbox:dispatch --limit=20
 ```
 
-Swap `LogTransport` for an SMS/WhatsApp implementation of `NotificationTransport` when a
-provider is chosen; nothing else changes.
+To deliver real messages, point the application at a bridge you operate:
+
+```ini
+NOTIFY_DRIVER=http
+NOTIFY_HTTP_URL=https://bridge.example.africa/send
+NOTIFY_HTTP_TOKEN=…          # sent as `Authorization: Bearer …`
+NOTIFY_HTTP_TIMEOUT=5
+```
+
+The bridge receives one JSON object per message:
+
+```json
+{
+  "channel": "sms",
+  "template": "booking_requested",
+  "to": "+251911000111",
+  "body": "We received booking request BK-… for Wed 8 May 2030, 10:00 EAT. The team will confirm shortly.",
+  "reference": "BK-…"
+}
+```
+
+It answers `2xx` when the provider accepted the message. Anything else is a failure the outbox
+retries, so a gateway outage never loses a notification. Provider credentials, sender IDs and
+template registration stay in the bridge; changing provider never touches this application.
 
 ## 12. Routes
 
@@ -501,15 +559,44 @@ provider is chosen; nothing else changes.
 | GET | `/availability` | any signed-in staff |
 | GET/POST | `/login`, `/logout` | public |
 | GET/POST | `/password/reset/{token}` | public with a valid token |
+| GET | `/admin` | `system.maintain` |
 | GET | `/admin/users` | `users.manage` |
+| GET/POST | `/admin/hours` | `clinic.configure` (CSRF required on POST) |
+| GET | `/admin/audit` | `system.maintain` |
+| GET | `/admin/diagnostics` | `system.maintain` |
 | GET | `/healthz` | public, generic output |
 
-## 13. Next increments (in order)
+## 13. Operations
 
-1. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
-2. **Data protection** — retention window for personal data, and an audit view over `booking_events`.
-3. **Configurable opening hours** — replace the `AvailabilityController` constants with a settings table.
-4. **Real transport** — implement `NotificationTransport` against the chosen SMS/WhatsApp provider.
+| Task | Command | Cadence |
+|---|---|---|
+| Health check | `php bin/console doctor` / `diag` | after deploy, daily |
+| Backup | `php bin/console db:backup --prune=14` | hourly, off the host afterwards |
+| Restore proof | `php bin/console db:restore-drill` | weekly, and after any schema change |
+| Notification delivery | `php bin/console outbox:dispatch --limit=20` | every minute |
+| Retention sweep | `php bin/console retention:purge --yes` | monthly |
+| Log review | `php bin/console logs:review --level=error` | after an incident |
+
+`db:backup` never calls `mysqldump`: the dump is produced with PDO, so it works where `exec()` is
+disabled. A drill restores into `booking_app_drill` (or the database given with `--database=`) and
+compares row counts; it refuses to target the live database and only drops a scratch schema whose
+name ends in `_drill`.
+
+Backups under `var/backups/` sit inside the same failure domain as the database. Copy them off the
+host — that step is yours, because it needs a destination only you can choose.
+
+## 14. Remaining backlog
+
+Nothing in the original plan is outstanding. These are deliberate next steps, in order of value:
+
+1. **Bridge deployment** — run the HTTP bridge against the chosen provider and set `NOTIFY_*`.
+2. **Off-host backups** — push `db:backup` output somewhere else, and alarm when the newest file is
+   older than 48 h (the diagnostics check already reports it).
+3. **Password reset delivery** — issue reset links by SMS/email through the same outbox instead of
+   the console.
+4. **Multiple practitioners or rooms** — `booking_slots` becomes `(resource_id, slot_start)`; the
+   uniqueness that protects a single calendar extends unchanged.
+5. **Alerting** — call `diag` from the host's monitoring, or send a message when an outbox row dies.
 
 Each increment adds a migration, tests, and an ADR entry — no feature ships
 without all three.
