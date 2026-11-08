@@ -5,8 +5,11 @@ installable PWA shell. Built from scratch: no code, schema or dependency was
 carried over from any earlier project.
 
 The baseline is deliberately small. It proves the whole vertical slice —
-routing, templating, escaping, CSRF, validation, UTC persistence and the PWA
-shell — so that features can be added without re-litigating the foundation.
+routing, templating, escaping, CSRF, validation, UTC persistence, slot
+exclusivity and the PWA shell — so that features can be added without
+re-litigating the foundation.
+
+Verified on PHP 8.3.36 and MySQL 8.4.9 Community (InnoDB, `utf8mb4_0900_ai_ci`).
 
 ---
 
@@ -21,6 +24,7 @@ shell — so that features can be added without re-litigating the foundation.
 | Session cookies hardened, CSRF tokens | `src/Security/` |
 | Allowlist validation | `src/Validation/Validator.php` |
 | Booking request → stored as `requested` (never auto-confirmed) | `src/Domain/BookingService.php` |
+| One booking per 30-minute slot, enforced by the database | `booking_slots` primary key, `PdoBookingRepository::create()` |
 | Prepared statements only | `src/Repositories/PdoBookingRepository.php` |
 | Forward-only migrations with checksum ledger | `src/Database/Migrator.php` |
 | CLI: doctor, migrate, status, list | `bin/console` |
@@ -266,9 +270,11 @@ The full deployment procedure is a separate runbook; the shape is:
 booking-app/
 ├── bin/
 │   └── console                  # CLI entry point (doctor, migrate, list)
+├── .github/workflows/ci.yml      # quality gate on push and pull request
 ├── database/
 │   └── migrations/
-│       └── 0001_create_bookings.sql
+│       ├── 0001_create_bookings.sql
+│       └── 0002_create_booking_slots.sql
 ├── public/                      # the only web-accessible directory
 │   ├── .htaccess                # rewrite + dotfile denial
 │   ├── index.php                # front controller
@@ -358,18 +364,30 @@ The scaffold is "done" when all of these are true:
 - [ ] A valid submission stores one row and shows a `BK-…` reference.
 - [ ] An invalid submission returns 422 with field-level messages and stores nothing.
 - [ ] A POST without a CSRF token returns 419 and stores nothing.
+- [ ] A second claim on a taken slot returns 409 and stores nothing.
+- [ ] Five concurrent claims on one slot produce exactly one booking.
 - [ ] `composer check` passes (style, static analysis, tests).
 - [ ] `git status` is clean; no `.env`, `vendor/`, or log file is tracked.
 - [ ] Lighthouse installability check passes for the PWA manifest and service worker.
 
 ---
 
-## 8. Next increments (in order)
+## 8. Booking rules
 
-1. **Availability + conflict prevention** — slot table, unique constraint, transactional booking, concurrency test.
-2. **Status transitions** — `requested → confirmed | cancelled`, one service method per transition, audit row per change.
-3. **Accounts and roles** — password reset, session rotation, policy checks per route.
-4. **Notification outbox** — queue in the database, CLI dispatcher, retries, no provider call inside a request.
+- Appointments start on a 30-minute grid and last 30 minutes (`BookingService::SLOT_MINUTES`).
+- The appointment is single-calendar: one occupied slot per start time. Multiple rooms or
+  practitioners turn `booking_slots` into `(resource_id, slot_start)`.
+- The UI never decides availability. `INSERT` into `booking_slots` is the authoritative
+  claim; a duplicate-key rejection surfaces as HTTP 409 with the form preserved.
+- Cancelling a booking must delete its slot row in the same transaction. Until status
+  transitions exist there is no release path, so slots are immutable once claimed.
+
+## 9. Next increments (in order)
+
+1. **Status transitions** — `requested → confirmed | cancelled`; releasing slots on cancellation; one service method per transition plus an audit row.
+2. **Accounts and roles** — password reset, session rotation, per-route policy checks.
+3. **Availability view** — read-only slot calendar so staff can see what is free.
+4. **Notification outbox** — queue in the database, CLI dispatcher, retries; no provider call inside a request.
 5. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
 
 Each increment adds a migration, tests, and an ADR entry — no feature ships
