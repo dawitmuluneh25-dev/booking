@@ -47,7 +47,10 @@ final class ApplicationTest extends TestCase
         self::assertContains($response->status, [200, 503]);
         self::assertIsArray($payload);
         self::assertArrayHasKey('checks', $payload);
-        self::assertArrayHasKey('app', $payload['checks']);
+
+        $checks = $payload['checks'] ?? [];
+        self::assertIsArray($checks);
+        self::assertArrayHasKey('app', $checks);
         self::assertStringNotContainsString('DB_PASSWORD', $response->body());
     }
 

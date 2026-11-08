@@ -30,8 +30,11 @@ final class Request
 
     public static function capture(): self
     {
-        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-        $uri = (string) ($_SERVER['REQUEST_URI'] ?? '/');
+        $rawMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+        $method = is_string($rawMethod) ? strtoupper($rawMethod) : 'GET';
+
+        $rawUri = $_SERVER['REQUEST_URI'] ?? '/';
+        $uri = is_string($rawUri) ? $rawUri : '/';
         $path = parse_url($uri, PHP_URL_PATH);
 
         return new self(

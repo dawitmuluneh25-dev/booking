@@ -212,7 +212,7 @@ Open <http://127.0.0.1:8000>.
 
 ```powershell
 composer test     # PHPUnit
-composer stan     # PHPStan level 8
+composer stan     # PHPStan level 9
 composer cs       # PSR-12
 composer check    # all three
 ```
@@ -254,7 +254,7 @@ The full deployment procedure is a separate runbook; the shape is:
 |---|---|
 | `composer serve` | Built-in server with pretty URLs |
 | `composer test` | PHPUnit suite |
-| `composer stan` | Static analysis (level 8) |
+| `composer stan` | Static analysis (level 9) |
 | `composer cs` / `composer cs:fix` | Code style check / fix |
 | `composer check` | Style + static analysis + tests |
 | `php bin/console doctor` | Runtime/database/migration health |

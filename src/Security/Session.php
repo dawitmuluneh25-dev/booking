@@ -68,15 +68,31 @@ final class Session
 
     public static function flash(string $key, string $value): void
     {
-        $_SESSION[self::FLASH_KEY][$key] = $value;
+        $flash = self::flashBag();
+        $flash[$key] = $value;
+        $_SESSION[self::FLASH_KEY] = $flash;
     }
 
     public static function pullFlash(string $key): ?string
     {
-        $value = $_SESSION[self::FLASH_KEY][$key] ?? null;
-        unset($_SESSION[self::FLASH_KEY][$key]);
+        $flash = self::flashBag();
+        $value = $flash[$key] ?? null;
+        unset($flash[$key]);
+        $_SESSION[self::FLASH_KEY] = $flash;
 
         return is_string($value) ? $value : null;
+    }
+
+    /** @return array<string, string> */
+    private static function flashBag(): array
+    {
+        $flash = $_SESSION[self::FLASH_KEY] ?? [];
+        if (!is_array($flash)) {
+            return [];
+        }
+
+        /** @var array<string, string> $flash */
+        return $flash;
     }
 
     public static function destroy(): void

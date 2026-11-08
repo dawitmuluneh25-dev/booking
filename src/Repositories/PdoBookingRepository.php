@@ -82,9 +82,10 @@ final class PdoBookingRepository implements BookingRepository
         );
         $statement->execute(['reference' => $reference]);
 
+        /** @var array<string, mixed>|false $row */
         $row = $statement->fetch();
 
-        return is_array($row) ? Booking::fromRow($row) : null;
+        return $row === false ? null : Booking::fromRow($row);
     }
 
     /** @return list<Booking> */
@@ -102,11 +103,12 @@ final class PdoBookingRepository implements BookingRepository
         $statement->bindValue('limit', max(1, min($limit, 100)), PDO::PARAM_INT);
         $statement->execute();
 
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $statement->fetchAll();
+
         $bookings = [];
-        foreach ($statement->fetchAll() as $row) {
-            if (is_array($row)) {
-                $bookings[] = Booking::fromRow($row);
-            }
+        foreach ($rows as $row) {
+            $bookings[] = Booking::fromRow($row);
         }
 
         return $bookings;

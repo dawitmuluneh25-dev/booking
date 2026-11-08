@@ -29,14 +29,14 @@ final class Booking
     public static function fromRow(array $row): self
     {
         return new self(
-            (string) $row['reference'],
-            (string) $row['patient_name'],
-            (string) $row['patient_phone'],
-            (string) $row['service'],
-            (string) $row['scheduled_at'],
-            isset($row['notes']) ? (string) $row['notes'] : null,
-            (string) $row['status'],
-            (string) $row['created_at'],
+            reference: self::text($row, 'reference'),
+            patientName: self::text($row, 'patient_name'),
+            patientPhone: self::text($row, 'patient_phone'),
+            service: self::text($row, 'service'),
+            scheduledAtUtc: self::text($row, 'scheduled_at'),
+            notes: self::nullableText($row, 'notes'),
+            status: self::text($row, 'status'),
+            createdAtUtc: self::text($row, 'created_at'),
         );
     }
 
@@ -49,5 +49,29 @@ final class Booking
     public function serviceLabel(): string
     {
         return BookingService::SERVICES[$this->service] ?? $this->service;
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function text(array $row, string $key): string
+    {
+        $value = $row[$key] ?? '';
+
+        return match (true) {
+            is_string($value) => $value,
+            is_int($value), is_float($value) => (string) $value,
+            default => '',
+        };
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function nullableText(array $row, string $key): ?string
+    {
+        if (!isset($row[$key])) {
+            return null;
+        }
+
+        $value = self::text($row, $key);
+
+        return $value === '' ? null : $value;
     }
 }
