@@ -17,6 +17,7 @@ final class User
         public readonly Role $role,
         public readonly bool $active,
         public readonly ?string $lastLoginAt = null,
+        public readonly int $authVersion = 1,
     ) {
     }
 

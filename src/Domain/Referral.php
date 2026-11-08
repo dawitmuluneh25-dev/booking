@@ -38,6 +38,7 @@ final class Referral
         public readonly int $submittedByUserId,
         public readonly string $submittedOnBehalfOf,
         public readonly string $createdAtUtc,
+        public readonly ?int $referringPhysicianProfileId = null,
     ) {
     }
 
@@ -65,6 +66,9 @@ final class Referral
             submittedByUserId: self::number($row, 'submitted_by_user_id'),
             submittedOnBehalfOf: self::text($row, 'submitted_on_behalf_of'),
             createdAtUtc: self::text($row, 'created_at'),
+            referringPhysicianProfileId: is_numeric($row['referring_physician_profile_id'] ?? null)
+                ? (int) $row['referring_physician_profile_id']
+                : null,
         );
     }
 
@@ -124,6 +128,7 @@ final class Referral
             submittedByUserId: $this->submittedByUserId,
             submittedOnBehalfOf: $this->submittedOnBehalfOf,
             createdAtUtc: $this->createdAtUtc,
+            referringPhysicianProfileId: $this->referringPhysicianProfileId,
         );
     }
 

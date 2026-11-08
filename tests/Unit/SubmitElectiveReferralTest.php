@@ -6,6 +6,8 @@ namespace Tests\Unit;
 
 use App\Domain\Actor;
 use App\Domain\AuthorisationException;
+use App\Domain\PhysicianProfile;
+use App\Domain\PhysicianStatus;
 use App\Domain\IdempotencyConflictException;
 use App\Domain\ReferralStatus;
 use App\Domain\Role;
@@ -14,6 +16,7 @@ use App\Domain\ValidationException;
 use App\Validation\Validator;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryIdempotencyStore;
+use Tests\Support\InMemoryPhysicianProfileRepository;
 use Tests\Support\InMemoryReferralRepository;
 
 final class SubmitElectiveReferralTest extends TestCase
@@ -24,13 +27,21 @@ final class SubmitElectiveReferralTest extends TestCase
 
     private InMemoryIdempotencyStore $idempotency;
 
+    private InMemoryPhysicianProfileRepository $physicians;
+
     private SubmitElectiveReferral $command;
 
     protected function setUp(): void
     {
         $this->repository = new InMemoryReferralRepository();
         $this->idempotency = new InMemoryIdempotencyStore();
-        $this->command = new SubmitElectiveReferral($this->repository, new Validator(), $this->idempotency);
+        $this->physicians = new InMemoryPhysicianProfileRepository();
+        $this->command = new SubmitElectiveReferral(
+            $this->repository,
+            new Validator(),
+            $this->idempotency,
+            $this->physicians,
+        );
     }
 
     public function testPatientSubmissionStartsAtSubmittedAndNeverAtApproved(): void
@@ -90,8 +101,61 @@ final class SubmitElectiveReferralTest extends TestCase
         self::assertSame('Meron Tesfaye', $referral->guardianName);
     }
 
-    public function testReferringPhysicianIsRecordedAsReferrer(): void
+    public function testTheActorIsTakenFromTheSessionNotTheSubmittedForm(): void
     {
+        // AUTH-09 / AUTH-10: a form may not name its own actor or role. Both come
+        // from the authenticated Actor, so smuggled fields are simply not read.
+        $referral = $this->command->execute(
+            new Actor(7, Role::Patient),
+            $this->validInput() + [
+                'submitted_by_user_id' => '999',
+                'actor_id' => '999',
+                'role' => 'admin',
+                'submitted_on_behalf_of' => 'staff',
+            ],
+            self::NOW,
+        );
+
+        self::assertSame(7, $referral->submittedByUserId);
+        self::assertSame('self', $referral->submittedOnBehalfOf);
+    }
+
+    public function testAGuardianSubmissionIsRecordedAsSuchNotAsTheChild(): void
+    {
+        $referral = $this->command->execute(
+            new Actor(7, Role::Patient),
+            $this->validInput() + ['guardian_name' => 'Tesfaye Alemu'],
+            self::NOW,
+        );
+
+        self::assertSame('guardian', $referral->submittedOnBehalfOf);
+        self::assertSame(7, $referral->submittedByUserId);
+    }
+
+    public function testAnUnverifiedPhysicianCannotSubmit(): void
+    {
+        // A pending profile is not a referrer yet (AUTH-02). The account exists and
+        // can sign in; the authority to send clinical correspondence is separate.
+        $this->physicians->create($this->profile(PhysicianStatus::Pending), self::NOW);
+
+        $this->expectException(AuthorisationException::class);
+        $this->expectExceptionMessageMatches('/not verified/i');
+
+        $this->command->execute(new Actor(11, Role::Physician), $this->validInput(), self::NOW);
+    }
+
+    public function testASuspendedPhysicianCannotSubmit(): void
+    {
+        $this->physicians->create($this->profile(PhysicianStatus::Suspended), self::NOW);
+
+        $this->expectException(AuthorisationException::class);
+        $this->command->execute(new Actor(11, Role::Physician), $this->validInput(), self::NOW);
+    }
+
+    public function testAVerifiedPhysicianSubmitsUnderTheirOwnProfile(): void
+    {
+        $profile = $this->physicians->create($this->profile(PhysicianStatus::Verified), self::NOW);
+
         $referral = $this->command->execute(
             new Actor(11, Role::Physician),
             $this->validInput() + [
@@ -104,6 +168,30 @@ final class SubmitElectiveReferralTest extends TestCase
 
         self::assertSame('referrer', $referral->submittedOnBehalfOf);
         self::assertSame('Yekatit 12 Hospital', $referral->referringFacility);
+        self::assertSame($profile->id, $referral->referringPhysicianProfileId);
+    }
+
+    public function testAPatientSubmissionCarriesNoPhysicianProfile(): void
+    {
+        $referral = $this->command->execute(new Actor(7, Role::Patient), $this->validInput(), self::NOW);
+
+        self::assertNull($referral->referringPhysicianProfileId);
+    }
+
+    private function profile(PhysicianStatus $status): PhysicianProfile
+    {
+        return new PhysicianProfile(
+            id: 0,
+            userId: 11,
+            practiceNumber: 'ET-MD-4821',
+            institution: 'Yekatit 12 Hospital',
+            specialty: 'Internal medicine',
+            status: $status,
+            verifiedByUserId: null,
+            verifiedAtUtc: null,
+            reviewNote: null,
+            createdAtUtc: self::NOW,
+        );
     }
 
     public function testRadiologistMayNotSubmitBecauseTheyMustNotReferToThemselves(): void

@@ -40,4 +40,34 @@ final class Gate
             throw HttpException::forbidden('Your role cannot perform this action.');
         }
     }
+
+    /** Signed in, whatever the role. */
+    public function authenticate(): User
+    {
+        $user = $this->auth->user();
+
+        if ($user === null) {
+            throw HttpException::forbidden('Sign in to continue.');
+        }
+
+        return $user;
+    }
+
+    /**
+     * Object-level check.
+     *
+     * A refused object answers 404, never 403 (SEC 8.4): telling a referrer that a
+     * referral exists but is not theirs is itself a disclosure, and on this system
+     * that disclosure is about a patient.
+     */
+    public function authorizeObject(bool $allowed): void
+    {
+        $this->authenticate();
+
+        if (!$allowed) {
+            // The generic message is the point: naming the object, or saying it is
+            // forbidden, would confirm that it exists.
+            throw HttpException::notFound();
+        }
+    }
 }

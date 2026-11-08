@@ -36,6 +36,7 @@ final class SubmitElectiveReferral
         private readonly ReferralRepository $repository,
         private readonly Validator $validator,
         private readonly IdempotencyStore $idempotency,
+        private readonly PhysicianProfileRepository $physicians,
     ) {
     }
 
@@ -118,6 +119,22 @@ final class SubmitElectiveReferral
 
         $submittedOnBehalfOf = $this->submittedOnBehalfOf($actor, $data['guardian_name'] !== '');
 
+        // A physician submits under their verified profile, and an unverified one
+        // submits nothing (AUTH-02). Patients and staff have no profile to check.
+        $profile = null;
+
+        if ($actor->role === Role::Physician) {
+            $profile = $this->physicians->findByUserId($actor->userId);
+
+            if (!(new ReferralAccessPolicy())->maySubmitAsPhysician($profile)) {
+                throw AuthorisationException::forObject(
+                    $actor->role,
+                    Permission::ReferralSubmit,
+                    'Your referring profile is not verified yet.',
+                );
+            }
+        }
+
         $createdAtUtc = $nowUtc ?? gmdate('Y-m-d H:i:s');
 
         // Claimed after validation, so a rejected form does not burn the key: the
@@ -170,6 +187,7 @@ final class SubmitElectiveReferral
             submittedByUserId: $actor->userId,
             submittedOnBehalfOf: $submittedOnBehalfOf,
             createdAtUtc: $createdAtUtc,
+            referringPhysicianProfileId: $profile?->id,
         );
 
         // The confirmation is enqueued in the same transaction as the referral and

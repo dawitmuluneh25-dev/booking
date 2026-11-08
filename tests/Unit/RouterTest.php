@@ -7,6 +7,7 @@ namespace Tests\Unit;
 use App\Http\HttpException;
 use App\Http\Request;
 use App\Http\Response;
+use App\Http\RouteAccess;
 use App\Http\Router;
 use PHPUnit\Framework\TestCase;
 
@@ -14,7 +15,11 @@ final class RouterTest extends TestCase
 {
     public function testItDispatchesAStaticRoute(): void
     {
-        $router = (new Router())->get('/', static fn (): Response => Response::html('home'));
+        $router = (new Router())->get(
+            '/',
+            static fn (): Response => Response::html('home'),
+            RouteAccess::public('test'),
+        );
 
         $response = $router->dispatch(Request::create('GET', '/'));
 
@@ -26,7 +31,8 @@ final class RouterTest extends TestCase
     {
         $router = (new Router())->get(
             '/bookings/{reference}',
-            static fn (Request $request, array $params): Response => Response::text($params['reference'])
+            static fn (Request $request, array $params): Response => Response::text($params['reference']),
+            RouteAccess::public('test'),
         );
 
         $response = $router->dispatch(Request::create('GET', '/bookings/BK-260101-ABC234'));
@@ -36,7 +42,11 @@ final class RouterTest extends TestCase
 
     public function testItNormalisesTrailingSlashes(): void
     {
-        $router = (new Router())->get('/bookings', static fn (): Response => Response::text('list'));
+        $router = (new Router())->get(
+            '/bookings',
+            static fn (): Response => Response::text('list'),
+            RouteAccess::public('test'),
+        );
 
         self::assertSame('list', $router->dispatch(Request::create('GET', '/bookings/'))->body());
     }
@@ -51,7 +61,11 @@ final class RouterTest extends TestCase
 
     public function testWrongMethodReturnsAllowHeader(): void
     {
-        $router = (new Router())->post('/bookings', static fn (): Response => Response::text('created'));
+        $router = (new Router())->post(
+            '/bookings',
+            static fn (): Response => Response::text('created'),
+            RouteAccess::public('test'),
+        );
 
         try {
             $router->dispatch(Request::create('GET', '/bookings'));

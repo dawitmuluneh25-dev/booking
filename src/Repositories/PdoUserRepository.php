@@ -101,6 +101,19 @@ final class PdoUserRepository implements UserRepository
         $statement->execute(['password_hash' => $passwordHash, 'id' => $userId]);
     }
 
+    public function changeRole(int $userId, Role $role): void
+    {
+        // auth_version is what signs the person out: Auth compares the session's
+        // copy with the row on every request, so bumping it here ends every live
+        // session for this account on its next request (SEC 6.7).
+        $statement = $this->pdo->prepare(
+            'UPDATE users
+                SET role = :role, auth_version = auth_version + 1, updated_at = UTC_TIMESTAMP()
+              WHERE id = :id'
+        );
+        $statement->execute(['role' => $role->value, 'id' => $userId]);
+    }
+
     public function touchLastLogin(int $userId): void
     {
         $statement = $this->pdo->prepare('UPDATE users SET last_login_at = UTC_TIMESTAMP() WHERE id = :id');
@@ -207,6 +220,7 @@ final class PdoUserRepository implements UserRepository
             role: Role::from(self::text($row, 'role')),
             active: self::integer($row, 'is_active') === 1,
             lastLoginAt: is_string($lastLogin) && $lastLogin !== '' ? $lastLogin : null,
+            authVersion: self::integer($row, 'auth_version'),
         );
     }
 

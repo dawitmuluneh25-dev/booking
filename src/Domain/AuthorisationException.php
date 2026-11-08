@@ -36,7 +36,7 @@ final class AuthorisationException extends RuntimeException
     public static function forObject(Role $role, Permission $permission, string $reason): self
     {
         $exception = new self($role, $permission, $reason);
-        $exception->message = sprintf('The %s role may not %s.', $role->value, lcfirst($reason));
+        $exception->message = sprintf('The %s role may not perform this action. %s', $role->value, $reason);
 
         return $exception;
     }

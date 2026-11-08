@@ -8,6 +8,7 @@ use App\Database\Connection;
 use App\Database\DatabaseBackup;
 use App\Database\Migrator;
 use App\Database\PdoTransaction;
+use LogicException;
 use App\Domain\AuditRepository;
 use App\Domain\BookingService;
 use App\Domain\ClinicCalendar;
@@ -18,10 +19,15 @@ use App\Domain\AcknowledgeUrgentCase;
 use App\Domain\AppointmentRepository;
 use App\Domain\ApproveForScheduling;
 use App\Domain\BookAppointment;
+use App\Domain\ChangeUserRole;
+use App\Domain\CreateUserAccount;
+use App\Domain\PatientRelationshipRepository;
+use App\Domain\VerifyPhysician;
 use App\Domain\CompleteProcedureSession;
 use App\Domain\EscalateUrgentCase;
 use App\Domain\RecordPatientArrival;
 use App\Domain\RecordUrgentContactAttempt;
+use App\Domain\PhysicianProfileRepository;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\RegisterUrgentCase;
 use App\Domain\ReferralRepository;
@@ -40,6 +46,7 @@ use App\Notifications\OutboxDispatcher;
 use App\Http\Kernel;
 use App\Http\Request;
 use App\Http\Response;
+use App\Http\RouteAccess;
 use App\Http\Router;
 use App\Repositories\PdoAppointmentRepository;
 use App\Repositories\PdoAuditRepository;
@@ -47,6 +54,8 @@ use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
+use App\Repositories\PdoPatientRelationshipRepository;
+use App\Repositories\PdoPhysicianProfileRepository;
 use App\Repositories\PdoUrgentCaseRepository;
 use App\Repositories\PdoReferralRepository;
 use App\Repositories\PdoRetentionRepository;
@@ -89,6 +98,16 @@ final class Application
     private ?UrgentCaseRepository $urgentCases = null;
 
     private ?AppointmentRepository $appointments = null;
+
+    private ?PhysicianProfileRepository $physicians = null;
+
+    private ?ChangeUserRole $changeUserRole = null;
+
+    private ?CreateUserAccount $createUserAccount = null;
+
+    private ?VerifyPhysician $verifyPhysician = null;
+
+    private ?PatientRelationshipRepository $relationships = null;
 
     private ?BookAppointment $bookAppointment = null;
 
@@ -143,11 +162,27 @@ final class Application
         $config = new Config($root);
         date_default_timezone_set($config->timezone());
 
+        $router = new Router();
+
         $application = new self(
             $config,
             new View($config->root('templates'), ['appName' => $config->appName()]),
-            new Router(),
+            $router,
             new Logger($config->root('var/logs')),
+        );
+
+        // The authoriser needs the application that has just been built, so it is
+        // installed after construction rather than captured before it exists.
+        $router->authorizeWith(
+            static function (RouteAccess $access) use ($application): void {
+                if ($access->permission !== null) {
+                    $application->gate()->authorize($access->permission);
+
+                    return;
+                }
+
+                $application->gate()->authenticate();
+            },
         );
 
         /** @var callable(Application): void $routes */
@@ -240,6 +275,31 @@ final class Application
         return $this->acknowledgeUrgent ??= new AcknowledgeUrgentCase($this->urgentCases());
     }
 
+    public function physicians(): PhysicianProfileRepository
+    {
+        return $this->physicians ??= new PdoPhysicianProfileRepository($this->pdo(), $this->transaction());
+    }
+
+    public function changeUserRole(): ChangeUserRole
+    {
+        return $this->changeUserRole ??= new ChangeUserRole($this->users());
+    }
+
+    public function createUserAccount(): CreateUserAccount
+    {
+        return $this->createUserAccount ??= new CreateUserAccount($this->users(), new PasswordHasher());
+    }
+
+    public function verifyPhysician(): VerifyPhysician
+    {
+        return $this->verifyPhysician ??= new VerifyPhysician($this->physicians());
+    }
+
+    public function relationships(): PatientRelationshipRepository
+    {
+        return $this->relationships ??= new PdoPatientRelationshipRepository($this->pdo());
+    }
+
     public function appointments(): AppointmentRepository
     {
         return $this->appointments ??= new PdoAppointmentRepository($this->pdo(), $this->transaction());
@@ -285,6 +345,7 @@ final class Application
             $this->referrals(),
             new Validator(),
             $this->idempotency(),
+            $this->physicians(),
         );
     }
 

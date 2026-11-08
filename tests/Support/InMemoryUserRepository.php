@@ -63,6 +63,24 @@ final class InMemoryUserRepository implements UserRepository
         return $this->seed($email, $name, $role, $passwordHash);
     }
 
+    public function changeRole(int $userId, Role $role): void
+    {
+        if (!isset($this->rows[$userId])) {
+            return;
+        }
+
+        $user = $this->rows[$userId]['user'];
+        $this->rows[$userId]['user'] = new User(
+            $user->id,
+            $user->email,
+            $user->name,
+            $role,
+            $user->active,
+            $user->lastLoginAt,
+            $user->authVersion + 1,
+        );
+    }
+
     public function updatePassword(int $userId, string $passwordHash): void
     {
         if (isset($this->rows[$userId])) {
@@ -84,6 +102,7 @@ final class InMemoryUserRepository implements UserRepository
             $user->role,
             $user->active,
             gmdate('Y-m-d H:i:s'),
+            $user->authVersion,
         );
     }
 

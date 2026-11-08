@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Http\Kernel;
 use App\Http\Request;
 use App\Http\Response;
+use App\Http\RouteAccess;
 use App\Http\Router;
 use App\Support\Logger;
 use App\Support\View;
@@ -53,8 +54,9 @@ final class KernelTest extends TestCase
     public function testItHidesExceptionDetailsWhenDebugIsOff(): void
     {
         $router = (new Router())->get('/', static function (): Response {
+
             throw new RuntimeException('database password is hunter2');
-        });
+        }, RouteAccess::public('test'));
 
         $response = $this->kernel($router)->handle(Request::create('GET', '/'));
 
@@ -65,7 +67,11 @@ final class KernelTest extends TestCase
 
     public function testItReportsMethodNotAllowed(): void
     {
-        $router = (new Router())->post('/bookings', static fn (): Response => Response::text('ok'));
+        $router = (new Router())->post(
+            '/bookings',
+            static fn (): Response => Response::text('ok'),
+            RouteAccess::public('test'),
+        );
 
         $response = $this->kernel($router)->handle(Request::create('GET', '/bookings'));
 

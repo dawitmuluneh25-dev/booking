@@ -35,7 +35,8 @@ final class PdoReferralRepository implements ReferralRepository
     private const COLUMNS = 'id, reference, status, version, patient_name, patient_phone, patient_dob,
         guardian_name, guardian_phone, guardian_relationship, procedure_code, requested_urgency,
         clinical_summary, target_site, referring_physician_name, referring_facility,
-        referring_physician_phone, submitted_by_user_id, submitted_on_behalf_of, created_at';
+        referring_physician_phone, referring_physician_profile_id, submitted_by_user_id,
+        submitted_on_behalf_of, created_at';
 
     public function __construct(
         private readonly PDO $pdo,
@@ -57,13 +58,15 @@ final class PdoReferralRepository implements ReferralRepository
                         (reference, status, version, patient_name, patient_phone, patient_dob,
                          guardian_name, guardian_phone, guardian_relationship, procedure_code,
                          requested_urgency, clinical_summary, target_site, referring_physician_name,
-                         referring_facility, referring_physician_phone, submitted_by_user_id,
+                         referring_facility, referring_physician_phone,
+                         referring_physician_profile_id, submitted_by_user_id,
                          submitted_on_behalf_of, created_at, updated_at)
                      VALUES
                         (:reference, :status, 1, :patient_name, :patient_phone, :patient_dob,
                          :guardian_name, :guardian_phone, :guardian_relationship, :procedure_code,
                          :requested_urgency, :clinical_summary, :target_site, :referring_physician_name,
-                         :referring_facility, :referring_physician_phone, :submitted_by_user_id,
+                         :referring_facility, :referring_physician_phone,
+                         :physician_profile, :submitted_by_user_id,
                          :submitted_on_behalf_of, :created_at, :updated_at)'
                 );
 
@@ -83,6 +86,7 @@ final class PdoReferralRepository implements ReferralRepository
                     'referring_physician_name' => $referral->referringPhysicianName,
                     'referring_facility' => $referral->referringFacility,
                     'referring_physician_phone' => $referral->referringPhysicianPhone,
+                    'physician_profile' => $referral->referringPhysicianProfileId,
                     'submitted_by_user_id' => $referral->submittedByUserId,
                     'submitted_on_behalf_of' => $referral->submittedOnBehalfOf,
                     'created_at' => $referral->createdAtUtc,

@@ -23,6 +23,13 @@ interface UserRepository
 
     public function updatePassword(int $userId, string $passwordHash): void;
 
+    /**
+     * Change a user's role and revoke their existing sessions in one statement.
+     * The two must move together: a role change that leaves a session alive is a
+     * privilege change the person never receives, or keeps, until they next sign in.
+     */
+    public function changeRole(int $userId, Role $role): void;
+
     public function touchLastLogin(int $userId): void;
 
     public function recordAttempt(string $email, string $ip, bool $succeeded): void;

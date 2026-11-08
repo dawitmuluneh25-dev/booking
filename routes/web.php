@@ -19,7 +19,9 @@ use App\Controllers\BookingController;
 use App\Controllers\HealthController;
 use App\Controllers\HomeController;
 use App\Controllers\PasswordResetController;
+use App\Domain\Permission;
 use App\Http\Request;
+use App\Http\RouteAccess;
 
 return static function (Application $app): void {
     $router = $app->router();
@@ -68,49 +70,103 @@ return static function (Application $app): void {
         $app->gate(),
     );
 
-    $router->get('/', static fn (Request $request) => $home->index($request));
+    $router->get('/', static fn (Request $request) => $home->index($request), RouteAccess::public('public home page'));
 
-    $router->get('/login', static fn (Request $request) => $auth->showLogin($request));
-    $router->post('/login', static fn (Request $request) => $auth->login($request));
-    $router->post('/logout', static fn (Request $request) => $auth->logout($request));
+    $router->get(
+        '/login',
+        static fn (Request $request) => $auth->showLogin($request),
+        RouteAccess::public('sign-in form'),
+    );
+    $router->post(
+        '/login',
+        static fn (Request $request) => $auth->login($request),
+        RouteAccess::public('sign-in submission'),
+    );
+    $router->post('/logout', static fn (Request $request) => $auth->logout($request), RouteAccess::authenticated());
 
     $router->get(
         '/password/reset/{token}',
         static fn (Request $request, array $params) => $reset->show($request, $params),
+        RouteAccess::public('password reset link from email'),
     );
     $router->post(
         '/password/reset/{token}',
         static fn (Request $request, array $params) => $reset->update($request, $params),
+        RouteAccess::public('password reset submission'),
     );
 
-    $router->get('/availability', static fn (Request $request) => $availability->index($request));
+    $router->get(
+        '/availability',
+        static fn (Request $request) => $availability->index($request),
+        RouteAccess::public('availability before sign-in'),
+    );
 
-    $router->get('/bookings', static fn (Request $request) => $booking()->index($request));
-    $router->get('/bookings/new', static fn (Request $request) => $booking()->create($request));
-    $router->post('/bookings', static fn (Request $request) => $booking()->store($request));
+    $router->get(
+        '/bookings',
+        static fn (Request $request) => $booking()->index($request),
+        RouteAccess::permission(Permission::BookingsManage),
+    );
+    $router->get(
+        '/bookings/new',
+        static fn (Request $request) => $booking()->create($request),
+        RouteAccess::permission(Permission::BookingsManage),
+    );
+    $router->post(
+        '/bookings',
+        static fn (Request $request) => $booking()->store($request),
+        RouteAccess::permission(Permission::BookingsManage),
+    );
     $router->get(
         '/bookings/{reference}',
         static fn (Request $request, array $params) => $booking()->show($request, $params),
+        RouteAccess::permission(Permission::BookingsManage),
     );
     $router->post(
         '/bookings/{reference}/confirm',
         static fn (Request $request, array $params) => $booking()->confirm($request, $params),
+        RouteAccess::permission(Permission::BookingsManage),
     );
     $router->post(
         '/bookings/{reference}/cancel',
         static fn (Request $request, array $params) => $booking()->cancel($request, $params),
+        RouteAccess::permission(Permission::BookingsManage),
     );
 
-    $router->get('/admin', static fn (Request $request) => $admin->index($request));
-    $router->get('/admin/users', static fn (Request $request) => $adminUsers->index($request));
-    $router->get('/admin/audit', static fn (Request $request) => $audit->index($request));
-    $router->get('/admin/hours', static fn (Request $request) => $hours->index($request));
-    $router->post('/admin/hours', static fn (Request $request) => $hours->update($request));
+    $router->get(
+        '/admin',
+        static fn (Request $request) => $admin->index($request),
+        RouteAccess::permission(Permission::SystemMaintain),
+    );
+    $router->get(
+        '/admin/users',
+        static fn (Request $request) => $adminUsers->index($request),
+        RouteAccess::permission(Permission::UsersManage),
+    );
+    $router->get(
+        '/admin/audit',
+        static fn (Request $request) => $audit->index($request),
+        RouteAccess::permission(Permission::SystemMaintain),
+    );
+    $router->get(
+        '/admin/hours',
+        static fn (Request $request) => $hours->index($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/hours',
+        static fn (Request $request) => $hours->update($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
     $router->get(
         '/admin/diagnostics',
         static fn (Request $request) => $diagnostics->index($request),
+        RouteAccess::permission(Permission::SystemMaintain),
     );
 
     $health = new HealthController(static fn () => $app->pdo());
-    $router->get('/healthz', static fn (Request $request) => $health($request));
+    $router->get(
+        '/healthz',
+        static fn (Request $request) => $health($request),
+        RouteAccess::public('liveness probe for the host'),
+    );
 };

@@ -19,6 +19,7 @@ final class Auth
 {
     private const SESSION_USER = '_auth_user_id';
     private const SESSION_SEEN = '_auth_last_activity';
+    private const SESSION_VERSION = '_auth_version';
 
     private const MAX_FAILURES = 5;
     private const LOCK_MINUTES = 15;
@@ -70,6 +71,7 @@ final class Auth
         Session::regenerate();
         Session::put(self::SESSION_USER, (string) $credentials['user']->id);
         Session::put(self::SESSION_SEEN, (string) time());
+        Session::put(self::SESSION_VERSION, (string) $credentials['user']->authVersion);
 
         $this->cached = $credentials['user'];
         $this->resolved = true;
@@ -109,6 +111,15 @@ final class Auth
             return null;
         }
 
+        // A role change bumps this value, which ends the session on its next
+        // request instead of leaving the old authority in place until the cookie
+        // expires (SEC 6.7, Phase 3 acceptance 3).
+        if (Session::get(self::SESSION_VERSION) !== (string) $user->authVersion) {
+            $this->logout();
+
+            return null;
+        }
+
         Session::put(self::SESSION_SEEN, (string) time());
 
         return $this->cached = $user;
@@ -121,6 +132,7 @@ final class Auth
 
         Session::forget(self::SESSION_USER);
         Session::forget(self::SESSION_SEEN);
+        Session::forget(self::SESSION_VERSION);
         Session::regenerate();
     }
 
