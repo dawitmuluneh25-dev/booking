@@ -9,16 +9,24 @@ use App\Domain\Referral;
 use App\Domain\ReferralRepository;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
+use App\Domain\Transaction;
 use PDO;
-use Throwable;
 
 /**
  * MySQL implementation of the referral boundary.
  *
- * The transition uses `WHERE id = ? AND version = ? AND status = ?` and insists
- * on exactly one affected row. That is the optimistic lock: if another request
- * advanced the referral between the read and the write, zero rows change and the
- * command is refused instead of overwriting someone else's decision.
+ * Two guarantees:
+ *
+ * 1. Atomicity comes from the shared unit of work, not from opening a private
+ *    transaction here. A command that converts a referral can therefore write the
+ *    referral and the appointment in one transaction that either commits or does
+ *    not, and a caller that uses this repository alone still gets both the row and
+ *    its history row.
+ *
+ * 2. The transition is guarded by `WHERE id = ? AND version = ? AND status = ?`
+ *    and insists on exactly one affected row. If another request advanced the
+ *    referral between the read and the write, zero rows change and the caller is
+ *    refused instead of overwriting someone else's decision.
  */
 final class PdoReferralRepository implements ReferralRepository
 {
@@ -27,74 +35,62 @@ final class PdoReferralRepository implements ReferralRepository
         clinical_summary, target_site, referring_physician_name, referring_facility,
         referring_physician_phone, submitted_by_user_id, submitted_on_behalf_of, created_at';
 
-    public function __construct(private readonly PDO $pdo)
-    {
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly Transaction $transaction,
+    ) {
     }
 
     public function create(Referral $referral, Actor $actor, string $occurredAtUtc): Referral
     {
-        $this->pdo->beginTransaction();
+        return $this->transaction->run(
+            function () use ($referral, $actor, $occurredAtUtc): Referral {
+                $insert = $this->pdo->prepare(
+                    'INSERT INTO referrals
+                        (reference, status, version, patient_name, patient_phone, patient_dob,
+                         guardian_name, guardian_phone, guardian_relationship, procedure_code,
+                         requested_urgency, clinical_summary, target_site, referring_physician_name,
+                         referring_facility, referring_physician_phone, submitted_by_user_id,
+                         submitted_on_behalf_of, created_at, updated_at)
+                     VALUES
+                        (:reference, :status, 1, :patient_name, :patient_phone, :patient_dob,
+                         :guardian_name, :guardian_phone, :guardian_relationship, :procedure_code,
+                         :requested_urgency, :clinical_summary, :target_site, :referring_physician_name,
+                         :referring_facility, :referring_physician_phone, :submitted_by_user_id,
+                         :submitted_on_behalf_of, :created_at, :updated_at)'
+                );
 
-        try {
-            $insert = $this->pdo->prepare(
-                'INSERT INTO referrals
-                    (reference, status, version, patient_name, patient_phone, patient_dob,
-                     guardian_name, guardian_phone, guardian_relationship, procedure_code,
-                     requested_urgency, clinical_summary, target_site, referring_physician_name,
-                     referring_facility, referring_physician_phone, submitted_by_user_id,
-                     submitted_on_behalf_of, created_at, updated_at)
-                 VALUES
-                    (:reference, :status, 1, :patient_name, :patient_phone, :patient_dob,
-                     :guardian_name, :guardian_phone, :guardian_relationship, :procedure_code,
-                     :requested_urgency, :clinical_summary, :target_site, :referring_physician_name,
-                     :referring_facility, :referring_physician_phone, :submitted_by_user_id,
-                     :submitted_on_behalf_of, :created_at, :updated_at)'
-            );
+                $insert->execute([
+                    'reference' => $referral->reference,
+                    'status' => $referral->status->value,
+                    'patient_name' => $referral->patientName,
+                    'patient_phone' => $referral->patientPhone,
+                    'patient_dob' => $referral->patientDob,
+                    'guardian_name' => $referral->guardianName,
+                    'guardian_phone' => $referral->guardianPhone,
+                    'guardian_relationship' => $referral->guardianRelationship,
+                    'procedure_code' => $referral->procedureCode,
+                    'requested_urgency' => $referral->requestedUrgency,
+                    'clinical_summary' => $referral->clinicalSummary,
+                    'target_site' => $referral->targetSite,
+                    'referring_physician_name' => $referral->referringPhysicianName,
+                    'referring_facility' => $referral->referringFacility,
+                    'referring_physician_phone' => $referral->referringPhysicianPhone,
+                    'submitted_by_user_id' => $referral->submittedByUserId,
+                    'submitted_on_behalf_of' => $referral->submittedOnBehalfOf,
+                    'created_at' => $referral->createdAtUtc,
+                    'updated_at' => $referral->createdAtUtc,
+                ]);
 
-            $insert->execute([
-                'reference' => $referral->reference,
-                'status' => $referral->status->value,
-                'patient_name' => $referral->patientName,
-                'patient_phone' => $referral->patientPhone,
-                'patient_dob' => $referral->patientDob,
-                'guardian_name' => $referral->guardianName,
-                'guardian_phone' => $referral->guardianPhone,
-                'guardian_relationship' => $referral->guardianRelationship,
-                'procedure_code' => $referral->procedureCode,
-                'requested_urgency' => $referral->requestedUrgency,
-                'clinical_summary' => $referral->clinicalSummary,
-                'target_site' => $referral->targetSite,
-                'referring_physician_name' => $referral->referringPhysicianName,
-                'referring_facility' => $referral->referringFacility,
-                'referring_physician_phone' => $referral->referringPhysicianPhone,
-                'submitted_by_user_id' => $referral->submittedByUserId,
-                'submitted_on_behalf_of' => $referral->submittedOnBehalfOf,
-                'created_at' => $referral->createdAtUtc,
-                'updated_at' => $referral->createdAtUtc,
-            ]);
+                $id = (int) $this->pdo->lastInsertId();
 
-            $id = (int) $this->pdo->lastInsertId();
+                // The opening row records who created the request, not just that it
+                // exists; a submission without its history row would break the chain.
+                $this->appendHistory($id, null, $referral->status, $actor, null, $occurredAtUtc);
 
-            // The opening row records who created the request, not just that it
-            // exists; a submission without its history row would break the chain.
-            $this->appendHistory(
-                $id,
-                null,
-                $referral->status,
-                $actor->userId,
-                $actor->role->value,
-                null,
-                $occurredAtUtc,
-            );
-
-            $this->pdo->commit();
-
-            return $referral->withIdentity($id);
-        } catch (Throwable $exception) {
-            $this->rollback();
-
-            throw $exception;
-        }
+                return $referral->withIdentity($id);
+            },
+        );
     }
 
     public function findByReference(string $reference): ?Referral
@@ -125,69 +121,62 @@ final class PdoReferralRepository implements ReferralRepository
             throw ReferralTransitionException::forActor($referral->status, $target, $actor->role);
         }
 
-        $this->pdo->beginTransaction();
+        return $this->transaction->run(
+            function () use ($referral, $target, $actor, $reason, $occurredAtUtc): Referral {
+                $sets = [
+                    'status = :target',
+                    'version = version + 1',
+                    'updated_at = :updated_at',
+                ];
+                $parameters = [
+                    'target' => $target->value,
+                    'updated_at' => $occurredAtUtc,
+                    'id' => $referral->id,
+                    'version' => $referral->version,
+                    'expected' => $referral->status->value,
+                ];
 
-        try {
-            $sets = [
-                'status = :target',
-                'version = version + 1',
-                'updated_at = :updated_at',
-            ];
-            $parameters = [
-                'target' => $target->value,
-                'updated_at' => $occurredAtUtc,
-                'id' => $referral->id,
-                'version' => $referral->version,
-                'expected' => $referral->status->value,
-            ];
+                $stamp = match ($target) {
+                    ReferralStatus::Received => 'received_at',
+                    ReferralStatus::ClinicallyApproved => 'approved_at',
+                    ReferralStatus::Cancelled => 'cancelled_at',
+                    ReferralStatus::Closed => 'closed_at',
+                    default => null,
+                };
 
-            $stamp = match ($target) {
-                ReferralStatus::Received => 'received_at',
-                ReferralStatus::ClinicallyApproved => 'approved_at',
-                ReferralStatus::Cancelled => 'cancelled_at',
-                ReferralStatus::Closed => 'closed_at',
-                default => null,
-            };
+                if ($stamp !== null) {
+                    // The column name comes from the match above, never from input.
+                    $sets[] = $stamp . ' = :stamp_at';
+                    $parameters['stamp_at'] = $occurredAtUtc;
+                }
 
-            if ($stamp !== null) {
-                // The column name comes from the match above, never from input.
-                $sets[] = $stamp . ' = :stamp_at';
-                $parameters['stamp_at'] = $occurredAtUtc;
-            }
+                $update = $this->pdo->prepare(
+                    'UPDATE referrals SET ' . implode(', ', $sets)
+                    . ' WHERE id = :id AND version = :version AND status = :expected'
+                );
+                $update->execute($parameters);
 
-            $update = $this->pdo->prepare(
-                'UPDATE referrals SET ' . implode(', ', $sets)
-                . ' WHERE id = :id AND version = :version AND status = :expected'
-            );
-            $update->execute($parameters);
+                if ($update->rowCount() !== 1) {
+                    // Either the version moved on or the status was not what we read.
+                    throw new ReferralTransitionException(
+                        $referral->status,
+                        $target,
+                        'The referral changed while you were working on it. Reload and try again.',
+                    );
+                }
 
-            if ($update->rowCount() !== 1) {
-                // Either the version moved on or the status was not what we read.
-                throw new ReferralTransitionException(
+                $this->appendHistory(
+                    $referral->id,
                     $referral->status,
                     $target,
-                    'The referral changed while you were working on it. Reload and try again.',
+                    $actor,
+                    $reason,
+                    $occurredAtUtc,
                 );
-            }
 
-            $this->appendHistory(
-                $referral->id,
-                $referral->status,
-                $target,
-                $actor->userId,
-                $actor->role->value,
-                $reason,
-                $occurredAtUtc,
-            );
-
-            $this->pdo->commit();
-
-            return $referral->withStatus($target, $referral->version + 1);
-        } catch (Throwable $exception) {
-            $this->rollback();
-
-            throw $exception;
-        }
+                return $referral->withStatus($target, $referral->version + 1);
+            },
+        );
     }
 
     private function findOne(string $condition, string $value): ?Referral
@@ -207,8 +196,7 @@ final class PdoReferralRepository implements ReferralRepository
         int $referralId,
         ?ReferralStatus $from,
         ReferralStatus $to,
-        int $actorUserId,
-        string $actorRole,
+        Actor $actor,
         ?string $reason,
         string $occurredAtUtc,
     ): void {
@@ -223,17 +211,10 @@ final class PdoReferralRepository implements ReferralRepository
             'referral_id' => $referralId,
             'from_status' => $from?->value,
             'to_status' => $to->value,
-            'actor_user_id' => $actorUserId,
-            'actor_role' => $actorRole,
+            'actor_user_id' => $actor->userId,
+            'actor_role' => $actor->role->value,
             'reason' => $reason,
             'occurred_at' => $occurredAtUtc,
         ]);
-    }
-
-    private function rollback(): void
-    {
-        if ($this->pdo->inTransaction()) {
-            $this->pdo->rollBack();
-        }
     }
 }

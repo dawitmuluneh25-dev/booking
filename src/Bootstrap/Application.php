@@ -7,12 +7,15 @@ namespace App\Bootstrap;
 use App\Database\Connection;
 use App\Database\DatabaseBackup;
 use App\Database\Migrator;
+use App\Database\PdoTransaction;
 use App\Domain\AuditRepository;
 use App\Domain\BookingService;
 use App\Domain\ClinicCalendar;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
+use App\Domain\ReferralRepository;
 use App\Domain\RetentionRepository;
+use App\Domain\Transaction;
 use App\Domain\RetentionService;
 use App\Domain\UserRepository;
 use App\Notifications\CurlHttpClient;
@@ -28,6 +31,7 @@ use App\Repositories\PdoAuditRepository;
 use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoOutboxRepository;
+use App\Repositories\PdoReferralRepository;
 use App\Repositories\PdoRetentionRepository;
 use App\Repositories\PdoUserRepository;
 use App\Security\Auth;
@@ -50,6 +54,10 @@ use PDO;
 final class Application
 {
     private ?PDO $pdo = null;
+
+    private ?Transaction $transaction = null;
+
+    private ?ReferralRepository $referrals = null;
 
     private ?Kernel $kernel = null;
 
@@ -137,6 +145,20 @@ final class Application
     public function pdo(): PDO
     {
         return $this->pdo ??= Connection::create($this->config->database());
+    }
+
+    /**
+     * One unit of work per request. Repositories join it instead of opening their
+     * own, so a command that writes across them commits or fails as a whole.
+     */
+    public function transaction(): Transaction
+    {
+        return $this->transaction ??= new PdoTransaction($this->pdo());
+    }
+
+    public function referrals(): ReferralRepository
+    {
+        return $this->referrals ??= new PdoReferralRepository($this->pdo(), $this->transaction());
     }
 
     public function users(): UserRepository

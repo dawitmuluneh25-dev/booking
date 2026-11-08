@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Bootstrap\Config;
 use App\Bootstrap\Env;
 use App\Database\Connection;
+use App\Database\PdoTransaction;
 use App\Domain\Actor;
 use App\Domain\Referral;
 use App\Domain\ReferralStatus;
@@ -54,7 +55,7 @@ final class ReferralRepositoryTest extends TestCase
 
         $this->pdo = $pdo;
         $this->actorUserId = $this->insertUser();
-        $this->repository = new PdoReferralRepository($this->pdo);
+        $this->repository = new PdoReferralRepository($this->pdo, new PdoTransaction($this->pdo));
     }
 
     protected function tearDown(): void
