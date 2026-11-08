@@ -11,6 +11,7 @@ use App\Bootstrap\Application;
 use App\Controllers\AdminAuditController;
 use App\Controllers\AdminController;
 use App\Controllers\AdminDiagnosticsController;
+use App\Controllers\AdminHoursController;
 use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
 use App\Controllers\AvailabilityController;
@@ -37,6 +38,13 @@ return static function (Application $app): void {
         $app->retentionRepository(),
     );
 
+    $hours = new AdminHoursController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->calendar(),
+    );
+
     $diagnostics = new AdminDiagnosticsController(
         $app->view(),
         $app->auth(),
@@ -49,6 +57,7 @@ return static function (Application $app): void {
         static fn () => $app->bookings(),
         $app->config()->timezone(),
         $app->auth(),
+        $app->calendar(),
     );
 
     $booking = static fn (): BookingController => new BookingController(
@@ -95,6 +104,8 @@ return static function (Application $app): void {
     $router->get('/admin', static fn (Request $request) => $admin->index($request));
     $router->get('/admin/users', static fn (Request $request) => $adminUsers->index($request));
     $router->get('/admin/audit', static fn (Request $request) => $audit->index($request));
+    $router->get('/admin/hours', static fn (Request $request) => $hours->index($request));
+    $router->post('/admin/hours', static fn (Request $request) => $hours->update($request));
     $router->get(
         '/admin/diagnostics',
         static fn (Request $request) => $diagnostics->index($request),

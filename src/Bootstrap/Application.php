@@ -9,6 +9,7 @@ use App\Database\DatabaseBackup;
 use App\Database\Migrator;
 use App\Domain\AuditRepository;
 use App\Domain\BookingService;
+use App\Domain\ClinicCalendar;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\RetentionRepository;
@@ -22,6 +23,7 @@ use App\Http\Response;
 use App\Http\Router;
 use App\Repositories\PdoAuditRepository;
 use App\Repositories\PdoBookingRepository;
+use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoRetentionRepository;
 use App\Repositories\PdoUserRepository;
@@ -67,6 +69,8 @@ final class Application
     private ?Diagnostics $diagnostics = null;
 
     private ?RetentionRepository $retentionRepository = null;
+
+    private ?ClinicCalendar $calendar = null;
 
     private function __construct(
         private readonly Config $config,
@@ -214,12 +218,18 @@ final class Application
         );
     }
 
+    public function calendar(): ClinicCalendar
+    {
+        return $this->calendar ??= new PdoClinicCalendar($this->pdo());
+    }
+
     public function bookings(): BookingService
     {
         return new BookingService(
             new PdoBookingRepository($this->pdo()),
             new Validator(),
             new DateTimeZone($this->config->timezone()),
+            $this->calendar(),
         );
     }
 

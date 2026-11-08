@@ -7,8 +7,7 @@
  * @var list<array{label: string, booking: \App\Domain\Booking|null, past: bool}> $rows
  * @var int         $freeCount
  * @var int         $bookedCount
- * @var int         $openHour
- * @var int         $closeHour
+ * @var \App\Domain\OpeningHours|null $hours
  * @var string      $timezone
  */
 ?>
@@ -28,11 +27,18 @@
     </form>
 
     <p class="muted">
-        <?= e($dateLabel) ?> · <?= e($openHour) ?>:00–<?= e($closeHour) ?>:00 (<?= e($timezone) ?>)
-        · <?= e($freeCount) ?> free · <?= e($bookedCount) ?> booked
+        <?= e($dateLabel) ?> · <?= e($hours === null ? 'Closed' : $hours->spans()) ?> (<?= e($timezone) ?>)
+        <?php if ($hours !== null): ?>
+            · <?= e($freeCount) ?> free · <?= e($bookedCount) ?> booked
+        <?php endif; ?>
     </p>
 
-    <?php if ($rows === []): ?>
+    <?php if ($hours === null): ?>
+        <p class="empty">
+            The clinic is closed on this day. Change the weekly hours or a one-off closure under
+            <a class="link" href="/admin/hours">opening hours</a>.
+        </p>
+    <?php elseif ($rows === []): ?>
         <p class="empty">No slots are defined for this day.</p>
     <?php else: ?>
         <ul class="slot-grid">

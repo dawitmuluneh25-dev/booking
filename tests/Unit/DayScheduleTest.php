@@ -16,7 +16,7 @@ final class DayScheduleTest extends TestCase
         $addis = new DateTimeZone('Africa/Addis_Ababa');
         $date = new DateTimeImmutable('2030-05-01', $addis);
 
-        $slots = DaySchedule::slots($date, $addis, 30, 8, 17);
+        $slots = DaySchedule::slots($date, $addis, 30, '08:00', '17:00');
 
         self::assertCount(18, $slots);
         self::assertSame('08:00', $slots[0]->format('H:i'));
@@ -27,7 +27,7 @@ final class DayScheduleTest extends TestCase
     public function testSlotsConvertToUtcOnTheSameGrid(): void
     {
         $addis = new DateTimeZone('Africa/Addis_Ababa');
-        $slots = DaySchedule::slots(new DateTimeImmutable('2030-05-01', $addis), $addis, 30, 8, 17);
+        $slots = DaySchedule::slots(new DateTimeImmutable('2030-05-01', $addis), $addis, 30, '08:00', '17:00');
 
         $utc = $slots[0]->setTimezone(new DateTimeZone('UTC'));
 
@@ -40,8 +40,8 @@ final class DayScheduleTest extends TestCase
         $tz = new DateTimeZone('UTC');
         $date = new DateTimeImmutable('2030-05-01', $tz);
 
-        self::assertSame([], DaySchedule::slots($date, $tz, 0, 8, 17));
-        self::assertSame([], DaySchedule::slots($date, $tz, 30, 17, 8));
+        self::assertSame([], DaySchedule::slots($date, $tz, 0, '08:00', '17:00'));
+        self::assertSame([], DaySchedule::slots($date, $tz, 30, '17:00', '08:00'));
     }
 
     public function testItParsesStrictIsoDates(): void

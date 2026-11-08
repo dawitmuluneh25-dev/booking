@@ -30,6 +30,7 @@ final class BookingService
         private readonly BookingRepository $repository,
         private readonly Validator $validator,
         private readonly DateTimeZone $timezone,
+        private readonly ClinicCalendar $calendar,
     ) {
     }
 
@@ -74,6 +75,23 @@ final class BookingService
         $utc = $local->setTimezone(new DateTimeZone('UTC'));
         if ($utc < new DateTimeImmutable('-' . self::SLOT_MINUTES . ' minutes', new DateTimeZone('UTC'))) {
             throw new ValidationException(['scheduled_at' => 'Choose a time in the future.']);
+        }
+
+        $hours = $this->calendar->hoursFor($local);
+
+        if ($hours === null) {
+            throw new ValidationException(['scheduled_at' => 'The clinic is closed on that day.']);
+        }
+
+        if (!$hours->contains($local, self::SLOT_MINUTES)) {
+            throw new ValidationException([
+                'scheduled_at' => sprintf(
+                    'Choose a time between %s and %s on %s.',
+                    $hours->opens,
+                    $hours->closes,
+                    $hours->label(),
+                ),
+            ]);
         }
 
         $booking = new Booking(

@@ -21,6 +21,12 @@
         </article>
 
         <article class="card">
+            <h3>Opening hours</h3>
+            <p>Weekly opening hours and one-off closed days.</p>
+            <a class="link" href="/admin/hours">Edit hours</a>
+        </article>
+
+        <article class="card">
             <h3>Audit trail</h3>
             <p>Every status change with who made it and when.</p>
             <a class="link" href="/admin/audit">Review history</a>

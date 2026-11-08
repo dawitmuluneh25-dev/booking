@@ -22,19 +22,22 @@ final class DaySchedule
         DateTimeImmutable $date,
         DateTimeZone $timezone,
         int $slotMinutes,
-        int $openHour,
-        int $closeHour,
+        string $opens,
+        string $closes,
     ): array {
-        if ($slotMinutes <= 0 || $closeHour <= $openHour) {
+        $start = self::minutes($opens);
+        $end = self::minutes($closes);
+
+        if ($slotMinutes <= 0 || $start === null || $end === null || $end <= $start) {
             return [];
         }
 
         $local = $date->setTimezone($timezone);
-        $cursor = $local->setTime($openHour, 0);
-        $end = $local->setTime($closeHour, 0);
+        $cursor = $local->setTime(intdiv($start, 60), $start % 60);
+        $limit = $local->setTime(intdiv($end, 60), $end % 60);
 
         $slots = [];
-        while ($cursor < $end) {
+        while ($cursor < $limit) {
             $slots[] = $cursor;
             $cursor = $cursor->modify('+' . $slotMinutes . ' minutes');
         }
@@ -51,5 +54,19 @@ final class DaySchedule
         }
 
         return $parsed;
+    }
+
+    /** Minutes since midnight for an `HH:MM` value, or null when invalid. */
+    private static function minutes(string $time): ?int
+    {
+        $normalized = OpeningHours::normalizeTime($time);
+
+        if ($normalized === null) {
+            return null;
+        }
+
+        [$hour, $minute] = explode(':', $normalized);
+
+        return (int) $hour * 60 + (int) $minute;
     }
 }

@@ -17,6 +17,7 @@ use App\Validation\Validator;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryBookingRepository;
+use Tests\Support\InMemoryClinicCalendar;
 
 final class BookingServiceTest extends TestCase
 {
@@ -250,9 +251,66 @@ final class BookingServiceTest extends TestCase
         self::assertNull($this->service(new InMemoryBookingRepository())->find('BK-000000-XXXXXX'));
     }
 
-    private function service(BookingRepository $repository, string $timezone = 'UTC'): BookingService
+    public function testItRejectsATimeOutsideOpeningHours(): void
     {
-        return new BookingService($repository, new Validator(), new DateTimeZone($timezone));
+        $service = $this->service(new InMemoryBookingRepository());
+
+        try {
+            $this->requestAt($service, '2030-05-01T07:30');
+            self::fail('Expected a ValidationException.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('between 08:00 and 17:00', $exception->errors['scheduled_at']);
+        }
+    }
+
+    public function testItRejectsAOneOffClosedDay(): void
+    {
+        $service = $this->service(
+            new InMemoryBookingRepository(),
+            'UTC',
+            InMemoryClinicCalendar::withClosures(['2030-05-02']),
+        );
+
+        try {
+            $this->requestAt($service, '2030-05-02T09:00');
+            self::fail('Expected a ValidationException.');
+        } catch (ValidationException $exception) {
+            self::assertSame('The clinic is closed on that day.', $exception->errors['scheduled_at']);
+        }
+    }
+
+    public function testItRejectsAWeekendWhenTheClinicIsClosed(): void
+    {
+        $service = $this->service(new InMemoryBookingRepository());
+
+        try {
+            $this->requestAt($service, '2030-05-04T10:00');
+            self::fail('Expected a ValidationException.');
+        } catch (ValidationException $exception) {
+            self::assertSame('The clinic is closed on that day.', $exception->errors['scheduled_at']);
+        }
+    }
+
+    public function testItAcceptsTheLastSlotOfTheDay(): void
+    {
+        $repository = new InMemoryBookingRepository();
+
+        $booking = $this->requestAt($this->service($repository), '2030-05-01T16:30');
+
+        self::assertSame('2030-05-01 16:30:00', $booking->scheduledAtUtc);
+    }
+
+    private function service(
+        BookingRepository $repository,
+        string $timezone = 'UTC',
+        ?InMemoryClinicCalendar $calendar = null,
+    ): BookingService {
+        return new BookingService(
+            $repository,
+            new Validator(),
+            new DateTimeZone($timezone),
+            $calendar ?? new InMemoryClinicCalendar(),
+        );
     }
 
     private function requestAt(BookingService $service, string $localDateTime): \App\Domain\Booking

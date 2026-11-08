@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Domain\Booking;
 use App\Domain\BookingService;
+use App\Domain\ClinicCalendar;
 use App\Domain\DaySchedule;
 use App\Http\HttpException;
 use App\Http\Request;
@@ -19,16 +20,15 @@ use Throwable;
 
 final class AvailabilityController
 {
-    /** Placeholder opening hours until settings are configurable. */
-    public const OPEN_HOUR = 8;
-    public const CLOSE_HOUR = 17;
-
-    /** @param Closure(): BookingService $serviceFactory */
+    /**
+     * @param Closure(): BookingService $serviceFactory
+     */
     public function __construct(
         private readonly View $view,
         private readonly Closure $serviceFactory,
         private readonly string $timezone,
         private readonly Auth $auth,
+        private readonly ClinicCalendar $calendar,
     ) {
     }
 
@@ -48,13 +48,17 @@ final class AvailabilityController
             $date = new DateTimeImmutable('today', $timezone);
         }
 
-        $slots = DaySchedule::slots(
-            $date,
-            $timezone,
-            BookingService::SLOT_MINUTES,
-            self::OPEN_HOUR,
-            self::CLOSE_HOUR,
-        );
+        $hours = $this->calendar->hoursFor($date);
+
+        $slots = $hours === null
+            ? []
+            : DaySchedule::slots(
+                $date,
+                $timezone,
+                BookingService::SLOT_MINUTES,
+                $hours->opens,
+                $hours->closes,
+            );
 
         $booked = [];
         if ($slots !== []) {
@@ -107,8 +111,7 @@ final class AvailabilityController
             'rows' => $rows,
             'freeCount' => $free,
             'bookedCount' => $taken,
-            'openHour' => self::OPEN_HOUR,
-            'closeHour' => self::CLOSE_HOUR,
+            'hours' => $hours,
             'timezone' => $this->timezone,
             'currentUser' => $this->auth->user(),
         ]));
