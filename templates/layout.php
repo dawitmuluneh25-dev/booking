@@ -30,7 +30,10 @@
         </a>
         <nav class="site-nav" aria-label="Main">
             <a href="/bookings/new">New booking</a>
-            <a href="/bookings">Upcoming</a>
+            <?php if (($currentUser ?? null) !== null): ?>
+                <a href="/bookings">Upcoming</a>
+                <a href="/availability">Availability</a>
+            <?php endif; ?>
             <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::UsersManage)): ?>
                 <a href="/admin/users">Users</a>
             <?php endif; ?>

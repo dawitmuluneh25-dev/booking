@@ -31,4 +31,11 @@ interface BookingRepository
 
     /** @return list<Booking> */
     public function upcoming(int $limit): array;
+
+    /**
+     * Claimed slots in a UTC window, keyed by `Y-m-d H:i:s` slot start.
+     *
+     * @return array<string, Booking>
+     */
+    public function slotMap(string $fromUtc, string $toUtc): array;
 }

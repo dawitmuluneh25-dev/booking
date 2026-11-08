@@ -527,6 +527,80 @@ tbody tr:last-child td { border-bottom: 0; }
     box-shadow: var(--shadow);
 }
 
+/* Availability grid */
+.day-nav {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.day-form {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+
+.day-form label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.day-form input {
+    max-width: 11rem;
+}
+
+.slot-grid {
+    list-style: none;
+    margin: 1rem 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 0.6rem;
+}
+
+.slot {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.6rem 0.7rem;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    align-items: flex-start;
+}
+
+.slot-time {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.slot-meta {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.slot-ref {
+    font-size: 0.82rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.slot-free {
+    border-style: dashed;
+}
+
+.slot-booked {
+    background: var(--surface-alt);
+}
+
+.slot-past {
+    opacity: 0.55;
+}
+
+.slot-book {
+    font-size: 0.82rem;
+}
+
 .visually-hidden {
     position: absolute;
     width: 1px;

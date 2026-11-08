@@ -168,10 +168,49 @@ final class PdoBookingRepository implements BookingRepository
         return $bookings;
     }
 
+    /**
+     * @return array<string, Booking>
+     */
+    public function slotMap(string $fromUtc, string $toUtc): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT s.slot_start, b.reference, b.patient_name, b.patient_phone, b.service,
+                    b.scheduled_at, b.notes, b.status, b.created_at
+             FROM booking_slots AS s
+             JOIN bookings AS b ON b.id = s.booking_id
+             WHERE s.slot_start >= :from_utc AND s.slot_start < :to_utc
+             ORDER BY s.slot_start'
+        );
+        $statement->execute(['from_utc' => $fromUtc, 'to_utc' => $toUtc]);
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        $map = [];
+        foreach ($rows as $row) {
+            $slot = self::scalarText($row, 'slot_start');
+            $map[$slot] = Booking::fromRow($row);
+        }
+
+        return $map;
+    }
+
     private function rollback(): void
     {
         if ($this->pdo->inTransaction()) {
             $this->pdo->rollBack();
         }
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function scalarText(array $row, string $key): string
+    {
+        $value = $row[$key] ?? '';
+
+        return match (true) {
+            is_string($value) => $value,
+            is_int($value), is_float($value) => (string) $value,
+            default => '',
+        };
     }
 }

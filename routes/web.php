@@ -10,6 +10,7 @@ declare(strict_types=1);
 use App\Bootstrap\Application;
 use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
+use App\Controllers\AvailabilityController;
 use App\Controllers\BookingController;
 use App\Controllers\HealthController;
 use App\Controllers\HomeController;
@@ -23,6 +24,13 @@ return static function (Application $app): void {
     $auth = new AuthController($app->view(), $app->auth());
     $reset = new PasswordResetController($app->view(), $app->auth());
     $adminUsers = new AdminUserController($app->view(), $app->users(), $app->auth(), $app->gate());
+
+    $availability = new AvailabilityController(
+        $app->view(),
+        static fn () => $app->bookings(),
+        $app->config()->timezone(),
+        $app->auth(),
+    );
 
     $booking = static fn (): BookingController => new BookingController(
         $app->view(),
@@ -46,6 +54,8 @@ return static function (Application $app): void {
         '/password/reset/{token}',
         static fn (Request $request, array $params) => $reset->update($request, $params),
     );
+
+    $router->get('/availability', static fn (Request $request) => $availability->index($request));
 
     $router->get('/bookings', static fn (Request $request) => $booking()->index($request));
     $router->get('/bookings/new', static fn (Request $request) => $booking()->create($request));

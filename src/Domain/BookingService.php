@@ -165,6 +165,14 @@ final class BookingService
         return $this->repository->upcoming($limit);
     }
 
+    /**
+     * @return array<string, Booking> keyed by slot start in UTC
+     */
+    public function bookedSlots(string $fromUtc, string $toUtc): array
+    {
+        return $this->repository->slotMap($fromUtc, $toUtc);
+    }
+
     /** @param array<string, mixed> $input */
     private function text(array $input, string $key): string
     {

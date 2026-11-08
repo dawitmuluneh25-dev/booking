@@ -27,6 +27,7 @@ Verified on PHP 8.3.36 and MySQL 8.4.9 Community (InnoDB, `utf8mb4_0900_ai_ci`).
 | One booking per 30-minute slot, enforced by the database | `booking_slots` primary key, `PdoBookingRepository::create()` |
 | Lifecycle transitions with an append-only event log | `src/Domain/BookingStatus.php`, `booking_events` |
 | Staff accounts, roles, login throttling, password reset | `src/Security/Auth.php`, `users`, `login_attempts`, `password_resets` |
+| Read-only availability calendar built from claimed slots | `/availability`, `src/Domain/DaySchedule.php` |
 | Prepared statements only | `src/Repositories/PdoBookingRepository.php` |
 | Forward-only migrations with checksum ledger | `src/Database/Migrator.php` |
 | CLI: doctor, migrate, status, list | `bin/console` |
@@ -325,8 +326,11 @@ booking-app/
 ├── templates/
 │   ├── layout.php
 │   ├── home.php
+│   ├── auth/{login,reset}.php
+│   ├── admin/users.php
+│   ├── availability/index.php
 │   ├── bookings/{create,index,show}.php
-│   └── errors/{404,419,500}.php
+│   └── errors/{403,404,410,419,500,503}.php
 ├── tests/
 │   ├── Unit/
 │   └── Feature/
@@ -400,6 +404,9 @@ The scaffold is "done" when all of these are true:
 - [ ] A `staff` account gets 403 on `/admin/users`; an `admin` gets 200.
 - [ ] A reset link works once, then returns 410.
 - [ ] Signing out invalidates the session for subsequent requests.
+- [ ] `/availability` shows 18 half-hour slots for a default day, with claimed slots marked booked.
+- [ ] A booked slot on the calendar links to the same booking the list shows.
+- [ ] An invalid `?date=` falls back to today instead of erroring.
 - [ ] `composer check` passes (style, static analysis, tests).
 - [ ] `git status` is clean; no `.env`, `vendor/`, or log file is tracked.
 - [ ] Lighthouse installability check passes for the PWA manifest and service worker.
@@ -453,12 +460,28 @@ paths call the same service method.
 - `/bookings` requires a session; the public booking form and a booking's confirmation page
   remain reachable by reference.
 
-## 11. Next increments (in order)
+## 11. Routes
 
-1. **Availability view** — read-only slot calendar so staff can see what is free.
-2. **Notification outbox** — queue in the database, CLI dispatcher, retries; no provider call inside a request.
-3. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
-4. **Data protection** — retention window for personal data, and an audit view over `booking_events`.
+| Method | Path | Access |
+|---|---|---|
+| GET | `/` | public |
+| GET | `/bookings/new` | public |
+| POST | `/bookings` | public (CSRF required) |
+| GET | `/bookings` | any signed-in staff |
+| GET | `/bookings/{reference}` | public by reference |
+| POST | `/bookings/{reference}/confirm`, `/cancel` | staff with `bookings.manage` |
+| GET | `/availability` | any signed-in staff |
+| GET/POST | `/login`, `/logout` | public |
+| GET/POST | `/password/reset/{token}` | public with a valid token |
+| GET | `/admin/users` | `users.manage` |
+| GET | `/healthz` | public, generic output |
+
+## 12. Next increments (in order)
+
+1. **Notification outbox** — queue in the database, CLI dispatcher, retries; no provider call inside a request.
+2. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
+3. **Data protection** — retention window for personal data, and an audit view over `booking_events`.
+4. **Configurable opening hours** — replace the `AvailabilityController` constants with a settings table.
 
 Each increment adds a migration, tests, and an ADR entry — no feature ships
 without all three.

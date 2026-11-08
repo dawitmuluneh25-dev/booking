@@ -83,4 +83,25 @@ final class InMemoryBookingRepository implements BookingRepository
     {
         return array_slice($this->created, 0, $limit);
     }
+
+    /** @return array<string, Booking> */
+    public function slotMap(string $fromUtc, string $toUtc): array
+    {
+        $map = [];
+
+        foreach ($this->slots as $slot => $reference) {
+            if ($slot < $fromUtc || $slot >= $toUtc) {
+                continue;
+            }
+
+            $booking = $this->findByReference($reference);
+            if ($booking !== null) {
+                $map[$slot] = $booking;
+            }
+        }
+
+        ksort($map);
+
+        return $map;
+    }
 }
