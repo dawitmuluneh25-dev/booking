@@ -7,12 +7,15 @@ namespace App\Controllers;
 use App\Domain\BookingService;
 use App\Http\Request;
 use App\Http\Response;
+use App\Security\Auth;
 use App\Support\View;
 
 final class HomeController
 {
-    public function __construct(private readonly View $view)
-    {
+    public function __construct(
+        private readonly View $view,
+        private readonly Auth $auth,
+    ) {
     }
 
     public function index(Request $request): Response
@@ -20,6 +23,7 @@ final class HomeController
         return Response::html($this->view->render('home', [
             'title' => 'Book an appointment',
             'services' => BookingService::SERVICES,
+            'currentUser' => $this->auth->user(),
         ]));
     }
 }

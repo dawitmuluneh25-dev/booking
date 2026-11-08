@@ -31,7 +31,21 @@
         <nav class="site-nav" aria-label="Main">
             <a href="/bookings/new">New booking</a>
             <a href="/bookings">Upcoming</a>
+            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::UsersManage)): ?>
+                <a href="/admin/users">Users</a>
+            <?php endif; ?>
         </nav>
+        <div class="header-account">
+            <?php if (($currentUser ?? null) !== null): ?>
+                <span class="account-name"><?= e($currentUser->name) ?></span>
+                <form method="post" action="/logout" class="inline-form">
+                    <?= \App\Security\Csrf::field() ?>
+                    <button class="link-button" type="submit">Sign out</button>
+                </form>
+            <?php else: ?>
+                <a class="nav-signin" href="/login">Staff sign in</a>
+            <?php endif; ?>
+        </div>
         <p class="net-status" id="net-status" role="status" aria-live="polite" hidden>
             <span class="dot" aria-hidden="true"></span><span id="net-status-text">Offline</span>
         </p>

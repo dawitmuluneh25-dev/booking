@@ -2,7 +2,9 @@
 /**
  * @var list<\App\Domain\Booking> $bookings
  * @var string|null               $notice
+ * @var string|null               $error
  * @var string                    $timezone
+ * @var bool                      $canManage
  */
 ?>
 <section class="panel">
@@ -13,6 +15,10 @@
 
     <?php if ($notice !== null): ?>
         <div class="alert alert-success" role="status"><?= e($notice) ?></div>
+    <?php endif; ?>
+
+    <?php if ($error !== null): ?>
+        <div class="alert alert-error" role="alert"><?= e($error) ?></div>
     <?php endif; ?>
 
     <?php if ($bookings === []): ?>
@@ -28,6 +34,9 @@
                         <th scope="col">Service</th>
                         <th scope="col">Name</th>
                         <th scope="col">Status</th>
+                        <?php if ($canManage): ?>
+                            <th scope="col">Actions</th>
+                        <?php endif; ?>
                     </tr>
                 </thead>
                 <tbody>
@@ -42,6 +51,32 @@
                                     <?= e($booking->status->label()) ?>
                                 </span>
                             </td>
+                            <?php if ($canManage): ?>
+                                <td class="row-actions">
+                                    <?php if ($booking->status === \App\Domain\BookingStatus::Requested): ?>
+                                        <form
+                                            method="post"
+                                            action="/bookings/<?= e(rawurlencode($booking->reference)) ?>/confirm"
+                                            class="inline-form"
+                                        >
+                                            <?= \App\Security\Csrf::field() ?>
+                                            <button class="button button-small" type="submit">Confirm</button>
+                                        </form>
+                                    <?php endif; ?>
+                                    <?php if (!$booking->status->isTerminal()): ?>
+                                        <form
+                                            method="post"
+                                            action="/bookings/<?= e(rawurlencode($booking->reference)) ?>/cancel"
+                                            class="inline-form"
+                                        >
+                                            <?= \App\Security\Csrf::field() ?>
+                                            <button class="button button-small button-secondary" type="submit">
+                                                Cancel
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                </td>
+                            <?php endif; ?>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

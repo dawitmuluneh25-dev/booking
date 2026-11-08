@@ -5,6 +5,9 @@ declare(strict_types=1);
 
 use App\Bootstrap\Application;
 use App\Database\Migrator;
+use App\Domain\Role;
+use App\Security\Auth;
+use App\Security\PasswordHasher;
 
 $root = dirname(__DIR__);
 $autoload = $root . '/vendor/autoload.php';
@@ -45,6 +48,15 @@ switch ($command) {
     case 'booking:complete':
         exit(changeStatus($app, 'complete', $options));
 
+    case 'user:create':
+        exit(createUser($app, $options));
+
+    case 'user:list':
+        exit(listUsers($app));
+
+    case 'user:reset-token':
+        exit(issueResetToken($app, $options));
+
     case 'help':
     default:
         echo <<<TXT
@@ -60,7 +72,11 @@ switch ($command) {
           php bin/console booking:cancel BK-… [--actor=you] [--reason="…"]
           php bin/console booking:complete BK-… [--actor=you]
 
-        Lifecycle changes are CLI-only until authentication exists.
+          php bin/console user:create <email> <name> <admin|staff> [--password=…]
+          php bin/console user:list
+          php bin/console user:reset-token <email>
+
+        user:create prints a generated password once when --password is omitted.
 
         TXT;
         exit($command === 'help' ? 0 : 1);
@@ -254,6 +270,148 @@ function firstArgument(array $options): string
     }
 
     return '';
+}
+
+function createUser(Application $app, array $options): int
+{
+    $positional = array_values(array_filter(
+        $options,
+        static fn (string $option): bool => !str_starts_with($option, '--'),
+    ));
+
+    if (count($positional) < 3) {
+        fwrite(STDERR, "Usage: user:create <email> <name> <admin|staff> [--password=…]\n");
+
+        return 1;
+    }
+
+    $email = Auth::normalizeEmail($positional[0]);
+    $name = trim($positional[1]);
+    $role = Role::tryFrom($positional[2]);
+
+    if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        fwrite(STDERR, "That email address is not valid.\n");
+
+        return 1;
+    }
+
+    if ($name === '') {
+        fwrite(STDERR, "A name is required.\n");
+
+        return 1;
+    }
+
+    if ($role === null) {
+        fwrite(STDERR, "Role must be admin or staff.\n");
+
+        return 1;
+    }
+
+    $password = null;
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--password=')) {
+            $password = substr($option, 11);
+        }
+    }
+
+    $generated = $password === null;
+    $password ??= generatePassword();
+
+    $hasher = new PasswordHasher();
+    $errors = $hasher->policyErrors($password);
+    if ($errors !== []) {
+        fwrite(STDERR, implode(' ', $errors) . PHP_EOL);
+
+        return 1;
+    }
+
+    try {
+        $id = $app->users()->create($email, $name, $role, $hasher->hash($password));
+    } catch (\PDOException $exception) {
+        if (($exception->errorInfo[1] ?? null) === 1062) {
+            fwrite(STDERR, "A user with that email already exists.\n");
+
+            return 1;
+        }
+
+        fwrite(STDERR, 'Could not create the user: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    printf("created  #%d  %s  (%s)\n", $id, $email, $role->value);
+
+    if ($generated) {
+        echo "password: {$password}\n";
+        echo "This is shown once; store it in the password manager now.\n";
+    }
+
+    return 0;
+}
+
+function listUsers(Application $app): int
+{
+    try {
+        $users = $app->users()->all();
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Cannot read users: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    if ($users === []) {
+        echo "No users yet. Create one with: php bin/console user:create <email> <name> admin\n";
+
+        return 0;
+    }
+
+    printf("%-4s %-32s %-8s %-7s %s\n", 'ID', 'EMAIL', 'ROLE', 'STATE', 'LAST LOGIN');
+    foreach ($users as $user) {
+        printf(
+            "%-4d %-32s %-8s %-7s %s\n",
+            $user->id,
+            $user->email,
+            $user->role->value,
+            $user->active ? 'active' : 'disabled',
+            $user->lastLoginAt ?? 'never',
+        );
+    }
+
+    return 0;
+}
+
+function issueResetToken(Application $app, array $options): int
+{
+    $email = firstArgument($options);
+    if ($email === '') {
+        fwrite(STDERR, "Usage: user:reset-token <email>\n");
+
+        return 1;
+    }
+
+    $token = $app->auth()->issueResetToken($email);
+    if ($token === null) {
+        fwrite(STDERR, "No active user with that email.\n");
+
+        return 1;
+    }
+
+    echo "One-time reset link, valid for 60 minutes:\n";
+    echo "/password/reset/{$token}\n";
+
+    return 0;
+}
+
+function generatePassword(): string
+{
+    $alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    $password = '';
+
+    for ($i = 0; $i < 20; $i++) {
+        $password .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+    }
+
+    return $password;
 }
 
 function listBookings(Application $app): int

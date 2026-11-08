@@ -106,6 +106,16 @@ final class Request
         return $default;
     }
 
+    /**
+     * Untrimmed value for fields where whitespace is significant (passwords).
+     */
+    public function raw(string $key): ?string
+    {
+        $value = $this->body[$key] ?? $this->query[$key] ?? null;
+
+        return is_string($value) ? $value : null;
+    }
+
     /** @return array<string, mixed> */
     public function all(): array
     {

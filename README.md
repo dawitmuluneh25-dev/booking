@@ -26,6 +26,7 @@ Verified on PHP 8.3.36 and MySQL 8.4.9 Community (InnoDB, `utf8mb4_0900_ai_ci`).
 | Booking request → stored as `requested` (never auto-confirmed) | `src/Domain/BookingService.php` |
 | One booking per 30-minute slot, enforced by the database | `booking_slots` primary key, `PdoBookingRepository::create()` |
 | Lifecycle transitions with an append-only event log | `src/Domain/BookingStatus.php`, `booking_events` |
+| Staff accounts, roles, login throttling, password reset | `src/Security/Auth.php`, `users`, `login_attempts`, `password_resets` |
 | Prepared statements only | `src/Repositories/PdoBookingRepository.php` |
 | Forward-only migrations with checksum ledger | `src/Database/Migrator.php` |
 | CLI: doctor, migrate, status, list | `bin/console` |
@@ -180,6 +181,15 @@ php bin/console migrate:status      # verify
 The runner records each file's SHA-256 in `schema_migrations`. Editing an applied
 migration is refused; add a new one instead.
 
+Create the first administrator. Without this nobody can sign in: there is no default
+account and no sign-up route.
+
+```powershell
+php bin/console user:create admin@example.com "Clinic Admin" admin
+```
+
+Omit `--password` and a 20-character password is generated and printed once.
+
 ### Step 8 — Start the development server
 
 ```powershell
@@ -208,6 +218,10 @@ Open <http://127.0.0.1:8000>.
 4. Submit again with a past date → inline validation errors, HTTP 422.
 5. Submit with the CSRF field removed (dev tools) → HTTP 419, nothing persisted.
 6. `/healthz` → 200; stop MySQL and it returns 503 with a generic body.
+7. `/bookings` without a session → redirect to `/login`.
+8. Sign in as the administrator → `/bookings` renders with Confirm and Cancel actions.
+9. Cancel a booking → its slot is released and the time is bookable again.
+10. Sign out → `/bookings` redirects to `/login` again.
 
 ### Step 10 — Run the quality gates
 
@@ -266,6 +280,9 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console booking:confirm <ref>` | `requested → confirmed` |
 | `php bin/console booking:cancel <ref> [--reason="…"]` | `requested/confirmed → cancelled`, releases the slot |
 | `php bin/console booking:complete <ref>` | `confirmed → completed`, keeps the slot |
+| `php bin/console user:create <email> <name> <admin\|staff>` | Create an account; prints a generated password once |
+| `php bin/console user:list` | List accounts |
+| `php bin/console user:reset-token <email>` | Print a one-time reset path (60 min TTL) |
 
 ---
 
@@ -281,7 +298,8 @@ booking-app/
 │       ├── 0001_create_bookings.sql
 │       ├── 0002_create_booking_slots.sql
 │       ├── 0003_backfill_booking_slots.sql
-│       └── 0004_create_booking_events.sql
+│       ├── 0004_create_booking_events.sql
+│       └── 0005_create_auth_tables.sql
 ├── public/                      # the only web-accessible directory
 │   ├── .htaccess                # rewrite + dotfile denial
 │   ├── index.php                # front controller
@@ -377,6 +395,11 @@ The scaffold is "done" when all of these are true:
 - [ ] `booking:cancel` releases the slot; the same time can be booked again.
 - [ ] `booking:complete` on a cancelled booking fails with a non-zero exit code.
 - [ ] Every transition leaves exactly one `booking_events` row.
+- [ ] `/bookings` redirects to `/login` without a session.
+- [ ] Five wrong passwords lock further attempts for 15 minutes.
+- [ ] A `staff` account gets 403 on `/admin/users`; an `admin` gets 200.
+- [ ] A reset link works once, then returns 410.
+- [ ] Signing out invalidates the session for subsequent requests.
 - [ ] `composer check` passes (style, static analysis, tests).
 - [ ] `git status` is clean; no `.env`, `vendor/`, or log file is tracked.
 - [ ] Lighthouse installability check passes for the PWA manifest and service worker.
@@ -408,16 +431,34 @@ an append-only `booking_events` row (from, to, actor, reason, timestamp). The gu
 `UPDATE … WHERE status = :expected` means a stale read cannot silently overwrite a newer
 state: the loser gets `InvalidTransitionException`.
 
-**Transitions are CLI-only until authentication exists.** There is deliberately no public
-HTTP endpoint for confirm/cancel — an unauthenticated cancel would be a denial-of-service
-primitive against real appointments.
+Confirm and cancel are available in the staff console (`/bookings`) and on the CLI. Both
+paths call the same service method.
 
-## 10. Next increments (in order)
+## 10. Accounts and roles
 
-1. **Accounts and roles** — password reset, session rotation, per-route policy checks; then expose confirm/cancel behind authorisation.
-2. **Availability view** — read-only slot calendar so staff can see what is free.
-3. **Notification outbox** — queue in the database, CLI dispatcher, retries; no provider call inside a request.
-4. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
+| Role | Bookings | Users |
+|---|---|---|
+| `admin` | confirm, cancel | list accounts |
+| `staff` | confirm, cancel | — |
+
+- Accounts are **created from the console only** — no self-service sign-up, no default admin.
+- Passwords hash with Argon2id where available, else the platform default; minimum 12 characters.
+- Five failed attempts for the same email + IP within 15 minutes lock sign-in for 15 minutes.
+- The session stores only a user id and last-seen timestamp; identity and role are re-read
+  from the database each request, so disabling an account takes effect immediately.
+- Session id rotates on sign-in and sign-out (fixation defence); idle sessions expire after
+  `SESSION_LIFETIME`.
+- Reset tokens are 32 random bytes, stored only as SHA-256, single-use, valid for one hour.
+  Issuing them is a console action because there is no mail provider yet.
+- `/bookings` requires a session; the public booking form and a booking's confirmation page
+  remain reachable by reference.
+
+## 11. Next increments (in order)
+
+1. **Availability view** — read-only slot calendar so staff can see what is free.
+2. **Notification outbox** — queue in the database, CLI dispatcher, retries; no provider call inside a request.
+3. **Operations** — `/healthz` detail behind auth, backup/restore drill, structured log review.
+4. **Data protection** — retention window for personal data, and an audit view over `booking_events`.
 
 Each increment adds a migration, tests, and an ADR entry — no feature ships
 without all three.

@@ -6,11 +6,16 @@ namespace App\Bootstrap;
 
 use App\Database\Connection;
 use App\Domain\BookingService;
+use App\Domain\UserRepository;
 use App\Http\Kernel;
 use App\Http\Request;
 use App\Http\Response;
 use App\Http\Router;
 use App\Repositories\PdoBookingRepository;
+use App\Repositories\PdoUserRepository;
+use App\Security\Auth;
+use App\Security\Gate;
+use App\Security\PasswordHasher;
 use App\Support\Logger;
 use App\Support\View;
 use App\Validation\Validator;
@@ -28,6 +33,12 @@ final class Application
     private ?PDO $pdo = null;
 
     private ?Kernel $kernel = null;
+
+    private ?UserRepository $users = null;
+
+    private ?Auth $auth = null;
+
+    private ?Gate $gate = null;
 
     private function __construct(
         private readonly Config $config,
@@ -91,6 +102,21 @@ final class Application
     public function pdo(): PDO
     {
         return $this->pdo ??= Connection::create($this->config->database());
+    }
+
+    public function users(): UserRepository
+    {
+        return $this->users ??= new PdoUserRepository($this->pdo());
+    }
+
+    public function auth(): Auth
+    {
+        return $this->auth ??= new Auth($this->users(), new PasswordHasher(), $this->config->sessionLifetime());
+    }
+
+    public function gate(): Gate
+    {
+        return $this->gate ??= new Gate($this->auth());
     }
 
     public function bookings(): BookingService
