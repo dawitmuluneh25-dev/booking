@@ -55,8 +55,10 @@ final class MigrationIntegrityTest extends TestCase
 
     private const REFERRAL_TABLES = [
         'clinical_decisions',
+        'document_access_events',
         'referral_documents',
         'referral_status_history',
+        'referral_tracking_tokens',
         'referrals',
     ];
 
@@ -477,6 +479,120 @@ final class MigrationIntegrityTest extends TestCase
         }
 
         self::assertSame(2, $this->countWhere('clinical_decisions', 'referral_id = ' . $referralId));
+    }
+
+    /**
+     * 0016: the document vocabulary, the opaque reference and the quarantine
+     * default are enforced by the database, not by the repository that happens to
+     * write them.
+     */
+    public function testDocumentStorageInvariantsAreEnforced(): void
+    {
+        $this->insertUser('document-probe@example.test', 'staff');
+        $userId = $this->userId('document-probe@example.test');
+
+        self::pdo()->exec(
+            "INSERT INTO referrals (reference, status, patient_name, patient_phone,
+                procedure_code, submitted_by_user_id, submitted_on_behalf_of,
+                created_at, updated_at)
+             VALUES ('REF-DOC-1', 'awaiting_imaging', 'Probe Patient', '+251911000002',
+                'fluoroscopic_biopsy', " . $userId . ", 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
+        $referralId = (int) self::pdo()->lastInsertId();
+
+        $insert = static function (string $ref, string $scanStatus) use ($referralId, $userId): void {
+            self::pdo()->exec(
+                'INSERT INTO referral_documents
+                    (document_ref, referral_id, kind, original_name, mime_type, byte_size, sha256,
+                     scan_status, storage_key, uploaded_by_user_id, created_at)
+                 VALUES (' . self::pdo()->quote($ref) . ', ' . $referralId . ", 'imaging_report',
+                    'scan.pdf', 'application/pdf', 12, '" . str_repeat('c', 64) . "',
+                    " . self::pdo()->quote($scanStatus) . ', ' . self::pdo()->quote(bin2hex(random_bytes(16)))
+                    . ', ' . $userId . ', UTC_TIMESTAMP())'
+            );
+        };
+
+        // The default is quarantine, not release: a row inserted without an
+        // explicit verdict must not be servable.
+        self::pdo()->exec(
+            'INSERT INTO referral_documents
+                (document_ref, referral_id, kind, original_name, mime_type, byte_size, sha256,
+                 storage_key, uploaded_by_user_id, created_at)
+             VALUES (' . self::pdo()->quote(str_repeat('1', 32)) . ', ' . $referralId . ", 'other',
+                'letter.pdf', 'application/pdf', 10, '" . str_repeat('d', 64) . "', '"
+                . bin2hex(random_bytes(16)) . "', " . $userId . ', UTC_TIMESTAMP())'
+        );
+
+        $default = $this->query(
+            'SELECT scan_status, access_class FROM referral_documents WHERE document_ref = :ref',
+            ['ref' => str_repeat('1', 32)]
+        );
+        self::assertSame('pending', self::text($default[0]['scan_status'] ?? null));
+        self::assertSame('clinical_private', self::text($default[0]['access_class'] ?? null));
+
+        // The opaque reference is unique: two rows may not share a URL identity.
+        $insert(str_repeat('2', 32), 'pending');
+        try {
+            $insert(str_repeat('2', 32), 'pending');
+            self::fail('Two documents shared one reference.');
+        } catch (PDOException) {
+            $where = "document_ref = '" . str_repeat('2', 32) . "'";
+            self::assertSame(1, $this->countWhere('referral_documents', $where));
+        }
+
+        // The scan vocabulary is closed.
+        try {
+            $insert(str_repeat('3', 32), 'probably_fine');
+            self::fail('An invented scan status was accepted.');
+        } catch (PDOException) {
+            $where = "document_ref = '" . str_repeat('3', 32) . "'";
+            self::assertSame(0, $this->countWhere('referral_documents', $where));
+        }
+
+        $defaultRow = $this->query(
+            'SELECT id FROM referral_documents WHERE document_ref = :ref',
+            ['ref' => str_repeat('1', 32)]
+        );
+        $defaultDocumentId = self::number($defaultRow[0]['id'] ?? null);
+
+        foreach (['pending', 'clean', 'infected', 'error', 'not_required'] as $status) {
+            self::assertTrue(
+                $this->acceptsValue('referral_documents', 'scan_status', $defaultDocumentId, $status),
+                'ck_documents_scan refuses ' . $status . '.'
+            );
+        }
+
+        // A document with access history cannot be deleted: the audit chain wins
+        // over convenience, and retention redacts instead of removing (SEC 14.4).
+        $documentId = $this->query(
+            'SELECT id FROM referral_documents WHERE document_ref = :ref',
+            ['ref' => str_repeat('2', 32)]
+        );
+        $documentIdValue = self::number($documentId[0]['id'] ?? null);
+
+        self::pdo()->exec(
+            "INSERT INTO document_access_events (document_id, user_id, action, outcome, occurred_at)
+             VALUES (" . $documentIdValue . ', ' . $userId . ", 'download', 'allowed', UTC_TIMESTAMP())"
+        );
+
+        try {
+            self::pdo()->exec('DELETE FROM referral_documents WHERE id = ' . $documentIdValue);
+            self::fail('A document with access history was deleted.');
+        } catch (PDOException) {
+            self::assertSame(1, $this->countWhere('referral_documents', 'id = ' . $documentIdValue));
+        }
+
+        // Status-link tokens are unique by hash and cannot outlive their referral.
+        self::pdo()->exec(
+            "INSERT INTO referral_tracking_tokens (referral_id, token_hash, expires_at, created_at)
+             VALUES (" . $referralId . ", '" . str_repeat('e', 64) . "', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
+
+        $this->expectException(PDOException::class);
+        self::pdo()->exec(
+            "INSERT INTO referral_tracking_tokens (referral_id, token_hash, expires_at, created_at)
+             VALUES (" . $referralId . ", '" . str_repeat('e', 64) . "', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
     }
 
     private static function pdo(): PDO

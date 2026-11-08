@@ -21,7 +21,19 @@ use App\Domain\ApproveForScheduling;
 use App\Domain\BookAppointment;
 use App\Domain\ChangeUserRole;
 use App\Domain\CreateUserAccount;
+use App\Domain\DocumentRepository;
+use App\Domain\DocumentStorage;
+use App\Domain\DocumentWorkspace;
 use App\Domain\PatientRelationshipRepository;
+use App\Domain\ReferralAccessPolicy;
+use App\Domain\ReferralAccessResolver;
+use App\Domain\ReferralRetentionRepository;
+use App\Domain\ReferralRetentionService;
+use App\Domain\ReferralTrackingLink;
+use App\Domain\ReviewQuarantinedDocument;
+use App\Domain\DocumentAccessService;
+use App\Domain\TrackingTokenRepository;
+use App\Domain\UploadReferralDocument;
 use App\Domain\VerifyPhysician;
 use App\Domain\CompleteProcedureSession;
 use App\Domain\EscalateUrgentCase;
@@ -29,6 +41,8 @@ use App\Domain\RecordPatientArrival;
 use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\PhysicianProfileRepository;
 use App\Domain\RecordClinicalDecision;
+use App\Storage\FileSignatureScanner;
+use App\Storage\FilesystemDocumentStorage;
 use App\Domain\RegisterUrgentCase;
 use App\Domain\ReferralRepository;
 use App\Domain\RetentionRepository;
@@ -52,6 +66,9 @@ use App\Repositories\PdoAppointmentRepository;
 use App\Repositories\PdoAuditRepository;
 use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
+use App\Repositories\PdoDocumentRepository;
+use App\Repositories\PdoReferralRetentionRepository;
+use App\Repositories\PdoTrackingTokenRepository;
 use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoPatientRelationshipRepository;
@@ -146,6 +163,24 @@ final class Application
     private ?RetentionRepository $retentionRepository = null;
 
     private ?ClinicCalendar $calendar = null;
+
+    private ?DocumentRepository $documents = null;
+
+    private ?DocumentStorage $documentStorage = null;
+
+    private ?TrackingTokenRepository $trackingTokens = null;
+
+    private ?ReferralAccessResolver $referralAccess = null;
+
+    private ?UploadReferralDocument $uploadDocument = null;
+
+    private ?DocumentAccessService $documentAccess = null;
+
+    private ?ReviewQuarantinedDocument $reviewDocument = null;
+
+    private ?ReferralTrackingLink $trackingLink = null;
+
+    private ?ReferralRetentionRepository $referralRetentionRepository = null;
 
     private function __construct(
         private readonly Config $config,
@@ -401,6 +436,93 @@ final class Application
     {
         return new RetentionService(
             $this->retentionRepository(),
+            new RetentionPolicy($this->config->retentionDays()),
+        );
+    }
+
+    public function referralAccess(): ReferralAccessResolver
+    {
+        return $this->referralAccess ??= new ReferralAccessResolver(
+            new ReferralAccessPolicy(),
+            $this->physicians(),
+            $this->relationships(),
+        );
+    }
+
+    public function documentStorage(): DocumentStorage
+    {
+        return $this->documentStorage ??= new FilesystemDocumentStorage($this->config->documentStoragePath());
+    }
+
+    public function documents(): DocumentRepository
+    {
+        return $this->documents ??= new PdoDocumentRepository($this->pdo(), $this->transaction());
+    }
+
+    public function trackingTokens(): TrackingTokenRepository
+    {
+        return $this->trackingTokens ??= new PdoTrackingTokenRepository($this->pdo());
+    }
+
+    public function trackingLink(): ReferralTrackingLink
+    {
+        return $this->trackingLink ??= new ReferralTrackingLink(
+            $this->trackingTokens(),
+            $this->referrals(),
+            $this->config->trackingLinkTtlMinutes(),
+        );
+    }
+
+    /**
+     * The document screen's collaborators. Built once so the page, the upload,
+     * the stream and the review all share one access policy and one storage root.
+     */
+    public function documentWorkspace(): DocumentWorkspace
+    {
+        $types = $this->config->documentTypes();
+        $access = $this->referralAccess();
+
+        $upload = $this->uploadDocument ??= new UploadReferralDocument(
+            $this->documents(),
+            $this->documentStorage(),
+            new FileSignatureScanner(),
+            $access,
+            $this->transaction(),
+            $types,
+            $this->config->documentMaxBytes(),
+        );
+
+        $accessService = $this->documentAccess ??= new DocumentAccessService(
+            $this->documents(),
+            $this->referrals(),
+            $access,
+        );
+
+        $review = $this->reviewDocument ??= new ReviewQuarantinedDocument($this->documents(), $accessService);
+
+        return new DocumentWorkspace(
+            $this->referrals(),
+            $this->documents(),
+            $this->documentStorage(),
+            $access,
+            $upload,
+            $review,
+            $accessService,
+            $this->trackingLink(),
+            $types,
+        );
+    }
+
+    public function referralRetention(): ReferralRetentionService
+    {
+        $repository = $this->referralRetentionRepository ??= new PdoReferralRetentionRepository(
+            $this->pdo(),
+            $this->transaction(),
+        );
+
+        return new ReferralRetentionService(
+            $repository,
+            $this->documentStorage(),
             new RetentionPolicy($this->config->retentionDays()),
         );
     }

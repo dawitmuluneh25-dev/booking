@@ -564,7 +564,29 @@ template registration stay in the bridge; changing provider never touches this a
 | GET/POST | `/admin/hours` | `clinic.configure` (CSRF required on POST) |
 | GET | `/admin/audit` | `system.maintain` |
 | GET | `/admin/diagnostics` | `system.maintain` |
+| GET | `/referrals/{reference}/documents` | `document.read.metadata` + object scope |
+| POST | `/referrals/{reference}/documents` | `document.upload` (CSRF required) |
+| POST | `/referrals/{reference}/status-link` | `referral.triage` (CSRF required) |
+| GET | `/documents/{ref}/download` | `document.download` + object scope |
+| POST | `/documents/{ref}/review` | `document.quarantine.manage` (CSRF required) |
+| GET | `/r/{token}` | public; the token is the credential |
 | GET | `/healthz` | public, generic output |
+
+### 12.1 Private documents and status links
+
+Files live in `var/private-uploads/`, outside `public/`, under a random 32-hex key with no extension.
+The URL carries a different random reference, so a link to a document tells a passer-by nothing and
+cannot be walked from one number to the next. Only PDF, PNG and JPEG are accepted, checked against
+their magic bytes *and* libmagic — a browser's `Content-Type` is never evidence.
+
+Every upload is born quarantined. `POST /documents/{ref}/review` is how an administrator releases a
+file, and the verdict records who decided, when and why. That command is the documented compensating
+control for a host with no malware scanner (HAK-0904); if a scanner is added later it writes the same
+verdict through the same command.
+
+`POST /referrals/{reference}/status-link` mints a link for the patient: 64 hex characters, stored only
+as SHA-256, valid once, expiring after `TRACKING_LINK_TTL_MINUTES` (default 24 h). The page it opens
+shows the reference, the status and the procedure — no name, no phone number, no clinical summary.
 
 ## 13. Operations
 
@@ -574,7 +596,7 @@ template registration stay in the bridge; changing provider never touches this a
 | Backup | `php bin/console db:backup --prune=14` | hourly, off the host afterwards |
 | Restore proof | `php bin/console db:restore-drill` | weekly, and after any schema change |
 | Notification delivery | `php bin/console outbox:dispatch --limit=20` | every minute |
-| Retention sweep | `php bin/console retention:purge --yes` | monthly |
+| Retention sweep (bookings, referrals and their files) | `php bin/console retention:purge --yes` | monthly |
 | Log review | `php bin/console logs:review --level=error` | after an incident |
 
 `db:backup` never calls `mysqldump`: the dump is produced with PDO, so it works where `exec()` is
@@ -584,6 +606,14 @@ name ends in `_drill`.
 
 Backups under `var/backups/` sit inside the same failure domain as the database. Copy them off the
 host — that step is yours, because it needs a destination only you can choose.
+
+`retention:purge` runs both sweeps against one cutoff: bookings, then referrals whose last transition
+is older than `RETENTION_DAYS`. For a referral it deletes the stored file first, marks the row, then
+overwrites the identity columns and destroys that referral's status links — so a redacted record never
+leaves an orphaned file behind. `retention:plan` prints both counts without changing anything.
+
+Back up `var/private-uploads/` with the database. A database-only backup holds document rows whose
+bytes are gone, which is worse than either half on its own.
 
 ## 14. Remaining backlog
 

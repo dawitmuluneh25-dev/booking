@@ -6,6 +6,10 @@ namespace App\Domain;
 
 /**
  * One executed retention sweep, kept as evidence that the policy ran.
+ *
+ * The three counters are separate because a sweep can legitimately do one thing
+ * and not the others, and an audit line that reports a single total cannot say
+ * whether the referral documents were actually covered.
  */
 final readonly class RetentionRun
 {
@@ -14,6 +18,8 @@ final readonly class RetentionRun
         public int $bookingsRedacted,
         public string $actor,
         public string $ranAtUtc,
+        public int $referralsRedacted = 0,
+        public int $documentsRedacted = 0,
     ) {
     }
 
@@ -22,9 +28,11 @@ final readonly class RetentionRun
     {
         return new self(
             cutoffDate: self::text($row, 'cutoff_date'),
-            bookingsRedacted: (int) self::text($row, 'bookings_redacted'),
+            bookingsRedacted: self::number($row, 'bookings_redacted'),
             actor: self::text($row, 'actor'),
             ranAtUtc: self::text($row, 'ran_at'),
+            referralsRedacted: self::number($row, 'referrals_redacted'),
+            documentsRedacted: self::number($row, 'documents_redacted'),
         );
     }
 
@@ -38,5 +46,13 @@ final readonly class RetentionRun
             is_int($value), is_float($value) => (string) $value,
             default => '',
         };
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function number(array $row, string $key): int
+    {
+        $value = $row[$key] ?? 0;
+
+        return is_numeric($value) ? (int) $value : 0;
     }
 }

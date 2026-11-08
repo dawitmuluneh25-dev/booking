@@ -141,7 +141,7 @@ final class PdoRetentionRepository implements RetentionRepository
     public function recentRuns(int $limit): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT cutoff_date, bookings_redacted, actor, ran_at
+            'SELECT cutoff_date, bookings_redacted, referrals_redacted, documents_redacted, actor, ran_at
              FROM retention_runs
              ORDER BY id DESC
              LIMIT :limit'

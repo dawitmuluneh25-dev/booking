@@ -16,6 +16,7 @@ use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
 use App\Controllers\AvailabilityController;
 use App\Controllers\BookingController;
+use App\Controllers\DocumentController;
 use App\Controllers\HealthController;
 use App\Controllers\HomeController;
 use App\Controllers\PasswordResetController;
@@ -161,6 +162,51 @@ return static function (Application $app): void {
         '/admin/diagnostics',
         static fn (Request $request) => $diagnostics->index($request),
         RouteAccess::permission(Permission::SystemMaintain),
+    );
+
+    $documents = new DocumentController(
+        $app->view(),
+        $app->gate(),
+        $app->logger(),
+        static fn () => $app->documentWorkspace(),
+        $app->config()->timezone(),
+        $app->config()->baseUrl(),
+        $app->config()->documentMaxBytes(),
+    );
+
+    $router->get(
+        '/referrals/{reference}/documents',
+        static fn (Request $request, array $params) => $documents->index($request, $params),
+        RouteAccess::permission(Permission::DocumentReadMetadata),
+    );
+    $router->post(
+        '/referrals/{reference}/documents',
+        static fn (Request $request, array $params) => $documents->store($request, $params),
+        RouteAccess::permission(Permission::DocumentUpload),
+    );
+    $router->post(
+        '/referrals/{reference}/status-link',
+        static fn (Request $request, array $params) => $documents->issueLink($request, $params),
+        RouteAccess::permission(Permission::ReferralTriage),
+    );
+    $router->get(
+        '/documents/{ref}/download',
+        static fn (Request $request, array $params) => $documents->download($request, $params),
+        RouteAccess::permission(Permission::DocumentDownload),
+    );
+    $router->post(
+        '/documents/{ref}/review',
+        static fn (Request $request, array $params) => $documents->review($request, $params),
+        RouteAccess::permission(Permission::DocumentQuarantineManage),
+    );
+
+    // The token is the credential: the route is public because the point of a
+    // status link is that it works without an account, and single-use because a
+    // link that survives being forwarded is a leaked link.
+    $router->get(
+        '/r/{token}',
+        static fn (Request $request, array $params) => $documents->showStatus($request, $params),
+        RouteAccess::public('single-use status link; possession of the token is the credential'),
     );
 
     $health = new HealthController(static fn () => $app->pdo());

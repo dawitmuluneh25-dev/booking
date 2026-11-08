@@ -31,13 +31,16 @@ final class RouteAccessManifestTest extends TestCase
         'POST /password/reset/{token}',
         'GET /availability',
         'GET /healthz',
+        // The token is the credential; the route has to work without a session
+        // because that is the entire point of a status link.
+        'GET /r/{token}',
     ];
 
     public function testEveryRouteDeclaresItsAccess(): void
     {
         $manifest = $this->manifest();
 
-        self::assertSame(20, count($manifest));
+        self::assertSame(26, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);
@@ -76,6 +79,10 @@ final class RouteAccessManifestTest extends TestCase
         self::assertSame('users.manage', $guarded['GET /admin/users'] ?? null);
         self::assertSame('clinic.configure', $guarded['POST /admin/hours'] ?? null);
         self::assertSame('system.maintain', $guarded['GET /admin/diagnostics'] ?? null);
+        self::assertSame('document.upload', $guarded['POST /referrals/{reference}/documents'] ?? null);
+        self::assertSame('document.download', $guarded['GET /documents/{ref}/download'] ?? null);
+        self::assertSame('document.quarantine.manage', $guarded['POST /documents/{ref}/review'] ?? null);
+        self::assertSame('referral.triage', $guarded['POST /referrals/{reference}/status-link'] ?? null);
     }
 
     public function testNoGuardedRouteReliesOnAuthenticationAloneExceptLogout(): void

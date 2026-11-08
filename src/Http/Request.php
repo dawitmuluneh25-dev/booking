@@ -122,6 +122,23 @@ final class Request
         return array_merge($this->query, $this->body);
     }
 
+    /**
+     * One raw entry from PHP's own upload table.
+     *
+     * Files are not merged into `body` because they are not input: they are bytes
+     * the application must inspect before it trusts a single attribute of them.
+     * Returning the raw array keeps that decision with `UploadedFile`, where the
+     * validation lives, instead of in the transport object.
+     *
+     * @return array<string, mixed>
+     */
+    public function file(string $key): array
+    {
+        $entry = $_FILES[$key] ?? null;
+
+        return is_array($entry) ? $entry : [];
+    }
+
     public function header(string $name): ?string
     {
         $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));

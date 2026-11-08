@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Bootstrap;
 
+use App\Domain\DocumentTypes;
+use App\Domain\ReferralTrackingLink;
+
 /**
  * Typed read-only view over configuration values resolved from the environment.
  */
@@ -95,6 +98,60 @@ final class Config
     public function retentionDays(): int
     {
         return max(1, Env::int('RETENTION_DAYS', 730));
+    }
+
+    /**
+     * Private document storage, deliberately outside `public/`.
+     *
+     * A relative value is resolved against the application root so a deployment
+     * that moves the code does not silently start writing to a path that happens
+     * to be web-served.
+     */
+    public function documentStoragePath(): string
+    {
+        $configured = trim((string) Env::get('DOCUMENT_STORAGE_PATH', ''));
+
+        if ($configured === '') {
+            return $this->root('var/private-uploads');
+        }
+
+        $absolute = str_starts_with($configured, DIRECTORY_SEPARATOR)
+            || preg_match('/\A[A-Za-z]:[\\\\\/]/', $configured) === 1;
+
+        return $absolute
+            ? $configured
+            : $this->root($configured);
+    }
+
+    /** Per-file cap. The 15 MiB default is the reviewed application limit (SEC 14.1). */
+    public function documentMaxBytes(): int
+    {
+        return max(1024, min(Env::int('DOCUMENT_MAX_BYTES', 15 * 1024 * 1024), 64 * 1024 * 1024));
+    }
+
+    /** The reviewed allowlist, optionally narrowed - never widened - by environment. */
+    public function documentTypes(): DocumentTypes
+    {
+        $configured = trim((string) Env::get('DOCUMENT_TYPES', ''));
+
+        if ($configured === '') {
+            return new DocumentTypes();
+        }
+
+        $extensions = array_map(
+            static fn (string $extension): string => strtolower(trim($extension)),
+            explode(',', $configured),
+        );
+
+        return new DocumentTypes(array_values(array_filter($extensions)));
+    }
+
+    /** How long a status link lives. A security default, not a clinical retention period. */
+    public function trackingLinkTtlMinutes(): int
+    {
+        $configured = Env::int('TRACKING_LINK_TTL_MINUTES', ReferralTrackingLink::DEFAULT_TTL_MINUTES);
+
+        return max(1, min($configured, 10080));
     }
 
     /** `log` (development) or `http` (a gateway bridge you operate). */

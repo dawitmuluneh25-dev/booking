@@ -44,6 +44,60 @@ final class Response
         return new self($status, ['Content-Type' => 'text/plain; charset=UTF-8'], $body);
     }
 
+    /**
+     * A private file handed to one authorised reader.
+     *
+     * `attachment` by default: the default is what a browser does with a type it
+     * does not recognise, and choosing inline for a PDF is an explicit decision by
+     * the caller rather than something a stored document gets to make for itself
+     * (SEC 14.3). `no-store` keeps the bytes out of every cache between here and
+     * the clinician's screen.
+     */
+    public static function download(
+        string $bytes,
+        string $mimeType,
+        string $downloadName,
+        bool $inline = false,
+    ): self {
+        $name = self::safeFileName($downloadName);
+
+        return new self(200, [
+            'Content-Type' => $mimeType,
+            'Content-Length' => (string) strlen($bytes),
+            'Content-Disposition' => self::disposition($inline, $name),
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'Pragma' => 'no-cache',
+            'X-Content-Type-Options' => 'nosniff',
+        ], $bytes);
+    }
+
+    /**
+     * Strip everything that could terminate the header or escape the quotes.
+     *
+     * The display name comes from the uploader, so it is untrusted input that
+     * happens to look like a filename.
+     */
+    private static function safeFileName(string $name): string
+    {
+        $name = str_replace(['"', '\\'], '', $name);
+        $name = preg_replace('/[\x00-\x1F\x7F]/u', '', $name) ?? '';
+        $name = trim($name);
+
+        return $name === '' ? 'document' : mb_substr($name, 0, 190);
+    }
+
+    private static function disposition(bool $inline, string $name): string
+    {
+        $type = $inline ? 'inline' : 'attachment';
+
+        // ASCII fallback plus RFC 5987 form, so a name with non-Latin characters
+        // survives without putting raw bytes into a header.
+        $ascii = preg_replace('/[^\x20-\x7E]/', '_', $name) ?? 'document';
+        $ascii = str_replace('"', '', $ascii);
+
+        return sprintf('%s; filename="%s"; filename*=UTF-8\'\'%s', $type, $ascii, rawurlencode($name));
+    }
+
     public function withHeader(string $name, string $value): self
     {
         $headers = $this->headers;

@@ -15,6 +15,7 @@
 # Application data — may hold patient records, so it must never be committed.
 # Only the schema (database/migrations) belongs in version control.
 /var/data/
+/var/private-uploads/
 
 # Local tooling (portable PHP/Composer live outside the repo)
 /.tools/

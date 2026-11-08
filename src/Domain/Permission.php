@@ -21,4 +21,16 @@ enum Permission: string
     case ProcedureCoordinate = 'procedure.coordinate';
     case UrgentCoordinate = 'urgent.coordinate';
     case ScheduleManage = 'schedule.manage';
+
+    /**
+     * Document capabilities (SEC 6.7).
+     *
+     * `document.delete.request` and `document.export` are deliberately absent:
+     * neither has a governed workflow in this release, and a permission nobody
+     * can exercise is a claim the system does not need to make.
+     */
+    case DocumentUpload = 'document.upload';
+    case DocumentReadMetadata = 'document.read.metadata';
+    case DocumentDownload = 'document.download';
+    case DocumentQuarantineManage = 'document.quarantine.manage';
 }
