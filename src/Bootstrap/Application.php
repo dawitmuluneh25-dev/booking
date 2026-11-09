@@ -19,6 +19,7 @@ use App\Domain\AcknowledgeUrgentCase;
 use App\Domain\AppointmentRepository;
 use App\Domain\ApproveForScheduling;
 use App\Domain\BookAppointment;
+use App\Domain\CancelAppointment;
 use App\Domain\ChangeUserRole;
 use App\Domain\CreateUserAccount;
 use App\Domain\DocumentRepository;
@@ -41,6 +42,10 @@ use App\Domain\RecordPatientArrival;
 use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\PhysicianProfileRepository;
 use App\Domain\RecordClinicalDecision;
+use App\Domain\ScheduleWorkspace;
+use App\Domain\ScheduleRepository;
+use App\Domain\ScheduleBoard;
+use App\Domain\RescheduleAppointment;
 use App\Storage\FileSignatureScanner;
 use App\Storage\FilesystemDocumentStorage;
 use App\Domain\RegisterUrgentCase;
@@ -76,6 +81,7 @@ use App\Repositories\PdoPhysicianProfileRepository;
 use App\Repositories\PdoUrgentCaseRepository;
 use App\Repositories\PdoReferralRepository;
 use App\Repositories\PdoRetentionRepository;
+use App\Repositories\PdoScheduleRepository;
 use App\Repositories\PdoUserRepository;
 use App\Security\Auth;
 use App\Security\Gate;
@@ -125,6 +131,14 @@ final class Application
     private ?VerifyPhysician $verifyPhysician = null;
 
     private ?PatientRelationshipRepository $relationships = null;
+
+    private ?ScheduleRepository $schedule = null;
+
+    private ?ScheduleBoard $scheduleBoard = null;
+
+    private ?RescheduleAppointment $rescheduleAppointment = null;
+
+    private ?CancelAppointment $cancelAppointment = null;
 
     private ?BookAppointment $bookAppointment = null;
 
@@ -338,6 +352,38 @@ final class Application
     public function appointments(): AppointmentRepository
     {
         return $this->appointments ??= new PdoAppointmentRepository($this->pdo(), $this->transaction());
+    }
+
+    public function schedule(): ScheduleRepository
+    {
+        return $this->schedule ??= new PdoScheduleRepository($this->pdo());
+    }
+
+    public function scheduleBoard(): ScheduleBoard
+    {
+        return $this->scheduleBoard ??= new ScheduleBoard($this->schedule());
+    }
+
+    public function rescheduleAppointment(): RescheduleAppointment
+    {
+        return $this->rescheduleAppointment ??= new RescheduleAppointment($this->appointments());
+    }
+
+    public function cancelAppointment(): CancelAppointment
+    {
+        return $this->cancelAppointment ??= new CancelAppointment($this->appointments());
+    }
+
+    public function scheduleWorkspace(): ScheduleWorkspace
+    {
+        return new ScheduleWorkspace(
+            $this->scheduleBoard(),
+            $this->referrals(),
+            $this->appointments(),
+            $this->bookAppointment(),
+            $this->rescheduleAppointment(),
+            $this->cancelAppointment(),
+        );
     }
 
     public function bookAppointment(): BookAppointment

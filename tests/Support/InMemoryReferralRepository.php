@@ -137,6 +137,19 @@ final class InMemoryReferralRepository implements ReferralRepository
         return $rows;
     }
 
+    /** @return list<Referral> */
+    public function approvedForScheduling(int $limit = 50): array
+    {
+        $referrals = [];
+
+        foreach ($this->referrals as $referral) {
+            if ($referral->status === ReferralStatus::ApprovedForScheduling) {
+                $referrals[] = $referral;
+            }
+        }
+
+        return array_slice($referrals, 0, max(1, $limit));
+    }
     public function currentDecision(int $referralId): ?ClinicalDecision
     {
         $standing = null;

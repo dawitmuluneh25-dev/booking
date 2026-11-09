@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain;
 
-use DateTimeImmutable;
-use DateTimeZone;
-
 /**
  * Turn an approved referral into a booked appointment.
  *
@@ -30,11 +27,7 @@ use DateTimeZone;
 final class BookAppointment
 {
     /** Booking granularity. Changing this is a data migration, not a tweak. */
-    public const SLOT_MINUTES = 15;
-
-    private const MIN_MINUTES = 15;
-
-    private const MAX_MINUTES = 480;
+    public const SLOT_MINUTES = ResourceSchedule::SLOT_MINUTES;
 
     private const REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -81,47 +74,7 @@ final class BookAppointment
             );
         }
 
-        $resourceId = $this->integer($input, 'resource_id');
-        $duration = $this->integer($input, 'duration_minutes');
-        $startsAt = $this->timestamp($this->text($input, 'starts_at'));
-
-        $errors = [];
-
-        if ($resourceId === null || $resourceId < 1) {
-            $errors['resource_id'] = 'Choose the room or suite to book.';
-        }
-
-        if ($duration === null || $duration < self::MIN_MINUTES || $duration > self::MAX_MINUTES) {
-            $errors['duration_minutes'] = sprintf(
-                'Duration must be between %d and %d minutes.',
-                self::MIN_MINUTES,
-                self::MAX_MINUTES,
-            );
-        } elseif ($duration % self::SLOT_MINUTES !== 0) {
-            $errors['duration_minutes'] = sprintf(
-                'Duration must be a multiple of %d minutes.',
-                self::SLOT_MINUTES,
-            );
-        }
-
-        if ($startsAt === null) {
-            $errors['starts_at'] = 'Give the start time as YYYY-MM-DD HH:MM in UTC.';
-        }
-
-        if ($errors !== []) {
-            throw new ValidationException($errors);
-        }
-
-        // Both are guaranteed non-null by the checks above; the assertions keep the
-        // analyser honest without a second set of null checks below.
-        \assert($resourceId !== null && $duration !== null && $startsAt !== null);
-
-        $endsAt = $startsAt->modify('+' . $duration . ' minutes');
-
-        if ($endsAt === false) {
-            throw new ValidationException(['duration_minutes' => 'That duration is not a real time span.']);
-        }
-
+        $schedule = SchedulingInput::fromArray($input);
         $createdAtUtc = $nowUtc ?? gmdate('Y-m-d H:i:s');
 
         $appointment = new Appointment(
@@ -130,9 +83,9 @@ final class BookAppointment
             referralId: $referral->id,
             status: AppointmentStatus::Scheduled,
             version: 1,
-            startsAtUtc: $startsAt->format('Y-m-d H:i:s'),
-            endsAtUtc: $endsAt->format('Y-m-d H:i:s'),
-            durationMinutes: $duration,
+            startsAtUtc: $schedule->startsAtUtc(),
+            endsAtUtc: $schedule->endsAtUtc(),
+            durationMinutes: $schedule->durationMinutes,
             patientName: $referral->patientName,
             patientPhone: $referral->patientPhone,
             createdByUserId: $actor->userId,
@@ -140,19 +93,19 @@ final class BookAppointment
         );
 
         return $this->transaction->run(
-            function () use (
-                $appointment,
-                $resourceId,
-                $startsAt,
-                $duration,
-                $referral,
-                $actor,
-                $createdAtUtc,
-            ): Appointment {
+            function () use ($appointment, $schedule, $referral, $actor, $createdAtUtc): Appointment {
+                // The explicit lock protocol: every writer takes the resource row
+                // first, so two schedulers booking overlapping multi-quantum
+                // windows are serialised here instead of meeting inside
+                // `resource_slots`, where a partial insert could deadlock. The
+                // primary key of that table is still the guard; this is what makes
+                // the guard reachable one writer at a time.
+                $this->appointments->lockResource($schedule->resourceId);
+
                 $booked = $this->appointments->book(
                     $appointment,
-                    $resourceId,
-                    $this->slotStarts($startsAt, $duration),
+                    $schedule->resourceId,
+                    $schedule->slotStarts(),
                     $actor,
                 );
 
@@ -169,26 +122,6 @@ final class BookAppointment
         );
     }
 
-    /**
-     * @return list<string>
-     */
-    private function slotStarts(DateTimeImmutable $startsAt, int $duration): array
-    {
-        $slots = [];
-
-        for ($offset = 0; $offset < $duration; $offset += self::SLOT_MINUTES) {
-            $slot = $startsAt->modify('+' . $offset . ' minutes');
-
-            if ($slot === false) {
-                continue;
-            }
-
-            $slots[] = $slot->format('Y-m-d H:i:s');
-        }
-
-        return $slots;
-    }
-
     private function reference(): string
     {
         $suffix = '';
@@ -199,38 +132,5 @@ final class BookAppointment
         }
 
         return 'BK-' . gmdate('ymd') . '-' . $suffix;
-    }
-
-    private function timestamp(string $value): ?DateTimeImmutable
-    {
-        if ($value === '') {
-            return null;
-        }
-
-        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
-
-        return $parsed === false || $parsed->format('Y-m-d H:i:s') !== $value ? null : $parsed;
-    }
-
-    /** @param array<string, mixed> $input */
-    private function integer(array $input, string $key): ?int
-    {
-        $value = $input[$key] ?? null;
-
-        if (is_int($value)) {
-            return $value;
-        }
-
-        return is_string($value) && preg_match('/^[0-9]{1,6}$/', trim($value)) === 1
-            ? (int) trim($value)
-            : null;
-    }
-
-    /** @param array<string, mixed> $input */
-    private function text(array $input, string $key): string
-    {
-        $value = $input[$key] ?? '';
-
-        return is_string($value) ? trim($value) : '';
     }
 }

@@ -10,6 +10,7 @@ use App\Domain\AppointmentRepository;
 use App\Domain\AppointmentStatus;
 use App\Domain\AppointmentTransitionException;
 use App\Domain\ResourceNotFoundException;
+use App\Domain\RescheduleTarget;
 use App\Domain\SlotUnavailableException;
 use App\Domain\Transaction;
 use PDO;
@@ -24,9 +25,14 @@ use PDOException;
  * window between the two where two schedulers both see the slot free; this does
  * not, whatever the application layer believes.
  *
+ * Two writers are kept apart before they reach that key by `lockResource()`:
+ * every operation that changes occupancy locks the affected resource rows in
+ * ascending id order, so a multi-quantum booking cannot half-insert and wait for
+ * a row another transaction is holding.
+ *
  * Everything happens inside the caller's unit of work, so a failure at any point
- * — an occupied quantum, an unknown appointment status, a stale referral version
- * — leaves neither the appointment nor a partial set of occupancy rows.
+ * — an occupied quantum, an unknown appointment status, a stale version — leaves
+ * neither the appointment nor a partial set of occupancy rows.
  */
 final class PdoAppointmentRepository implements AppointmentRepository
 {
@@ -82,31 +88,199 @@ final class PdoAppointmentRepository implements AppointmentRepository
                     'role' => 'primary',
                 ]);
 
-                $slot = $this->pdo->prepare(
-                    'INSERT INTO resource_slots (resource_id, slot_start, appointment_id, created_at)
-                     VALUES (:resource_id, :slot_start, :appointment_id, :created_at)'
-                );
-
-                foreach ($slotStarts as $slotStart) {
-                    try {
-                        $slot->execute([
-                            'resource_id' => $resourceId,
-                            'slot_start' => $slotStart,
-                            'appointment_id' => $id,
-                            'created_at' => $appointment->createdAtUtc,
-                        ]);
-                    } catch (PDOException $exception) {
-                        if (($exception->errorInfo[0] ?? '') === '23000') {
-                            throw new SlotUnavailableException($resourceId, $slotStart);
-                        }
-
-                        throw $exception;
-                    }
-                }
+                $this->insertSlots($id, $resourceId, $slotStarts, $appointment->createdAtUtc);
 
                 return $appointment->withIdentity($id);
             },
         );
+    }
+
+    public function lockResource(int $resourceId): void
+    {
+        $statement = $this->pdo->prepare('SELECT id FROM resources WHERE id = :id FOR UPDATE');
+        $statement->execute(['id' => $resourceId]);
+
+        if ($statement->fetchColumn() === false) {
+            throw new ResourceNotFoundException($resourceId);
+        }
+    }
+
+    public function occupiedStartsFor(int $appointmentId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT slot_start FROM resource_slots WHERE appointment_id = :id ORDER BY slot_start'
+        );
+        $statement->execute(['id' => $appointmentId]);
+
+        $starts = [];
+        foreach ($statement->fetchAll() as $row) {
+            if (is_array($row) && isset($row['slot_start']) && is_scalar($row['slot_start'])) {
+                $starts[] = (string) $row['slot_start'];
+            }
+        }
+
+        return $starts;
+    }
+
+    public function primaryResourceFor(int $appointmentId): ?int
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT resource_id FROM appointment_resources
+              WHERE appointment_id = :id AND role = 'primary' LIMIT 1"
+        );
+        $statement->execute(['id' => $appointmentId]);
+
+        $value = $statement->fetchColumn();
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    public function reschedule(
+        Appointment $appointment,
+        RescheduleTarget $target,
+        Actor $actor,
+        ?string $reason,
+        string $occurredAtUtc,
+    ): Appointment {
+        $previousResourceId = $this->primaryResourceFor($appointment->id);
+
+        if ($previousResourceId === null) {
+            throw new AppointmentTransitionException(
+                $appointment->status,
+                $appointment->status,
+                'This appointment has no resource recorded, so it cannot be moved.',
+            );
+        }
+
+        return $this->transaction->run(function () use (
+            $appointment,
+            $target,
+            $actor,
+            $reason,
+            $occurredAtUtc,
+            $previousResourceId,
+        ): Appointment {
+            $lockOrder = array_values(array_unique([$previousResourceId, $target->resourceId]));
+            sort($lockOrder);
+
+            foreach ($lockOrder as $resourceId) {
+                $this->lockResource($resourceId);
+            }
+
+            $held = [];
+            foreach ($this->occupiedStartsFor($appointment->id) as $start) {
+                $held[$start] = true;
+            }
+
+            $insert = $this->pdo->prepare(
+                'INSERT INTO resource_slots (resource_id, slot_start, appointment_id, created_at)
+                 VALUES (:resource_id, :slot_start, :appointment_id, :created_at)'
+            );
+
+            // Acquire first: every quantum the new window needs is taken before a
+            // single old one is given back.
+            foreach ($target->slotStarts as $slotStart) {
+                // A quantum this appointment already holds on the same resource
+                // needs no second row; inserting it would collide with itself.
+                if ($previousResourceId === $target->resourceId && isset($held[$slotStart])) {
+                    continue;
+                }
+
+                try {
+                    $insert->execute([
+                        'resource_id' => $target->resourceId,
+                        'slot_start' => $slotStart,
+                        'appointment_id' => $appointment->id,
+                        'created_at' => $occurredAtUtc,
+                    ]);
+                } catch (PDOException $exception) {
+                    if ($this->isDuplicateKey($exception)) {
+                        throw new SlotUnavailableException($target->resourceId, $slotStart);
+                    }
+
+                    throw $exception;
+                }
+            }
+
+            $this->releaseSlotsNotIn($appointment->id, $target->resourceId, $target->slotStarts);
+
+            $update = $this->pdo->prepare(
+                'UPDATE appointments
+                    SET starts_at = :starts_at,
+                        ends_at = :ends_at,
+                        duration_minutes = :duration,
+                        version = version + 1,
+                        updated_at = :updated_at
+                  WHERE id = :id AND version = :version AND status = :expected'
+            );
+            $update->execute([
+                'starts_at' => $target->startsAtUtc,
+                'ends_at' => $target->endsAtUtc,
+                'duration' => $target->durationMinutes,
+                'updated_at' => $occurredAtUtc,
+                'id' => $appointment->id,
+                'version' => $appointment->version,
+                'expected' => $appointment->status->value,
+            ]);
+
+            if ($update->rowCount() !== 1) {
+                throw new AppointmentTransitionException(
+                    $appointment->status,
+                    $appointment->status,
+                    'The appointment changed while you were moving it. Reload and try again.',
+                );
+            }
+
+            if ($previousResourceId !== $target->resourceId) {
+                $unlink = $this->pdo->prepare(
+                    "DELETE FROM appointment_resources WHERE appointment_id = :id AND role = 'primary'"
+                );
+                $unlink->execute(['id' => $appointment->id]);
+
+                $relink = $this->pdo->prepare(
+                    "INSERT INTO appointment_resources (appointment_id, resource_id, role)
+                     VALUES (:id, :resource_id, 'primary')"
+                );
+                $relink->execute(['id' => $appointment->id, 'resource_id' => $target->resourceId]);
+            }
+
+            $record = $this->pdo->prepare(
+                'INSERT INTO appointment_reschedules
+                    (appointment_id, from_resource_id, to_resource_id, from_starts_at, from_ends_at,
+                     to_starts_at, to_ends_at, actor_user_id, actor_role, reason, occurred_at)
+                 VALUES
+                    (:appointment_id, :from_resource, :to_resource, :from_starts, :from_ends,
+                     :to_starts, :to_ends, :actor_id, :actor_role, :reason, :occurred_at)'
+            );
+            $record->execute([
+                'appointment_id' => $appointment->id,
+                'from_resource' => $previousResourceId,
+                'to_resource' => $target->resourceId,
+                'from_starts' => $appointment->startsAtUtc,
+                'from_ends' => $appointment->endsAtUtc,
+                'to_starts' => $target->startsAtUtc,
+                'to_ends' => $target->endsAtUtc,
+                'actor_id' => $actor->userId,
+                'actor_role' => $actor->role->value,
+                'reason' => $reason,
+                'occurred_at' => $occurredAtUtc,
+            ]);
+
+            return Appointment::fromRow([
+                'id' => $appointment->id,
+                'reference' => $appointment->reference,
+                'referral_id' => $appointment->referralId,
+                'status' => $appointment->status->value,
+                'version' => $appointment->version + 1,
+                'starts_at' => $target->startsAtUtc,
+                'ends_at' => $target->endsAtUtc,
+                'duration_minutes' => $target->durationMinutes,
+                'patient_name' => $appointment->patientName,
+                'patient_phone' => $appointment->patientPhone,
+                'created_by_user_id' => $appointment->createdByUserId,
+                'created_at' => $appointment->createdAtUtc,
+            ]);
+        });
     }
 
     public function findByReference(string $reference): ?Appointment
@@ -216,6 +390,67 @@ final class PdoAppointmentRepository implements AppointmentRepository
                 ]);
             },
         );
+    }
+
+    /** @param list<string> $slotStarts */
+    private function insertSlots(int $appointmentId, int $resourceId, array $slotStarts, string $createdAtUtc): void
+    {
+        $slot = $this->pdo->prepare(
+            'INSERT INTO resource_slots (resource_id, slot_start, appointment_id, created_at)
+             VALUES (:resource_id, :slot_start, :appointment_id, :created_at)'
+        );
+
+        foreach ($slotStarts as $slotStart) {
+            try {
+                $slot->execute([
+                    'resource_id' => $resourceId,
+                    'slot_start' => $slotStart,
+                    'appointment_id' => $appointmentId,
+                    'created_at' => $createdAtUtc,
+                ]);
+            } catch (PDOException $exception) {
+                if ($this->isDuplicateKey($exception)) {
+                    throw new SlotUnavailableException($resourceId, $slotStart);
+                }
+
+                throw $exception;
+            }
+        }
+    }
+
+    /** @param list<string> $keep */
+    private function releaseSlotsNotIn(int $appointmentId, int $resourceId, array $keep): void
+    {
+        $parameters = ['id' => $appointmentId, 'resource_id' => $resourceId];
+        $placeholders = [];
+
+        foreach ($keep as $index => $slotStart) {
+            $placeholders[] = ':keep' . $index;
+            $parameters['keep' . $index] = $slotStart;
+        }
+
+        // Every row this appointment owns that the new window does not include,
+        // plus anything left on a resource it is moving away from.
+        $release = $this->pdo->prepare(
+            'DELETE FROM resource_slots
+              WHERE appointment_id = :id
+                AND (resource_id <> :resource_id OR slot_start NOT IN (' . implode(',', $placeholders) . '))'
+        );
+        $release->execute($parameters);
+    }
+
+    /**
+     * Whether the driver refused a write because the row already exists.
+     *
+     * Deliberately not "SQLSTATE 23000": that class covers every integrity
+     * violation, including a foreign key pointing at nothing. Reporting a broken
+     * foreign key to a scheduler as "that time was just taken" would hide a real
+     * fault behind a plausible message. MySQL's duplicate-entry code is 1062.
+     */
+    private function isDuplicateKey(PDOException $exception): bool
+    {
+        return ($exception->errorInfo[0] ?? '') === '23000'
+            && (string) ($exception->errorInfo[1] ?? '') === '1062';
     }
 
     private function assertResourceExists(int $resourceId): void

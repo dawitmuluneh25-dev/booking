@@ -570,6 +570,12 @@ template registration stay in the bridge; changing provider never touches this a
 | GET | `/documents/{ref}/download` | `document.download` + object scope |
 | POST | `/documents/{ref}/review` | `document.quarantine.manage` (CSRF required) |
 | GET | `/r/{token}` | public; the token is the credential |
+| GET | `/schedule` | `schedule.manage` |
+| GET | `/schedule/book` | `schedule.manage` |
+| POST | `/schedule/book` | `schedule.manage` (CSRF required) |
+| GET | `/schedule/{reference}/move` | `schedule.manage` |
+| POST | `/schedule/{reference}/reschedule` | `schedule.manage` (CSRF required) |
+| POST | `/schedule/{reference}/cancel` | `bookings.manage` (CSRF required) |
 | GET | `/healthz` | public, generic output |
 
 ### 12.1 Private documents and status links
@@ -587,6 +593,24 @@ verdict through the same command.
 `POST /referrals/{reference}/status-link` mints a link for the patient: 64 hex characters, stored only
 as SHA-256, valid once, expiring after `TRACKING_LINK_TTL_MINUTES` (default 24 h). The page it opens
 shows the reference, the status and the procedure — no name, no phone number, no clinical summary.
+
+### 12.2 The reservation engine
+
+A slot is 15 minutes. `resource_slots (resource_id, slot_start)` is the primary key and therefore the only
+authority on whether a time is free: the second booking fails on the key, whatever the application believed a
+moment earlier. Writers additionally take `SELECT ... FOR UPDATE` on the resource row first, in ascending id order,
+so overlapping multi-quantum bookings are queued rather than deadlocked.
+
+The wizard offers only times the server computed from the room's opening windows and its occupancy, and it submits
+one of those times as a single value. A hand-edited POST that names an occupied time is refused; the desk sees the
+reason and a freshly computed list. Rescheduling inserts every new quantum before deleting any old one, so a failed
+move leaves the patient where they were. Cancelling deletes the occupancy rows inside the same transaction that sets
+`cancelled`, so a room is never blocked by a patient who is not coming.
+
+Every move is recorded in `appointment_reschedules` with the old time, the new time, the person who moved it and
+their reason. Tested by `ReservationConcurrencyTest` (20 operating-system processes, one winner) and
+`SchedulingFlowTest` (book, move, fail, cancel against MySQL).
+
 
 ## 13. Operations
 

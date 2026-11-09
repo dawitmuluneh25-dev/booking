@@ -53,6 +53,18 @@ interface ReferralRepository
     ): Referral;
 
     /**
+     * Referrals waiting to be booked, oldest first.
+     *
+     * The wizard offers only these: scheduling something that has not been
+     * released clinically is the failure WF-02 exists to prevent, so the query
+     * asks the status column for exactly one value rather than filtering in the
+     * template.
+     *
+     * @return list<Referral>
+     */
+    public function approvedForScheduling(int $limit = 50): array;
+
+    /**
      * The decision that currently stands: the row nothing supersedes.
      *
      * Newest-by-timestamp would be wrong after a correction, because the corrected

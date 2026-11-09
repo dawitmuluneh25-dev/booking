@@ -18,6 +18,7 @@ use App\Controllers\AvailabilityController;
 use App\Controllers\BookingController;
 use App\Controllers\DocumentController;
 use App\Controllers\HealthController;
+use App\Controllers\ScheduleController;
 use App\Controllers\HomeController;
 use App\Controllers\PasswordResetController;
 use App\Domain\Permission;
@@ -164,6 +165,44 @@ return static function (Application $app): void {
         RouteAccess::permission(Permission::SystemMaintain),
     );
 
+    $schedule = new ScheduleController(
+        $app->view(),
+        $app->gate(),
+        $app->logger(),
+        static fn () => $app->scheduleWorkspace(),
+        $app->config()->timezone(),
+    );
+
+    $router->get(
+        '/schedule',
+        static fn (Request $request) => $schedule->index($request),
+        RouteAccess::permission(Permission::ScheduleManage),
+    );
+    $router->get(
+        '/schedule/book',
+        static fn (Request $request) => $schedule->create($request),
+        RouteAccess::permission(Permission::ScheduleManage),
+    );
+    $router->post(
+        '/schedule/book',
+        static fn (Request $request) => $schedule->store($request),
+        RouteAccess::permission(Permission::ScheduleManage),
+    );
+    $router->get(
+        '/schedule/{reference}/move',
+        static fn (Request $request, array $params) => $schedule->move($request, $params),
+        RouteAccess::permission(Permission::ScheduleManage),
+    );
+    $router->post(
+        '/schedule/{reference}/reschedule',
+        static fn (Request $request, array $params) => $schedule->reschedule($request, $params),
+        RouteAccess::permission(Permission::ScheduleManage),
+    );
+    $router->post(
+        '/schedule/{reference}/cancel',
+        static fn (Request $request, array $params) => $schedule->cancel($request, $params),
+        RouteAccess::permission(Permission::BookingsManage),
+    );
     $documents = new DocumentController(
         $app->view(),
         $app->gate(),

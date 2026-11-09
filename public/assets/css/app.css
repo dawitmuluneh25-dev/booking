@@ -678,3 +678,20 @@ tbody tr:last-child th { border-bottom: 0; }
     .actions .link { margin-left: 0; text-align: center; }
     .button { text-align: center; }
 }
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: end;
+    margin: 1rem 0 1.5rem;
+}
+
+.slot input {
+    margin: 0 0 0.3rem;
+}
+
+.slot:has(input:checked) {
+    border-color: var(--accent, #2f6f4f);
+    box-shadow: 0 0 0 2px rgba(47, 111, 79, 0.22);
+}
