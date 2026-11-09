@@ -5,7 +5,7 @@
  */
 ?>
 <section class="panel">
-    <p class="eyebrow">Request received</p>
+    <p class="eyebrow">Booking request · <?= e($booking->status->label()) ?></p>
     <h1>Booking <?= e($booking->reference) ?></h1>
     <p class="lede">
         Keep this reference. The team will contact you on

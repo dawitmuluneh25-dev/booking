@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * One contender in the reservation race.
  *
@@ -14,6 +12,8 @@ declare(strict_types=1);
  * a password and a UTC timestamp through Windows quoting is three ways to test
  * the shell instead of the database.
  */
+
+declare(strict_types=1);
 
 use App\Database\PdoTransaction;
 use App\Domain\Actor;

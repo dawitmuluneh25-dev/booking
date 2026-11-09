@@ -11,7 +11,17 @@
  * @var \App\Domain\Referral $referral
  * @var string               $timezone
  */
+
+/*
+ * The patient reads this on the clinic's clock. `created_at` is stored in UTC, and
+ * printing it raw with a "UTC" suffix asked somebody in Addis to add three hours in
+ * their head before deciding whether the request had been sitting for a day.
+ */
+$clinicZone = new DateTimeZone($timezone);
+$submittedAt = (new DateTimeImmutable($referral->createdAtUtc, new DateTimeZone('UTC')))
+    ->setTimezone($clinicZone);
 ?>
+
 <section class="panel">
     <p class="eyebrow">Request status</p>
     <h1>Referral <?= e($referral->reference) ?></h1>
@@ -27,7 +37,7 @@
         </div>
         <div>
             <dt>Submitted</dt>
-            <dd><?= e($referral->createdAtUtc) ?> UTC</dd>
+            <dd><?= e($submittedAt->format('j F Y, H:i')) ?> (<?= e($timezone) ?>)</dd>
         </div>
     </dl>
 

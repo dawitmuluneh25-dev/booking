@@ -51,14 +51,22 @@ final class PdoTrackingTokenRepository implements TrackingTokenRepository
 
     public function consume(string $tokenHash, string $occurredAtUtc): ?int
     {
+        // Two placeholders for one value on purpose: the connection runs with
+        // ATTR_EMULATE_PREPARES off, so the server sees native `?` markers and a
+        // named parameter may appear only once in a statement. Reusing `:used_at`
+        // here fails at bind time with HY093, before the token is even matched.
         $update = $this->pdo->prepare(
             'UPDATE referral_tracking_tokens
                 SET used_at = :used_at
               WHERE token_hash = :token_hash
                 AND used_at IS NULL
-                AND expires_at > :used_at'
+                AND expires_at > :now'
         );
-        $update->execute(['used_at' => $occurredAtUtc, 'token_hash' => $tokenHash]);
+        $update->execute([
+            'used_at' => $occurredAtUtc,
+            'token_hash' => $tokenHash,
+            'now' => $occurredAtUtc,
+        ]);
 
         if ($update->rowCount() !== 1) {
             return null;

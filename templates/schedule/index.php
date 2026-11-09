@@ -14,6 +14,21 @@
  * @var bool $canBook
  * @var bool $canCancel
  */
+
+/*
+ * Stored in UTC, shown on the clinic's clock.
+ *
+ * The column is labelled with the zone it is actually rendering in, so a 09:00
+ * appointment reads 09:00 here exactly as it does on the availability page and in
+ * the booking wizard. Printing raw UTC under a "Time (UTC)" heading was accurate
+ * and unreadable: the desk would see 06:00 for a nine o'clock case.
+ */
+$clinicZone = new DateTimeZone($timezone);
+$clinicTime = static function (string $utc) use ($clinicZone): string {
+    $moment = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $utc, new DateTimeZone('UTC'));
+
+    return $moment === false ? $utc : $moment->setTimezone($clinicZone)->format('H:i');
+};
 ?>
 <section class="panel">
     <p class="eyebrow">Reception calendar · <?= e($timezone) ?></p>
@@ -70,7 +85,7 @@
                     <caption class="visually-hidden">Appointments in <?= e($row['resource']->name) ?></caption>
                     <thead>
                     <tr>
-                        <th scope="col">Time (UTC)</th>
+                        <th scope="col">Time (<?= e($timezone) ?>)</th>
                         <th scope="col">Reference</th>
                         <th scope="col">Patient</th>
                         <th scope="col">Status</th>
@@ -81,7 +96,7 @@
                     <?php foreach ($row['appointments'] as $appointment): ?>
                         <tr>
                             <td>
-                                <?= e(substr($appointment->startsAtUtc, 11, 5)) ?>–<?= e(substr($appointment->endsAtUtc, 11, 5)) ?>
+                                <?= e($clinicTime($appointment->startsAtUtc)) ?>–<?= e($clinicTime($appointment->endsAtUtc)) ?>
                             </td>
                             <td><?= e($appointment->reference) ?></td>
                             <td><?= e($appointment->patientName) ?></td>

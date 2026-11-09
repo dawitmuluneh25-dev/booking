@@ -89,7 +89,11 @@ final class ScheduleController
 
     public function create(Request $request): Response
     {
-        $this->gate->authenticate();
+        // The user, not just the assertion: the layout decides between the staff
+        // navigation and "Staff sign in" from `currentUser`. A signed-in officer
+        // being offered a sign-in link is the kind of contradiction that makes
+        // people think the session has expired.
+        $user = $this->gate->authenticate();
         $zone = new DateTimeZone($this->timezone);
         $date = $this->localDate($request, $zone);
         $duration = $this->duration($request);
@@ -114,6 +118,8 @@ final class ScheduleController
             'notice' => Session::pullFlash('notice'),
             'error' => Session::pullFlash('error'),
             'fieldErrors' => FormErrors::pull(),
+            'timezone' => $this->timezone,
+            'currentUser' => $user,
         ]));
     }
 
@@ -157,7 +163,7 @@ final class ScheduleController
     /** @param array<string, string> $params */
     public function move(Request $request, array $params): Response
     {
-        $this->gate->authenticate();
+        $user = $this->gate->authenticate();
         $zone = new DateTimeZone($this->timezone);
         $workspace = $this->workspace();
 
@@ -188,6 +194,8 @@ final class ScheduleController
             'notice' => Session::pullFlash('notice'),
             'error' => Session::pullFlash('error'),
             'fieldErrors' => FormErrors::pull(),
+            'timezone' => $this->timezone,
+            'currentUser' => $user,
         ]));
     }
 

@@ -21,7 +21,14 @@
  * @var string|null $notice
  * @var string|null $error
  * @var array<string, string> $fieldErrors
+ * @var string $timezone
  */
+
+$clinicZone = new DateTimeZone($timezone);
+$currentStart = $appointment === null ? null : (new DateTimeImmutable(
+    $appointment->startsAtUtc,
+    new DateTimeZone('UTC'),
+))->setTimezone($clinicZone);
 ?>
 <section class="panel">
     <p class="eyebrow"><?= $mode === 'move' ? 'Move appointment' : 'New booking' ?></p>
@@ -31,7 +38,7 @@
         <p class="lede">
             <?= e($appointment->reference) ?> ·
             <?= e($appointment->patientName) ?> ·
-            currently <?= e($appointment->startsAtUtc) ?> UTC
+            currently <?= e($currentStart === null ? '' : $currentStart->format('D j M, H:i')) ?> (<?= e($timezone) ?>)
         </p>
     <?php endif; ?>
 

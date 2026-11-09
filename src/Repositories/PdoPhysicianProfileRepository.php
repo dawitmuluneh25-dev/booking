@@ -73,9 +73,11 @@ final class PdoPhysicianProfileRepository implements PhysicianProfileRepository
                         (user_id, practice_number, institution, specialty, status,
                          verified_by_user_id, verified_at, review_note, created_at, updated_at)
                      VALUES
-                        (:user_id, :practice_number, :institution, :specialty, :status,
-                         NULL, NULL, NULL, :created_at, :created_at)'
+                         (:user_id, :practice_number, :institution, :specialty, :status,
+                          NULL, NULL, NULL, :created_at, :updated_at)'
                 );
+                // Distinct names for created_at/updated_at: emulated prepares are
+                // off, so one named parameter may appear only once per statement.
                 $insert->execute([
                     'user_id' => $profile->userId,
                     'practice_number' => $profile->practiceNumber,
@@ -83,6 +85,7 @@ final class PdoPhysicianProfileRepository implements PhysicianProfileRepository
                     'specialty' => $profile->specialty,
                     'status' => $profile->status->value,
                     'created_at' => $createdAtUtc,
+                    'updated_at' => $createdAtUtc,
                 ]);
 
                 return $profile->withIdentity((int) $this->pdo->lastInsertId());
