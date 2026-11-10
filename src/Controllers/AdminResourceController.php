@@ -6,9 +6,11 @@ namespace App\Controllers;
 
 use App\Domain\Permission;
 use App\Domain\Resource;
+use App\Domain\ResourceAdminRepository;
 use App\Domain\ResourceBlock;
 use App\Domain\ResourceBlockRepository;
 use App\Domain\ScheduleRepository;
+use App\Domain\ValidationException;
 use App\Http\HttpException;
 use App\Http\Request;
 use App\Http\Response;
@@ -36,6 +38,7 @@ final class AdminResourceController
         private readonly Gate $gate,
         private readonly ScheduleRepository $schedule,
         private readonly ResourceBlockRepository $blocks,
+        private readonly ResourceAdminRepository $admin,
         private readonly string $timezone,
     ) {
     }
@@ -72,6 +75,93 @@ final class AdminResourceController
         return $this->add($request);
     }
 
+    public function store(Request $request): Response
+    {
+        $this->authorise($request, '/admin/resources');
+
+        try {
+            $resource = $this->admin->create(
+                code: (string) $request->input('code', ''),
+                name: (string) $request->input('name', ''),
+                kind: (string) $request->input('kind', 'room'),
+                modality: $request->input('modality'),
+                active: $request->input('active', '1') === '1',
+            );
+        } catch (ValidationException $exception) {
+            return $this->render($exception->errors, 422, null);
+        }
+
+        Session::flash('notice', $resource->name . ' was added. Set its opening hours below.');
+
+        return Response::redirect('/admin/resources', 303);
+    }
+
+    /** @param array<string, string> $params */
+    public function edit(Request $request, array $params): Response
+    {
+        $this->authorise($request, '/admin/resources');
+
+        $id = (int) ($params['id'] ?? '0');
+
+        try {
+            $resource = $this->admin->update(
+                id: $id,
+                name: (string) $request->input('name', ''),
+                kind: (string) $request->input('kind', 'room'),
+                modality: $request->input('modality'),
+                // Deactivation, never deletion: appointments and closures point at
+                // this row, and a room that disappears takes its history with it.
+                active: $request->input('active', '1') === '1',
+            );
+        } catch (ValidationException $exception) {
+            return $this->render($exception->errors, 422, null);
+        }
+
+        Session::flash('notice', $resource->name . ' was updated.');
+
+        return Response::redirect('/admin/resources', 303);
+    }
+
+    /** @param array<string, string> $params */
+    public function saveWeek(Request $request, array $params): Response
+    {
+        $this->authorise($request, '/admin/resources');
+
+        $id = (int) ($params['id'] ?? '0');
+        $week = [];
+
+        for ($weekday = 1; $weekday <= 7; $weekday++) {
+            $opens = (string) $request->input('week_' . $weekday . '_opens', '');
+            $closes = (string) $request->input('week_' . $weekday . '_closes', '');
+
+            $week[$weekday] = trim($opens) === '' || trim($closes) === ''
+                ? null
+                : ['opens' => $opens, 'closes' => $closes];
+        }
+
+        try {
+            $this->admin->replaceDefaultWeek($id, $week);
+        } catch (ValidationException $exception) {
+            return $this->render($exception->errors, 422, null);
+        }
+
+        Session::flash('notice', 'Opening hours were saved. The slot picker uses them immediately.');
+
+        return Response::redirect('/admin/resources', 303);
+    }
+
+    private function authorise(Request $request, string $next): void
+    {
+        if (!$this->auth->check()) {
+            throw new HttpException(401);
+        }
+
+        $this->gate->authorize(Permission::ClinicConfigure);
+
+        if (!Csrf::validate($request->input(Csrf::FIELD))) {
+            throw new HttpException(419);
+        }
+    }
     private function add(Request $request): Response
     {
         $resourceId = (int) $request->input('resource_id', '0');
@@ -152,17 +242,29 @@ final class AdminResourceController
         $zone = new DateTimeZone($this->timezone);
         $now = gmdate('Y-m-d H:i:s');
 
-        /** @var list<array{resource: Resource, blocks: list<array{block: ResourceBlock, label: string}>}> $rows */
+        /**
+         * @var list<array{
+         *     resource: Resource,
+         *     blocks: list<array{block: ResourceBlock, label: string}>,
+         *     week: array<int, array{opens: string, closes: string}|null>
+         * }> $rows
+         */
         $rows = [];
 
-        foreach ($this->schedule->resources() as $resource) {
+        // The admin list, not the scheduling list: an inactive room has to stay
+        // visible here or it can never be brought back.
+        foreach ($this->admin->all() as $resource) {
             $blocks = [];
 
             foreach ($this->blocks->upcoming($resource->id, $now) as $block) {
                 $blocks[] = ['block' => $block, 'label' => $block->describe($zone)];
             }
 
-            $rows[] = ['resource' => $resource, 'blocks' => $blocks];
+            $rows[] = [
+                'resource' => $resource,
+                'blocks' => $blocks,
+                'week' => $this->admin->defaultWeek($resource->id),
+            ];
         }
 
         return Response::html($this->view->render('admin/resources', [

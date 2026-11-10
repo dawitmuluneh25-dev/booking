@@ -130,6 +130,7 @@ final class DocumentPageTest extends TestCase
             'UTC',
             'http://localhost:8000',
             15 * 1024 * 1024,
+            static fn (): string => self::NOW,
         );
     }
 

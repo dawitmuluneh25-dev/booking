@@ -66,6 +66,7 @@ return static function (Application $app): void {
         $app->gate(),
         $app->schedule(),
         $app->resourceBlocks(),
+        $app->resourceAdmin(),
         $app->config()->timezone(),
     );
 
@@ -197,6 +198,21 @@ return static function (Application $app): void {
     $router->post(
         '/admin/resources',
         static fn (Request $request) => $resources->update($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/resources/create',
+        static fn (Request $request) => $resources->store($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/resources/{id}',
+        static fn (Request $request, array $params) => $resources->edit($request, $params),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/resources/{id}/week',
+        static fn (Request $request, array $params) => $resources->saveWeek($request, $params),
         RouteAccess::permission(Permission::ClinicConfigure),
     );
     $router->get(

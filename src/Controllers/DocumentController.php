@@ -37,7 +37,10 @@ use Throwable;
  */
 final class DocumentController
 {
-    /** @param Closure(): DocumentWorkspace $workspace */
+    /**
+     * @param Closure(): DocumentWorkspace $workspace
+     * @param (Closure(): string)|null   $now
+     */
     public function __construct(
         private readonly View $view,
         private readonly Gate $gate,
@@ -46,6 +49,7 @@ final class DocumentController
         private readonly string $timezone,
         private readonly string $baseUrl,
         private readonly int $maxBytes,
+        private readonly ?Closure $now = null,
     ) {
     }
 
@@ -233,12 +237,20 @@ final class DocumentController
         return Response::redirect($back);
     }
 
+    private function now(): string
+    {
+        return $this->now === null ? gmdate('Y-m-d H:i:s') : ($this->now)();
+    }
+
     /** @param array<string, string> $params */
     public function showStatus(Request $request, array $params): Response
     {
+        // The clock is a dependency, not an ambient fact: a token's lifetime is
+        // measured against it, and a page that reads the wall clock directly
+        // cannot be tested without waiting for the token to expire.
         $referral = $this->workspace()->tracking->redeem(
             $params['token'] ?? '',
-            gmdate('Y-m-d H:i:s'),
+            $this->now(),
         );
 
         if ($referral === null) {

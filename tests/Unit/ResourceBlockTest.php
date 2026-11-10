@@ -21,6 +21,7 @@ use App\Support\View;
 use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\InMemoryResourceAdminRepository;
 use Tests\Support\InMemoryResourceBlockRepository;
 use Tests\Support\InMemoryScheduleRepository;
 use Tests\Support\InMemoryUserRepository;
@@ -37,6 +38,8 @@ final class ResourceBlockTest extends TestCase
 
     private InMemoryResourceBlockRepository $blocks;
 
+    private InMemoryResourceAdminRepository $admin;
+
     protected function setUp(): void
     {
         $_SESSION = [];
@@ -45,6 +48,8 @@ final class ResourceBlockTest extends TestCase
         $this->schedule->addResource(new Resource(1, 'suite-1', 'IR Suite 1', 'suite', 'CT', true));
         $this->schedule->setWindows(1, [$this->window('08:00', '12:00')]);
         $this->blocks = new InMemoryResourceBlockRepository();
+        $this->admin = new InMemoryResourceAdminRepository();
+        $this->admin->seed(new Resource(1, 'suite-1', 'IR Suite 1', 'suite', 'CT', true));
     }
 
     protected function tearDown(): void
@@ -151,6 +156,72 @@ final class ResourceBlockTest extends TestCase
         ]));
     }
 
+    public function testAddingARoomFromTheAdminFormStoresItAndShowsTheEmptyWeek(): void
+    {
+        $response = $this->controller()->store(Request::create('POST', '/admin/resources/create', [], [
+            Csrf::FIELD => Csrf::token(),
+            'code' => 'suite-9',
+            'name' => 'IR Suite 9',
+            'kind' => 'suite',
+            'modality' => 'Fluoroscopy',
+        ]));
+
+        self::assertSame(303, $response->status);
+
+        $codes = array_map(static fn ($resource): string => $resource->code, $this->admin->all());
+        self::assertContains('suite-9', $codes);
+
+        // The room exists but has no hours, so the page says so rather than
+        // pretending it is bookable.
+        $page = $this->controller()->index(Request::create('GET', '/admin/resources'));
+        self::assertStringContainsString('IR Suite 9', $page->body());
+        self::assertStringContainsString('Weekly opening hours', $page->body());
+    }
+
+    public function testADuplicateCodeIsReportedOnTheField(): void
+    {
+        $response = $this->controller()->store(Request::create('POST', '/admin/resources/create', [], [
+            Csrf::FIELD => Csrf::token(),
+            'code' => 'suite-1',
+            'name' => 'Duplicate',
+            'kind' => 'suite',
+        ]));
+
+        self::assertSame(422, $response->status);
+        self::assertStringContainsString('already uses that code', $response->body());
+    }
+
+    public function testAWeekIsSavedPerWeekday(): void
+    {
+        $response = $this->controller()->saveWeek(
+            Request::create('POST', '/admin/resources/1/week', [], [
+                Csrf::FIELD => Csrf::token(),
+                'week_2_opens' => '08:00',
+                'week_2_closes' => '12:00',
+            ]),
+            ['id' => '1'],
+        );
+
+        self::assertSame(303, $response->status);
+
+        $week = $this->admin->defaultWeek(1);
+        self::assertSame(['opens' => '08:00', 'closes' => '12:00'], $week[2]);
+        self::assertNull($week[3]);
+    }
+
+    public function testADayWithOnlyOneTimeIsTreatedAsClosed(): void
+    {
+        $this->controller()->saveWeek(
+            Request::create('POST', '/admin/resources/1/week', [], [
+                Csrf::FIELD => Csrf::token(),
+                'week_2_opens' => '08:00',
+                'week_2_closes' => '',
+            ]),
+            ['id' => '1'],
+        );
+
+        self::assertNull($this->admin->defaultWeek(1)[2]);
+    }
     private function controller(): AdminResourceController
     {
         $users = new InMemoryUserRepository();
@@ -164,6 +235,7 @@ final class ResourceBlockTest extends TestCase
             new Gate($auth),
             $this->schedule,
             $this->blocks,
+            $this->admin,
             self::ZONE,
         );
     }
