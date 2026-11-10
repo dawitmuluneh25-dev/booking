@@ -16,6 +16,30 @@ use PHPUnit\Framework\TestCase;
  */
 final class ReferralStatusTest extends TestCase
 {
+    public function testADraftCanOnlyBeSubmittedOrCancelled(): void
+    {
+        self::assertSame(
+            [ReferralStatus::Submitted, ReferralStatus::Cancelled],
+            ReferralStatus::Draft->allowedTransitions()
+        );
+    }
+
+    public function testADraftCannotSkipSubmissionAndReachClinicalReview(): void
+    {
+        // Otherwise saving a draft would be a way to place a case in the clinical
+        // queue without ever submitting it.
+        self::assertFalse(ReferralStatus::Draft->canTransitionTo(ReferralStatus::ClinicalReview));
+        self::assertFalse(ReferralStatus::Draft->canTransitionTo(ReferralStatus::ApprovedForScheduling));
+    }
+
+    public function testTheSubmitterRolesMaySubmitADraft(): void
+    {
+        self::assertSame(
+            [Role::Physician, Role::Patient, Role::Staff],
+            ReferralStatus::Draft->allowedActors(ReferralStatus::Submitted)
+        );
+    }
+
     public function testTerminalStatesHaveNoOutgoingTransitions(): void
     {
         foreach ([ReferralStatus::Declined, ReferralStatus::Cancelled, ReferralStatus::Closed] as $terminal) {

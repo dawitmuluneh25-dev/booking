@@ -649,6 +649,20 @@ final class MigrationIntegrityTest extends TestCase
             "SELECT approved_by FROM procedures WHERE code = 'image_guided_biopsy'"
         );
         self::assertSame('Clinical lead', self::text($rows[0]['approved_by'] ?? null));
+
+        // 0020: FNAC and core biopsy are separate services, and the combined code
+        // is retired rather than deleted so the referrals that use it still resolve.
+        $catalogue = $this->query(
+            "SELECT code, active FROM procedures WHERE code LIKE 'image_guided_%' ORDER BY code"
+        );
+        $byCode = [];
+        foreach ($catalogue as $row) {
+            $byCode[self::text($row['code'])] = self::number($row['active']);
+        }
+
+        self::assertSame(1, $byCode['image_guided_fnac'] ?? null);
+        self::assertSame(1, $byCode['image_guided_core_biopsy'] ?? null);
+        self::assertSame(0, $byCode['image_guided_biopsy'] ?? null);
     }
 
     private static function pdo(): PDO

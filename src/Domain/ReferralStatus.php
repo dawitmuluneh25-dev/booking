@@ -22,6 +22,7 @@ namespace App\Domain;
  */
 enum ReferralStatus: string
 {
+    case Draft = 'draft';
     case Submitted = 'submitted';
     case Received = 'received';
     case AdministrativeReview = 'administrative_review';
@@ -40,6 +41,7 @@ enum ReferralStatus: string
     public function label(): string
     {
         return match ($this) {
+            self::Draft => 'Draft (not submitted)',
             self::Submitted => 'Submitted',
             self::Received => 'Received',
             self::AdministrativeReview => 'Administrative review',
@@ -79,6 +81,7 @@ enum ReferralStatus: string
         $cancellable = [self::Cancelled];
 
         return match ($this) {
+            self::Draft => [self::Submitted, ...$cancellable],
             self::Submitted => [self::Received, ...$cancellable],
             self::Received => [self::AdministrativeReview, ...$cancellable],
             self::AdministrativeReview => [
@@ -132,6 +135,7 @@ enum ReferralStatus: string
         }
 
         return match ($target) {
+            self::Submitted => [Role::Physician, Role::Patient, Role::Staff],
             self::Received => [Role::Staff, Role::Admin],
             self::AdministrativeReview => [Role::Staff, Role::Admin],
             self::AwaitingInformation => $this === self::ClinicalReview
@@ -151,7 +155,7 @@ enum ReferralStatus: string
             self::ConvertedToAppointment => [Role::Staff, Role::Admin, Role::Coordinator],
             self::Closed => [Role::Staff, Role::Admin],
             self::Cancelled => [Role::Patient, Role::Physician, Role::Staff, Role::Admin],
-            self::Submitted => [],
+            self::Draft => [],
         };
     }
 
