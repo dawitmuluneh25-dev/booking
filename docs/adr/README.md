@@ -37,7 +37,8 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-012](#adr-012) | Notifications leave through a bridge we own | Implemented, unapproved | Architecture + Operations | not recorded | — |
 | [ADR-013](#adr-013) | Both intake models remain, with a stated boundary | **Accepted** | Product owner | 2026-11-10 | — |
 | [ADR-014](#adr-014) | Institution is descriptive metadata, not a boundary | **Accepted** | Product owner | 2026-11-10 | — |
-| [ADR-015](#adr-015) | Patients hold accounts and sign in during release 1 | **Accepted** | Product owner | 2026-11-10 | — |
+| [ADR-015](#adr-015) | Patients hold accounts and sign in during release 1 | **Superseded** by ADR-016 | Product owner | 2026-11-10 | — |
+| [ADR-016](#adr-016) | No patient sign-in during release 1 | **Accepted** | Product owner | 2026-11-11 | ADR-015 |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -299,7 +300,60 @@ recorded here rather than discovered later:
   patient login would not have meant no patient record, and having the login does not make the
   record optional.
 
-**Status.** Accepted. **Owner.** Product owner. **Date.** 2026-11-10. **Supersedes.** —
+**Status.** Superseded by ADR-016 on 2026-11-11. The decision below was accepted and then reversed before any patient-facing code was written; it is kept because the cost analysis is still the best statement of what patient access would require. **Owner.** Product owner. **Date.** 2026-11-10. **Supersedes.** —
+
+---
+
+## ADR-016
+
+**Decision.** Patients do not sign in during release 1. No patient account can open a session.
+
+**Context.** ADR-015 recorded the opposite a day earlier. The Product Owner reversed it before any
+patient-facing screen existed, which is the cheap moment to reverse it: nothing was built, so
+nothing has to be unwound. The advisory committee had recommended this position, and that
+recommendation is now the accepted decision.
+
+**How it is enforced, and why there.** A patient account can hold a password, so "there is no
+patient login screen" would not be true — the ordinary sign-in form would accept it. The refusal
+therefore lives in `Auth::attempt`, next to the deactivation check, and returns the same failure as
+a wrong password. A distinct "this account may not sign in" answer would confirm that an address
+exists, which is the enumeration oracle the login path is built to avoid.
+
+**What this does not remove.** The committee was explicit, and it matters:
+
+- A patient record still exists, with the details a referral is submitted for.
+- Guardian relationships and consent records stay: they say who may act for a patient, not who may
+  log in.
+- Verified referring physicians still submit referrals, and staff may submit on a patient's behalf.
+- The physician dashboard is untouched.
+
+**What this does remove, stated plainly.** Patient self-submission through the product. With no
+patient sign-in there is no account to submit from, so referrals arrive from referrers and from
+staff. Anyone reading the Phase 1 exit criterion — "a referrer **or patient** can submit" — should
+read it as the referrer half only.
+
+**How far it goes: record-only, and no further.** The owner's instruction was to retain the role as a
+record-only identity, so it keeps its place and loses its capabilities:
+
+- `Role::Patient::permissions()` returns `[]`. The four grants it held — `referral.submit`, document
+  upload, metadata read, document download — are removed rather than left dormant. A grant nothing
+  can reach is a permission waiting to be trusted by the next screen that reads the role table.
+- `ReferralStatus::allowedActors()` no longer lists a patient on `submitted` or `cancelled`. A role
+  with no permission cannot perform either, and listing it would describe an authority that does not
+  exist.
+- `submittedOnBehalfOf()` no longer branches on `Role::Patient`. Staff record referrals, and the
+  guardian fields — not the account's role — say whether the request was the patient's own or made
+  on their behalf. That keeps `submitted_as` meaningful: it now states two true things, who entered
+  the record and under whose authority.
+- The `ReferralAccessPolicy` branch for `Role::Patient` stays. It cannot be reached without a
+  session, and it is the correct rule if access ever returns; removing it would make the policy's
+  `match` describe one less case than the system has.
+
+**What would reopen this.** A patient portal is a new ADR superseding this one, and it must bring
+the identity-linking design ADR-015 set out. Nothing here forecloses it; it forecloses doing it by
+accident.
+
+**Status.** Accepted. **Owner.** Product owner. **Date.** 2026-11-11. **Supersedes.** ADR-015.
 
 ---
 

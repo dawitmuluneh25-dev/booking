@@ -56,21 +56,35 @@ final class RoleTest extends TestCase
         self::assertFalse(Role::Staff->can(Permission::ClinicalApprove));
     }
 
-    public function testReferrersAndPatientsMayOnlySubmitReferrals(): void
+    public function testReferrersMayOnlySubmitReferrals(): void
     {
-        foreach ([Role::Physician, Role::Patient] as $role) {
-            self::assertTrue($role->can(Permission::ReferralSubmit));
-            self::assertFalse($role->can(Permission::ReferralTriage));
-            self::assertFalse($role->can(Permission::ClinicalApprove));
-            self::assertFalse($role->can(Permission::ScheduleManage));
-            self::assertFalse($role->isClinical());
-        }
+        $role = Role::Physician;
+
+        self::assertTrue($role->can(Permission::ReferralSubmit));
+        self::assertFalse($role->can(Permission::ReferralTriage));
+        self::assertFalse($role->can(Permission::ClinicalApprove));
+        self::assertFalse($role->can(Permission::ScheduleManage));
+        self::assertFalse($role->isClinical());
     }
 
-    public function testEveryRoleHasALabelAndAtLeastOnePermission(): void
+    public function testAPatientIsARecordAndHoldsNothing(): void
+    {
+        // ADR-016: the role exists so a referral and a guardian relationship have
+        // somebody to point at. It is not an account anybody signs in to, and a grant
+        // nothing can reach is a permission waiting to be trusted by a future screen.
+        self::assertFalse(Role::Patient->canSignIn());
+        self::assertSame([], Role::Patient->permissions());
+    }
+
+    public function testEverySigningInRoleHasALabelAndAStatedReason(): void
     {
         foreach (Role::cases() as $role) {
             self::assertNotSame('', $role->label(), $role->value);
+
+            if ($role === Role::Patient) {
+                continue;
+            }
+
             self::assertNotSame([], $role->permissions(), $role->value);
         }
     }

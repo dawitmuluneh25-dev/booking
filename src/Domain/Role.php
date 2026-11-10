@@ -87,15 +87,27 @@ enum Role: string
                 Permission::DocumentReadMetadata,
                 Permission::DocumentDownload,
             ],
-            self::Patient => [
-                Permission::ReferralSubmit,
-                Permission::DocumentUpload,
-                Permission::DocumentReadMetadata,
-                Permission::DocumentDownload,
-            ],
+            // A record-only identity (ADR-016): the patient a referral was submitted
+            // for, and the identity a guardian relationship points at. It holds no
+            // capability, because a grant nothing can reach is a permission waiting
+            // to be misused by the next screen that trusts it.
+            self::Patient => [],
         };
     }
 
+    /**
+     * Whether this role may open a session at all.
+     *
+     * A patient account is a record, not a login (ADR-016): it carries the identity
+     * a referral was submitted for, and the guardian relationship that points at it.
+     * It has no sign-in path, and the refusal is the same one a wrong password
+     * produces, because "this address exists but may not sign in" is still an
+     * account-existence oracle.
+     */
+    public function canSignIn(): bool
+    {
+        return $this !== self::Patient;
+    }
     public function can(Permission $permission): bool
     {
         return in_array($permission, $this->permissions(), true);

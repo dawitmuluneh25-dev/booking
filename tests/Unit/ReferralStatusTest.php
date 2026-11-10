@@ -35,7 +35,7 @@ final class ReferralStatusTest extends TestCase
     public function testTheSubmitterRolesMaySubmitADraft(): void
     {
         self::assertSame(
-            [Role::Physician, Role::Patient, Role::Staff],
+            [Role::Physician, Role::Staff],
             ReferralStatus::Draft->allowedActors(ReferralStatus::Submitted)
         );
     }

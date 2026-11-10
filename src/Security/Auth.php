@@ -57,7 +57,10 @@ final class Auth
         }
 
         $valid = $this->hasher->verify($password, $credentials['hash']);
-        $ok = $valid && $credentials['user']->active;
+        // A correct password is not enough: a role that may not sign in is refused
+        // here, and refused as a bad credential rather than as a distinct state
+        // (ADR-016).
+        $ok = $valid && $credentials['user']->active && $credentials['user']->role->canSignIn();
 
         $this->users->recordAttempt($email, $ip, $ok);
 

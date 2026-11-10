@@ -215,15 +215,18 @@ final class SubmitElectiveReferral
     }
 
     /**
-     * A patient submits for themselves or for someone in their care; a physician
-     * submits as a referrer; staff submit on a caller's behalf.
+     * A physician submits as a referrer; staff submit on a caller's behalf, and the
+     * guardian fields say whether that caller was the patient or someone acting for
+     * them.
      */
     private function submittedOnBehalfOf(Actor $actor, bool $hasGuardian): string
     {
         return match ($actor->role) {
             Role::Physician => 'referrer',
-            Role::Patient => $hasGuardian ? 'guardian' : 'self',
-            default => 'staff',
+            // A patient cannot submit (ADR-016), so the record says two true things:
+            // a member of staff entered it, and whose authority it was entered under.
+            // Guardian details are what distinguish the two.
+            default => $hasGuardian ? 'guardian' : 'staff',
         };
     }
 

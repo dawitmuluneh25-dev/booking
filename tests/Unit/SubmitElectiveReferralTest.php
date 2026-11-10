@@ -47,7 +47,7 @@ final class SubmitElectiveReferralTest extends TestCase
     public function testPatientSubmissionStartsAtSubmittedAndNeverAtApproved(): void
     {
         $referral = $this->command->execute(
-            new Actor(7, Role::Patient),
+            new Actor(7, Role::Staff),
             $this->validInput(),
             self::NOW,
         );
@@ -55,27 +55,28 @@ final class SubmitElectiveReferralTest extends TestCase
         self::assertGreaterThan(0, $referral->id);
         self::assertSame(ReferralStatus::Submitted, $referral->status);
         self::assertSame(1, $referral->version);
-        self::assertSame('self', $referral->submittedOnBehalfOf);
+        // A patient cannot submit (ADR-016); staff entered this on their behalf.
+        self::assertSame('staff', $referral->submittedOnBehalfOf);
         self::assertSame(7, $referral->submittedByUserId);
         self::assertSame(self::NOW, $referral->createdAtUtc);
     }
 
     public function testSubmissionWritesAnOpeningHistoryRow(): void
     {
-        $referral = $this->command->execute(new Actor(7, Role::Patient), $this->validInput(), self::NOW);
+        $referral = $this->command->execute(new Actor(7, Role::Staff), $this->validInput(), self::NOW);
 
         $history = $this->repository->historyFor($referral->id);
 
         self::assertCount(1, $history);
         self::assertNull($history[0]['from']);
         self::assertSame('submitted', $history[0]['to']);
-        self::assertSame('patient', $history[0]['actor_role']);
+        self::assertSame('staff', $history[0]['actor_role']);
     }
 
     public function testReferenceIsGeneratedRatherThanAcceptedFromInput(): void
     {
         $referral = $this->command->execute(
-            new Actor(7, Role::Patient),
+            new Actor(7, Role::Staff),
             $this->validInput() + ['reference' => 'ATTACKER-CHOSEN'],
             self::NOW,
         );
@@ -88,7 +89,7 @@ final class SubmitElectiveReferralTest extends TestCase
     public function testGuardianSubmissionIsRecordedAsGuardian(): void
     {
         $referral = $this->command->execute(
-            new Actor(9, Role::Patient),
+            new Actor(9, Role::Staff),
             $this->validInput() + [
                 'guardian_name' => 'Meron Tesfaye',
                 'guardian_phone' => '+251911000111',
@@ -106,7 +107,7 @@ final class SubmitElectiveReferralTest extends TestCase
         // AUTH-09 / AUTH-10: a form may not name its own actor or role. Both come
         // from the authenticated Actor, so smuggled fields are simply not read.
         $referral = $this->command->execute(
-            new Actor(7, Role::Patient),
+            new Actor(7, Role::Staff),
             $this->validInput() + [
                 'submitted_by_user_id' => '999',
                 'actor_id' => '999',
@@ -117,13 +118,14 @@ final class SubmitElectiveReferralTest extends TestCase
         );
 
         self::assertSame(7, $referral->submittedByUserId);
-        self::assertSame('self', $referral->submittedOnBehalfOf);
+        // A patient cannot submit (ADR-016); staff entered this on their behalf.
+        self::assertSame('staff', $referral->submittedOnBehalfOf);
     }
 
     public function testAGuardianSubmissionIsRecordedAsSuchNotAsTheChild(): void
     {
         $referral = $this->command->execute(
-            new Actor(7, Role::Patient),
+            new Actor(7, Role::Staff),
             $this->validInput() + ['guardian_name' => 'Tesfaye Alemu'],
             self::NOW,
         );
@@ -173,7 +175,7 @@ final class SubmitElectiveReferralTest extends TestCase
 
     public function testAPatientSubmissionCarriesNoPhysicianProfile(): void
     {
-        $referral = $this->command->execute(new Actor(7, Role::Patient), $this->validInput(), self::NOW);
+        $referral = $this->command->execute(new Actor(7, Role::Staff), $this->validInput(), self::NOW);
 
         self::assertNull($referral->referringPhysicianProfileId);
     }
@@ -213,7 +215,7 @@ final class SubmitElectiveReferralTest extends TestCase
     {
         try {
             $this->command->execute(
-                new Actor(7, Role::Patient),
+                new Actor(7, Role::Staff),
                 ['clinical_summary' => 'pain'] + $this->validInput(),
                 self::NOW,
             );
@@ -229,7 +231,7 @@ final class SubmitElectiveReferralTest extends TestCase
     {
         try {
             $this->command->execute(
-                new Actor(7, Role::Patient),
+                new Actor(7, Role::Staff),
                 ['patient_dob' => '2099-01-01'] + $this->validInput(),
                 self::NOW,
             );
@@ -243,7 +245,7 @@ final class SubmitElectiveReferralTest extends TestCase
     {
         try {
             $this->command->execute(
-                new Actor(7, Role::Patient),
+                new Actor(7, Role::Staff),
                 ['patient_dob' => '2026-02-31'] + $this->validInput(),
                 self::NOW,
             );
@@ -256,7 +258,7 @@ final class SubmitElectiveReferralTest extends TestCase
     public function testPatientRequestedUrgencyIsNotAClinicalPriority(): void
     {
         $referral = $this->command->execute(
-            new Actor(7, Role::Patient),
+            new Actor(7, Role::Staff),
             ['requested_urgency' => 'priority'] + $this->validInput(),
             self::NOW,
         );
@@ -273,7 +275,7 @@ final class SubmitElectiveReferralTest extends TestCase
         $this->expectException(ValidationException::class);
 
         $this->command->execute(
-            new Actor(7, Role::Patient),
+            new Actor(7, Role::Staff),
             ['requested_urgency' => 'emergency'] + $this->validInput(),
             self::NOW,
         );
@@ -284,7 +286,7 @@ final class SubmitElectiveReferralTest extends TestCase
         $this->expectException(ValidationException::class);
 
         $this->command->execute(
-            new Actor(7, Role::Patient),
+            new Actor(7, Role::Staff),
             ['procedure_code' => 'Fluoroscopic Biopsy; DROP TABLE'] + $this->validInput(),
             self::NOW,
         );
@@ -292,7 +294,7 @@ final class SubmitElectiveReferralTest extends TestCase
 
     public function testTheSameTokenReturnsTheFirstReferralInsteadOfASecond(): void
     {
-        $actor = new Actor(7, Role::Patient);
+        $actor = new Actor(7, Role::Staff);
         $token = 'submission-token-0001';
 
         $first = $this->command->execute($actor, $this->validInput(), self::NOW, $token);
@@ -306,7 +308,7 @@ final class SubmitElectiveReferralTest extends TestCase
 
     public function testTheSameTokenWithDifferentDetailsIsRefused(): void
     {
-        $actor = new Actor(7, Role::Patient);
+        $actor = new Actor(7, Role::Staff);
         $token = 'submission-token-0002';
 
         $this->command->execute($actor, $this->validInput(), self::NOW, $token);
@@ -322,7 +324,7 @@ final class SubmitElectiveReferralTest extends TestCase
 
     public function testARejectedSubmissionDoesNotBurnTheToken(): void
     {
-        $actor = new Actor(7, Role::Patient);
+        $actor = new Actor(7, Role::Staff);
         $token = 'submission-token-0003';
 
         try {

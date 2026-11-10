@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Domain\Actor;
+use App\Domain\AuthorisationException;
 use App\Domain\DocumentAccessService;
 use App\Domain\DocumentAction;
 use App\Domain\DocumentKind;
@@ -91,10 +92,18 @@ final class DocumentAccessTest extends TestCase
         self::assertSame('allowed', $events[0]['outcome']);
     }
 
-    public function testAPatientWhoDidNotSubmitThisReferralIsToldItDoesNotExist(): void
+    /**
+     * A denial is logged and answered as "does not exist".
+     *
+     * The stranger here is a physician rather than a patient: a physician can reach
+     * the object check and be refused by it, whereas a patient is stopped earlier at
+     * the permission gate (ADR-016). Keeping the patient here would assert an audit
+     * trail for a request that never gets that far.
+     */
+    public function testADeniedReadIsLoggedAndAnsweredAsNotFound(): void
     {
         $document = $this->storeDocument(DocumentScanStatus::Clean);
-        $stranger = new User(404, 'someone@example.test', 'Someone', Role::Patient, true);
+        $stranger = new User(404, 'someone@example.test', 'Someone', Role::Physician, true);
 
         try {
             $this->service->open($stranger, $document->documentRef, DocumentAction::Download, self::NOW);
@@ -117,14 +126,24 @@ final class DocumentAccessTest extends TestCase
         $this->service->open($physician, $document->documentRef, DocumentAction::Download, self::NOW);
     }
 
-    public function testThePatientWhoSubmittedTheReferralMayReadTheirOwnDocument(): void
+    /**
+     * A patient is refused at the permission gate, not at the object (ADR-016).
+     *
+     * This replaced two tests that proved a patient could read only their own
+     * documents. That property is no longer reachable — no patient can sign in — and
+     * an unreachable path kept green is a claim nobody can act on. Ownership is still
+     * proven where it still means something: ReferralAccessPolicyTest asserts a
+     * patient sees only referrals they submitted, and the physician-stranger case
+     * above proves an object-level denial is answered as "does not exist".
+     */
+    public function testAPatientIsRefusedAtThePermissionGate(): void
     {
         $document = $this->storeDocument(DocumentScanStatus::Clean);
-        $owner = new User(3, 'patient@example.test', 'Patient', Role::Patient, true);
+        $patient = new User(3, 'patient@example.test', 'Patient', Role::Patient, true);
 
-        $opened = $this->service->open($owner, $document->documentRef, DocumentAction::Download, self::NOW);
+        $this->expectException(AuthorisationException::class);
 
-        self::assertSame($document->id, $opened->id);
+        $this->service->open($patient, $document->documentRef, DocumentAction::Download, self::NOW);
     }
 
     public function testAFileStillInQuarantineIsNotServed(): void

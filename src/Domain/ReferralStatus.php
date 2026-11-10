@@ -135,7 +135,9 @@ enum ReferralStatus: string
         }
 
         return match ($target) {
-            self::Submitted => [Role::Physician, Role::Patient, Role::Staff],
+            // A patient cannot submit (ADR-016): no sign-in, no grant. Staff submit
+            // on a patient's behalf, and the referral records that they did.
+            self::Submitted => [Role::Physician, Role::Staff],
             self::Received => [Role::Staff, Role::Admin],
             self::AdministrativeReview => [Role::Staff, Role::Admin],
             self::AwaitingInformation => $this === self::ClinicalReview
@@ -154,7 +156,7 @@ enum ReferralStatus: string
             // reception's call, not the person who then finds it a room.
             self::ConvertedToAppointment => [Role::Staff, Role::Admin, Role::Coordinator],
             self::Closed => [Role::Staff, Role::Admin],
-            self::Cancelled => [Role::Patient, Role::Physician, Role::Staff, Role::Admin],
+            self::Cancelled => [Role::Physician, Role::Staff, Role::Admin],
             self::Draft => [],
         };
     }
