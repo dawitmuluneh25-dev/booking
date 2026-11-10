@@ -34,7 +34,14 @@ return static function (Application $app): void {
     $home = new HomeController($app->view(), $app->auth());
     $auth = new AuthController($app->view(), $app->auth(), $app->auditTrail());
     $reset = new PasswordResetController($app->view(), $app->auth());
-    $adminUsers = new AdminUserController($app->view(), $app->users(), $app->auth(), $app->gate());
+    $adminUsers = new AdminUserController(
+        $app->view(),
+        $app->users(),
+        $app->auth(),
+        $app->gate(),
+        $app->createUserAccount(),
+        $app->changeUserRole(),
+    );
     $admin = new AdminController($app->view(), $app->auth(), $app->gate());
 
     $audit = new AdminAuditController(
@@ -155,6 +162,16 @@ return static function (Application $app): void {
     $router->get(
         '/admin/users',
         static fn (Request $request) => $adminUsers->index($request),
+        RouteAccess::permission(Permission::UsersManage),
+    );
+    $router->post(
+        '/admin/users',
+        static fn (Request $request) => $adminUsers->store($request),
+        RouteAccess::permission(Permission::UsersManage),
+    );
+    $router->post(
+        '/admin/users/role',
+        static fn (Request $request) => $adminUsers->changeRole($request),
         RouteAccess::permission(Permission::UsersManage),
     );
     $router->get(
