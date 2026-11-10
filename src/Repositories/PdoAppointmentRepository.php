@@ -51,6 +51,7 @@ final class PdoAppointmentRepository implements AppointmentRepository
         return $this->transaction->run(
             function () use ($appointment, $resourceId, $slotStarts): Appointment {
                 $this->assertResourceExists($resourceId);
+                $this->assertNotBlocked($resourceId, $appointment->startsAtUtc, $appointment->endsAtUtc);
 
                 $insert = $this->pdo->prepare(
                     'INSERT INTO appointments
@@ -166,6 +167,11 @@ final class PdoAppointmentRepository implements AppointmentRepository
             foreach ($lockOrder as $resourceId) {
                 $this->lockResource($resourceId);
             }
+
+            // Moving into a closure is the same mistake as booking into one, and
+            // it arrives through the same door: a POST that names a time the
+            // picker would not have offered.
+            $this->assertNotBlocked($target->resourceId, $target->startsAtUtc, $target->endsAtUtc);
 
             $held = [];
             foreach ($this->occupiedStartsFor($appointment->id) as $start) {
@@ -451,6 +457,34 @@ final class PdoAppointmentRepository implements AppointmentRepository
     {
         return ($exception->errorInfo[0] ?? '') === '23000'
             && (string) ($exception->errorInfo[1] ?? '') === '1062';
+    }
+
+    /**
+     * Refuse a window that is closed, whatever the caller believes.
+     *
+     * The picker already hides these windows, so reaching this with a valid window
+     * means a hand-crafted POST or a closure entered between the form being drawn
+     * and submitted. Both deserve the same answer: not bookable.
+     */
+    private function assertNotBlocked(int $resourceId, string $startsAtUtc, string $endsAtUtc): void
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT reason FROM resource_blocks
+              WHERE resource_id = :resource_id
+                AND starts_at < :ends_at
+                AND ends_at > :starts_at
+              ORDER BY starts_at ASC
+              LIMIT 1'
+        );
+        $statement->execute([
+            'resource_id' => $resourceId,
+            'starts_at' => $startsAtUtc,
+            'ends_at' => $endsAtUtc,
+        ]);
+
+        if ($statement->fetchColumn() !== false) {
+            throw new SlotUnavailableException($resourceId, $startsAtUtc);
+        }
     }
 
     private function assertResourceExists(int $resourceId): void

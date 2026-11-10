@@ -31,6 +31,7 @@ use App\Support\View;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryAppointmentRepository;
 use Tests\Support\InMemoryReferralRepository;
+use Tests\Support\InMemoryResourceBlockRepository;
 use Tests\Support\InMemoryScheduleRepository;
 use Tests\Support\InMemoryUserRepository;
 use Tests\Support\InMemoryOutboxRepository;
@@ -119,7 +120,7 @@ final class SchedulePageTest extends TestCase
         ));
 
         $workspace = new ScheduleWorkspace(
-            new ScheduleBoard($this->schedule),
+            new ScheduleBoard($this->schedule, new InMemoryResourceBlockRepository()),
             $this->referrals,
             $this->appointments,
             new BookAppointment(

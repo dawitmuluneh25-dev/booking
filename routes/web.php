@@ -12,6 +12,7 @@ use App\Controllers\AdminAuditController;
 use App\Controllers\AdminController;
 use App\Controllers\AdminDiagnosticsController;
 use App\Controllers\AdminHoursController;
+use App\Controllers\AdminResourceController;
 use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
 use App\Controllers\AvailabilityController;
@@ -50,6 +51,15 @@ return static function (Application $app): void {
         $app->auth(),
         $app->gate(),
         $app->calendar(),
+    );
+
+    $resources = new AdminResourceController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->schedule(),
+        $app->resourceBlocks(),
+        $app->config()->timezone(),
     );
 
     $diagnostics = new AdminDiagnosticsController(
@@ -160,6 +170,16 @@ return static function (Application $app): void {
     $router->post(
         '/admin/hours',
         static fn (Request $request) => $hours->update($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->get(
+        '/admin/resources',
+        static fn (Request $request) => $resources->index($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/resources',
+        static fn (Request $request) => $resources->update($request),
         RouteAccess::permission(Permission::ClinicConfigure),
     );
     $router->get(

@@ -157,6 +157,47 @@ final class AppointmentRepositoryTest extends TestCase
         }
     }
 
+    public function testABookingIntoAClosureIsRefusedAndWritesNothing(): void
+    {
+        // The picker hides a closure, so reaching this path means the request was
+        // crafted or the closure was entered while the form was open. Either way
+        // the transaction refuses it, and refuses all of it.
+        $block = $this->pdo()->prepare(
+            'INSERT INTO resource_blocks (resource_id, starts_at, ends_at, reason, created_by_user_id, created_at)
+             VALUES (:resource_id, :starts_at, :ends_at, :reason, :created_by, :created_at)'
+        );
+        $block->execute([
+            'resource_id' => $this->resourceId(),
+            'starts_at' => '2026-11-22 09:00:00',
+            'ends_at' => '2026-11-22 12:00:00',
+            'reason' => 'CT tube replacement',
+            'created_by' => $this->actorUserId,
+            'created_at' => self::NOW,
+        ]);
+
+        $blockId = (int) $this->pdo()->lastInsertId();
+        $appointment = $this->attempt('2026-11-22 09:30:00', 30);
+
+        try {
+            $this->repository()->book(
+                $appointment,
+                $this->resourceId(),
+                $this->slots('2026-11-22 09:30:00', 30),
+                $this->actor(),
+            );
+            self::fail('A closure was booked over.');
+        } catch (SlotUnavailableException) {
+            $orphans = $this->pdo()->prepare('SELECT COUNT(*) FROM appointments WHERE reference = :reference');
+            $orphans->execute(['reference' => $appointment->reference]);
+            self::assertSame(0, (int) $orphans->fetchColumn());
+
+            $held = $this->pdo()->prepare('SELECT COUNT(*) FROM resource_slots WHERE slot_start = :start');
+            $held->execute(['start' => '2026-11-22 09:30:00']);
+            self::assertSame(0, (int) $held->fetchColumn());
+        } finally {
+            $this->pdo()->exec('DELETE FROM resource_blocks WHERE id = ' . $blockId);
+        }
+    }
     private function book(string $startsAt, int $minutes): Appointment
     {
         return $this->repository()->book(

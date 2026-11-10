@@ -49,6 +49,7 @@ final class MigrationIntegrityTest extends TestCase
         'idempotency_keys',
         'notification_outbox',
         'resource_availability',
+        'resource_blocks',
         'resource_slots',
         'resources',
         'retention_runs',

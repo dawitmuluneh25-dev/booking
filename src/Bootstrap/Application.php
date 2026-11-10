@@ -85,7 +85,9 @@ use App\Repositories\PdoPatientRelationshipRepository;
 use App\Repositories\PdoPhysicianProfileRepository;
 use App\Repositories\PdoProcedureRepository;
 use App\Repositories\PdoUrgentCaseRepository;
+use App\Domain\ResourceBlockRepository;
 use App\Repositories\PdoReferralRepository;
+use App\Repositories\PdoResourceBlockRepository;
 use App\Repositories\PdoRetentionRepository;
 use App\Repositories\PdoScheduleRepository;
 use App\Repositories\PdoUserRepository;
@@ -141,6 +143,8 @@ final class Application
     private ?ScheduleRepository $schedule = null;
 
     private ?ScheduleBoard $scheduleBoard = null;
+
+    private ?ResourceBlockRepository $resourceBlocks = null;
 
     private ?RescheduleAppointment $rescheduleAppointment = null;
 
@@ -403,9 +407,17 @@ final class Application
         return $this->schedule ??= new PdoScheduleRepository($this->pdo());
     }
 
+    public function resourceBlocks(): ResourceBlockRepository
+    {
+        return $this->resourceBlocks ??= new PdoResourceBlockRepository($this->pdo());
+    }
+
     public function scheduleBoard(): ScheduleBoard
     {
-        return $this->scheduleBoard ??= new ScheduleBoard($this->schedule());
+        return $this->scheduleBoard ??= new ScheduleBoard(
+            $this->schedule(),
+            $this->resourceBlocks(),
+        );
     }
 
     public function rescheduleAppointment(): RescheduleAppointment

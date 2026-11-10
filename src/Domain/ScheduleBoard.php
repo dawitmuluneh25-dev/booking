@@ -20,6 +20,7 @@ final class ScheduleBoard
 {
     public function __construct(
         private readonly ScheduleRepository $schedule,
+        private readonly ResourceBlockRepository $blocks,
         private readonly ResourceSchedule $calculator = new ResourceSchedule(),
     ) {
     }
@@ -122,7 +123,14 @@ final class ScheduleBoard
     ): array {
         [$fromUtc, $toUtc] = $this->dayBounds($localDate, $zone);
 
+        // A closure is not a booking, but to the question "may this be offered"
+        // both answers are the same. Merging them here keeps one arithmetic path
+        // for the board, the wizard and the day view.
         $occupied = array_keys($this->schedule->occupancyBetween($resourceId, $fromUtc, $toUtc));
+
+        foreach (array_keys($this->blocks->blockedQuanta($resourceId, $fromUtc, $toUtc)) as $blocked) {
+            $occupied[] = $blocked;
+        }
 
         $local = $localDate->setTimezone($zone);
 

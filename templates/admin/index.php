@@ -24,6 +24,7 @@
             <h3>Opening hours</h3>
             <p>Weekly opening hours and one-off closed days.</p>
             <a class="link" href="/admin/hours">Edit hours</a>
+            <a class="link" href="/admin/resources">Rooms and closures</a>
         </article>
 
         <article class="card">
