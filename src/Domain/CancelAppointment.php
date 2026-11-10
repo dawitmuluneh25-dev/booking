@@ -18,8 +18,11 @@ namespace App\Domain;
  */
 final class CancelAppointment
 {
-    public function __construct(private readonly AppointmentRepository $appointments)
-    {
+    public function __construct(
+        private readonly AppointmentRepository $appointments,
+        private readonly Transaction $transaction,
+        private readonly OutboxRepository $outbox,
+    ) {
     }
 
     /**
@@ -54,12 +57,33 @@ final class CancelAppointment
             throw new AppointmentTransitionException($appointment->status, AppointmentStatus::Cancelled);
         }
 
-        return $this->appointments->transition(
-            $appointment,
-            AppointmentStatus::Cancelled,
-            $actor,
-            mb_substr($reason, 0, 255),
-            $nowUtc ?? gmdate('Y-m-d H:i:s'),
-        );
+        $cancelledAtUtc = $nowUtc ?? gmdate('Y-m-d H:i:s');
+
+        return $this->transaction->run(function () use ($appointment, $actor, $reason, $cancelledAtUtc): Appointment {
+            $cancelled = $this->appointments->transition(
+                $appointment,
+                AppointmentStatus::Cancelled,
+                $actor,
+                mb_substr($reason, 0, 255),
+                $cancelledAtUtc,
+            );
+
+            // The message names the appointment and the time it was held for.
+            // The reason stays in the record: it can contain clinical detail.
+            $this->outbox->record(null, $cancelled->referralId, [
+                new OutboundMessage(
+                    channel: NotificationChannel::Sms,
+                    template: NotificationTemplate::AppointmentCancelled,
+                    recipient: $cancelled->patientPhone,
+                    payload: [
+                        'reference' => $cancelled->reference,
+                        'scheduled_at_utc' => $cancelled->startsAtUtc,
+                    ],
+                    dedupeKey: 'appointment:' . $cancelled->reference . ':cancelled',
+                ),
+            ]);
+
+            return $cancelled;
+        });
     }
 }

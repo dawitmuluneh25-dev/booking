@@ -31,8 +31,11 @@ final class RescheduleAppointment
         AppointmentStatus::CheckedIn,
     ];
 
-    public function __construct(private readonly AppointmentRepository $appointments)
-    {
+    public function __construct(
+        private readonly AppointmentRepository $appointments,
+        private readonly Transaction $transaction,
+        private readonly OutboxRepository $outbox,
+    ) {
     }
 
     /**
@@ -82,18 +85,46 @@ final class RescheduleAppointment
 
         $reason = $reason === null ? null : trim($reason);
 
-        return $this->appointments->reschedule(
+        $movedAtUtc = $nowUtc ?? gmdate('Y-m-d H:i:s');
+
+        return $this->transaction->run(function () use (
             $appointment,
-            new RescheduleTarget(
-                resourceId: $schedule->resourceId,
-                startsAtUtc: $schedule->startsAtUtc(),
-                endsAtUtc: $schedule->endsAtUtc(),
-                durationMinutes: $schedule->durationMinutes,
-                slotStarts: $schedule->slotStarts(),
-            ),
+            $schedule,
             $actor,
-            $reason === '' ? null : $reason,
-            $nowUtc ?? gmdate('Y-m-d H:i:s'),
-        );
+            $reason,
+            $movedAtUtc,
+        ): Appointment {
+            $moved = $this->appointments->reschedule(
+                $appointment,
+                new RescheduleTarget(
+                    resourceId: $schedule->resourceId,
+                    startsAtUtc: $schedule->startsAtUtc(),
+                    endsAtUtc: $schedule->endsAtUtc(),
+                    durationMinutes: $schedule->durationMinutes,
+                    slotStarts: $schedule->slotStarts(),
+                ),
+                $actor,
+                $reason === '' ? null : $reason,
+                $movedAtUtc,
+            );
+
+            // The new time is part of the dedupe key: a second move to a
+            // different slot is a second message, which the old
+            // (subject, template, channel) key would have swallowed.
+            $this->outbox->record(null, $moved->referralId, [
+                new OutboundMessage(
+                    channel: NotificationChannel::Sms,
+                    template: NotificationTemplate::AppointmentMoved,
+                    recipient: $moved->patientPhone,
+                    payload: [
+                        'reference' => $moved->reference,
+                        'scheduled_at_utc' => $moved->startsAtUtc,
+                    ],
+                    dedupeKey: 'appointment:' . $moved->reference . ':moved:' . $moved->startsAtUtc,
+                ),
+            ]);
+
+            return $moved;
+        });
     }
 }

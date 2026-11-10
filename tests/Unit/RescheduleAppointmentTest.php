@@ -9,12 +9,16 @@ use App\Domain\Appointment;
 use App\Domain\AppointmentStatus;
 use App\Domain\AppointmentTransitionException;
 use App\Domain\CancelAppointment;
+use App\Domain\NotificationTemplate;
 use App\Domain\RescheduleAppointment;
 use App\Domain\Role;
 use App\Domain\SlotUnavailableException;
 use App\Domain\ValidationException;
+use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryAppointmentRepository;
+use Tests\Support\InMemoryOutboxRepository;
+use Tests\Support\InlineTransaction;
 
 /**
  * Phase 5 criteria 2 and 3.
@@ -36,11 +40,16 @@ final class RescheduleAppointmentTest extends TestCase
 
     private Appointment $appointment;
 
+    private InMemoryOutboxRepository $outbox;
+
     protected function setUp(): void
     {
         $this->appointments = new InMemoryAppointmentRepository();
-        $this->reschedule = new RescheduleAppointment($this->appointments);
-        $this->cancel = new CancelAppointment($this->appointments);
+        $this->outbox = new InMemoryOutboxRepository();
+        $transaction = new InlineTransaction();
+
+        $this->reschedule = new RescheduleAppointment($this->appointments, $transaction, $this->outbox);
+        $this->cancel = new CancelAppointment($this->appointments, $transaction, $this->outbox);
 
         $this->appointment = $this->appointments->book(
             $this->entity('2031-06-03 09:00:00', '2031-06-03 10:00:00', 60),
@@ -195,6 +204,59 @@ final class RescheduleAppointmentTest extends TestCase
         $this->cancel->execute($patient, $this->appointment->reference, 'Changed my mind.', self::NOW);
     }
 
+    public function testEveryMoveQueuesItsOwnMessageInClinicTime(): void
+    {
+        $first = $this->reschedule->execute($this->staff(), $this->appointment->reference, [
+            'resource_id' => '1',
+            'starts_at' => '2031-06-03 14:00:00',
+            'duration_minutes' => '60',
+        ], 'Patient asked for the afternoon.', self::NOW);
+
+        $second = $this->reschedule->execute(
+            $this->staff(),
+            $this->appointment->reference,
+            ['resource_id' => '1', 'starts_at' => '2031-06-04 08:00:00', 'duration_minutes' => '60'],
+            'Patient asked for the next morning.',
+            self::NOW,
+        );
+
+        $queued = $this->outbox->recent(10);
+        self::assertCount(2, $queued, 'A second move must not be swallowed as a duplicate.');
+
+        $keys = array_map(static fn ($message): string => (string) $message->dedupeKey, $queued);
+        // recent() is newest first.
+        self::assertSame(
+            [
+                'appointment:' . $second->reference . ':moved:2031-06-04 08:00:00',
+                'appointment:' . $first->reference . ':moved:2031-06-03 14:00:00',
+            ],
+            $keys,
+        );
+
+        $body = $queued[0]->body(new DateTimeZone('Africa/Addis_Ababa'));
+        self::assertStringContainsString('11:00', $body);
+        self::assertStringContainsString($second->reference, $body);
+        self::assertStringNotContainsString($this->appointment->patientName, $body);
+    }
+
+    public function testCancellingQueuesOneMessageWithoutTheReason(): void
+    {
+        $this->cancel->execute(
+            $this->staff(),
+            $this->appointment->reference,
+            'Patient has a conflicting hospital admission.',
+            self::NOW,
+        );
+
+        $queued = $this->outbox->recent(10);
+        self::assertCount(1, $queued);
+        self::assertSame(NotificationTemplate::AppointmentCancelled, $queued[0]->template);
+
+        $body = $queued[0]->body(new DateTimeZone('Africa/Addis_Ababa'));
+        self::assertStringContainsString($this->appointment->reference, $body);
+        self::assertStringNotContainsString('conflicting hospital admission', $body);
+        self::assertStringNotContainsString($this->appointment->patientName, $body);
+    }
     private function staff(): Actor
     {
         return new Actor(7, Role::Staff);

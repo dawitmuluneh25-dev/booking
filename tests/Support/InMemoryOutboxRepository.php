@@ -32,6 +32,14 @@ final class InMemoryOutboxRepository implements OutboxRepository
         return $id;
     }
 
+    /** @param list<OutboundMessage> $messages */
+    public function record(?int $bookingId, ?int $referralId, array $messages): void
+    {
+        foreach ($messages as $message) {
+            $this->enqueue($message);
+        }
+    }
+
     /** @return list<OutboundMessage> */
     public function claim(int $limit, string $staleBeforeUtc): array
     {

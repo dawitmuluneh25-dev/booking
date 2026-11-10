@@ -18,6 +18,12 @@ final class PdoOutboxRepository implements OutboxRepository
     {
     }
 
+    /** @param list<OutboundMessage> $messages */
+    public function record(?int $bookingId, ?int $referralId, array $messages): void
+    {
+        (new OutboxWriter($this->pdo))->write($bookingId, $referralId, $messages);
+    }
+
     /** @return list<OutboundMessage> */
     public function claim(int $limit, string $staleBeforeUtc): array
     {

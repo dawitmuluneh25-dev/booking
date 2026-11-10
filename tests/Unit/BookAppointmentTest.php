@@ -10,6 +10,7 @@ use App\Domain\AuthorisationException;
 use App\Domain\BookAppointment;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
+use App\Domain\NotificationTemplate;
 use App\Domain\Referral;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
@@ -17,9 +18,11 @@ use App\Domain\Role;
 use App\Domain\SlotUnavailableException;
 use App\Domain\Transaction;
 use App\Domain\ValidationException;
+use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryAppointmentRepository;
 use Tests\Support\InMemoryReferralRepository;
+use Tests\Support\InMemoryOutboxRepository;
 
 final class BookAppointmentTest extends TestCase
 {
@@ -31,6 +34,8 @@ final class BookAppointmentTest extends TestCase
 
     private BookAppointment $command;
 
+    private InMemoryOutboxRepository $outbox;
+
     protected function setUp(): void
     {
         $this->referrals = new InMemoryReferralRepository();
@@ -39,6 +44,7 @@ final class BookAppointmentTest extends TestCase
             $this->referrals,
             $this->appointments,
             $this->passthroughTransaction(),
+            $this->outbox = new InMemoryOutboxRepository(),
         );
     }
 
@@ -216,6 +222,47 @@ final class BookAppointmentTest extends TestCase
         );
     }
 
+    public function testBookingQueuesOneMessageThatNamesTheTimeButNotThePatient(): void
+    {
+        $referral = $this->approvedReferral();
+
+        $this->command->execute(
+            new Actor(4, Role::Staff),
+            $referral->id,
+            ['resource_id' => 1, 'starts_at' => '2026-11-20 09:00:00', 'duration_minutes' => 45],
+            self::NOW,
+        );
+
+        $queued = $this->outbox->recent(10);
+        self::assertCount(1, $queued);
+        self::assertSame(NotificationTemplate::AppointmentBooked, $queued[0]->template);
+
+        // Addis Ababa is UTC+3: a patient told "09:00" would arrive three hours
+        // early, so the body has to be written in the clinic's clock.
+        $body = $queued[0]->body(new DateTimeZone('Africa/Addis_Ababa'));
+        self::assertStringContainsString('12:00', $body);
+        self::assertStringNotContainsString('09:00', $body);
+        self::assertStringNotContainsString($referral->patientName, $body);
+        self::assertStringContainsString($queued[0]->payload['reference'], $body);
+    }
+
+    public function testTheMessageCarriesAStableDedupeKey(): void
+    {
+        $referral = $this->approvedReferral();
+
+        $appointment = $this->command->execute(
+            new Actor(4, Role::Staff),
+            $referral->id,
+            ['resource_id' => 1, 'starts_at' => '2026-11-20 09:00:00', 'duration_minutes' => 45],
+            self::NOW,
+        );
+
+        $queued = $this->outbox->recent(10);
+        self::assertSame(
+            'appointment:' . $appointment->reference . ':booked',
+            $queued[0]->dedupeKeyFor(null, $referral->id),
+        );
+    }
     private function approvedReferral(): Referral
     {
         $referral = $this->referralAt(ReferralStatus::ApprovedForScheduling);

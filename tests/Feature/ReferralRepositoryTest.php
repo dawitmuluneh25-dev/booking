@@ -18,6 +18,7 @@ use App\Domain\Referral;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
 use App\Domain\Role;
+use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoReferralRepository;
 use PDO;
 use PDOException;
@@ -311,6 +312,41 @@ final class ReferralRepositoryTest extends TestCase
         );
     }
 
+    public function testTwoMovesAndADuplicateLeaveTwoRowsInTheOutbox(): void
+    {
+        // The old unique key was (subject, template, channel), so the second
+        // "moved" message for one appointment collided with the first and
+        // INSERT IGNORE dropped it. This is the regression the dedupe key exists
+        // for, asserted against the real index rather than the array in the double.
+        $pdo = $this->pdo;
+        self::assertInstanceOf(PDO::class, $pdo);
+        $referral = $this->moveToClinicalReview();
+
+        $outbox = new PdoOutboxRepository($pdo);
+        $outbox->record(null, $referral->id, [
+            $this->message('appointment:BK-TEST:moved:2031-06-03 14:00:00'),
+            $this->message('appointment:BK-TEST:moved:2031-06-04 08:00:00'),
+            $this->message('appointment:BK-TEST:moved:2031-06-04 08:00:00'),
+        ]);
+
+        $statement = $pdo->prepare(
+            'SELECT COUNT(*) FROM notification_outbox WHERE referral_id = :id AND template = :template'
+        );
+        $statement->execute(['id' => $referral->id, 'template' => NotificationTemplate::AppointmentMoved->value]);
+
+        self::assertSame(2, (int) $statement->fetchColumn());
+    }
+
+    private function message(string $dedupeKey): OutboundMessage
+    {
+        return new OutboundMessage(
+            channel: NotificationChannel::Sms,
+            template: NotificationTemplate::AppointmentMoved,
+            recipient: '+251911000444',
+            payload: ['reference' => 'BK-TEST', 'scheduled_at_utc' => '2031-06-03 14:00:00'],
+            dedupeKey: $dedupeKey,
+        );
+    }
     private function repository(): PdoReferralRepository
     {
         if ($this->repository === null) {

@@ -35,6 +35,7 @@ final class BookAppointment
         private readonly ReferralRepository $referrals,
         private readonly AppointmentRepository $appointments,
         private readonly Transaction $transaction,
+        private readonly OutboxRepository $outbox,
     ) {
     }
 
@@ -116,6 +117,23 @@ final class BookAppointment
                     null,
                     $createdAtUtc,
                 );
+
+                // Inside the same unit of work: a booking nobody was told about
+                // and a message about a booking that does not exist are both
+                // worse than a failed request (WF-14). The body carries the
+                // reference and the time; the patient's name is not in it.
+                $this->outbox->record(null, $referral->id, [
+                    new OutboundMessage(
+                        channel: NotificationChannel::Sms,
+                        template: NotificationTemplate::AppointmentBooked,
+                        recipient: $appointment->patientPhone,
+                        payload: [
+                            'reference' => $booked->reference,
+                            'scheduled_at_utc' => $booked->startsAtUtc,
+                        ],
+                        dedupeKey: 'appointment:' . $booked->reference . ':booked',
+                    ),
+                ]);
 
                 return $booked;
             },

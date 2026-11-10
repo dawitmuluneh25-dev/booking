@@ -410,12 +410,20 @@ final class Application
 
     public function rescheduleAppointment(): RescheduleAppointment
     {
-        return $this->rescheduleAppointment ??= new RescheduleAppointment($this->appointments());
+        return $this->rescheduleAppointment ??= new RescheduleAppointment(
+            $this->appointments(),
+            $this->transaction(),
+            $this->outbox(),
+        );
     }
 
     public function cancelAppointment(): CancelAppointment
     {
-        return $this->cancelAppointment ??= new CancelAppointment($this->appointments());
+        return $this->cancelAppointment ??= new CancelAppointment(
+            $this->appointments(),
+            $this->transaction(),
+            $this->outbox(),
+        );
     }
 
     public function scheduleWorkspace(): ScheduleWorkspace
@@ -436,6 +444,7 @@ final class Application
             $this->referrals(),
             $this->appointments(),
             $this->transaction(),
+            $this->outbox(),
         );
     }
 

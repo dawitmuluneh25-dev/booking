@@ -33,6 +33,7 @@ use Tests\Support\InMemoryAppointmentRepository;
 use Tests\Support\InMemoryReferralRepository;
 use Tests\Support\InMemoryScheduleRepository;
 use Tests\Support\InMemoryUserRepository;
+use Tests\Support\InMemoryOutboxRepository;
 use Tests\Support\InlineTransaction;
 
 /**
@@ -121,9 +122,14 @@ final class SchedulePageTest extends TestCase
             new ScheduleBoard($this->schedule),
             $this->referrals,
             $this->appointments,
-            new BookAppointment($this->referrals, $this->appointments, new InlineTransaction()),
-            new RescheduleAppointment($this->appointments),
-            new CancelAppointment($this->appointments),
+            new BookAppointment(
+                $this->referrals,
+                $this->appointments,
+                new InlineTransaction(),
+                new InMemoryOutboxRepository(),
+            ),
+            new RescheduleAppointment($this->appointments, new InlineTransaction(), new InMemoryOutboxRepository()),
+            new CancelAppointment($this->appointments, new InlineTransaction(), new InMemoryOutboxRepository()),
         );
 
         $this->controller = new ScheduleController(
