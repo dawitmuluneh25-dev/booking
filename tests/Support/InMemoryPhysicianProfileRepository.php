@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\PhysicianProfile;
+use App\Domain\PhysicianQueueEntry;
 use App\Domain\PhysicianProfileRepository;
 use App\Domain\PhysicianStatus;
 
@@ -13,6 +14,13 @@ final class InMemoryPhysicianProfileRepository implements PhysicianProfileReposi
 {
     /** @var array<int, PhysicianProfile> */
     private array $profiles = [];
+
+    /**
+     * @param array<int, array{name: string, email: string}> $accounts user id => account
+     */
+    public function __construct(private readonly array $accounts = [])
+    {
+    }
 
     public function findByUserId(int $userId): ?PhysicianProfile
     {
@@ -38,6 +46,23 @@ final class InMemoryPhysicianProfileRepository implements PhysicianProfileReposi
         ));
     }
 
+    /** @return list<PhysicianQueueEntry> */
+    public function queued(?PhysicianStatus $status = null): array
+    {
+        $entries = [];
+
+        foreach ($this->profiles as $profile) {
+            if ($status !== null && $profile->status !== $status) {
+                continue;
+            }
+
+            $account = $this->accounts[$profile->userId] ?? ['name' => 'User #' . $profile->userId, 'email' => ''];
+
+            $entries[] = new PhysicianQueueEntry($profile, $account['name'], $account['email']);
+        }
+
+        return $entries;
+    }
     public function create(PhysicianProfile $profile, string $createdAtUtc): PhysicianProfile
     {
         $stored = $profile->withIdentity(count($this->profiles) + 1);

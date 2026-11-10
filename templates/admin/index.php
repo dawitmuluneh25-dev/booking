@@ -18,6 +18,7 @@
             <h3>Staff accounts</h3>
             <p>Accounts, roles and the state of each sign-in.</p>
             <a class="link" href="/admin/users">Open accounts</a>
+            <a class="link" href="/admin/physicians">Referring physicians</a>
         </article>
 
         <article class="card">

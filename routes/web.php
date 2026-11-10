@@ -12,6 +12,7 @@ use App\Controllers\AdminAuditController;
 use App\Controllers\AdminController;
 use App\Controllers\AdminDiagnosticsController;
 use App\Controllers\AdminHoursController;
+use App\Controllers\AdminPhysicianController;
 use App\Controllers\AdminResourceController;
 use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
@@ -58,6 +59,14 @@ return static function (Application $app): void {
         $app->auth(),
         $app->gate(),
         $app->calendar(),
+    );
+
+    $physicians = new AdminPhysicianController(
+        $app->view(),
+        $app->gate(),
+        $app->physicians(),
+        $app->verifyPhysician(),
+        $app->config()->timezone(),
     );
 
     $resources = new AdminResourceController(
@@ -189,6 +198,26 @@ return static function (Application $app): void {
         '/admin/hours',
         static fn (Request $request) => $hours->update($request),
         RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->get(
+        '/admin/physicians',
+        static fn (Request $request) => $physicians->index($request),
+        RouteAccess::permission(Permission::UsersManage),
+    );
+    $router->post(
+        '/admin/physicians/{id}/verify',
+        static fn (Request $request, array $params) => $physicians->verify($request, $params),
+        RouteAccess::permission(Permission::UsersManage),
+    );
+    $router->post(
+        '/admin/physicians/{id}/suspend',
+        static fn (Request $request, array $params) => $physicians->suspend($request, $params),
+        RouteAccess::permission(Permission::UsersManage),
+    );
+    $router->post(
+        '/admin/physicians/{id}/reject',
+        static fn (Request $request, array $params) => $physicians->reject($request, $params),
+        RouteAccess::permission(Permission::UsersManage),
     );
     $router->get(
         '/admin/resources',

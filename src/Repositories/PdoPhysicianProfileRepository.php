@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Domain\PhysicianProfile;
+use App\Domain\PhysicianQueueEntry;
 use App\Domain\PhysicianProfileRepository;
 use App\Domain\PhysicianReviewException;
 use App\Domain\PhysicianStatus;
@@ -64,6 +65,46 @@ final class PdoPhysicianProfileRepository implements PhysicianProfileRepository
         return $profiles;
     }
 
+    /** @return list<PhysicianQueueEntry> */
+    public function queued(?PhysicianStatus $status = null): array
+    {
+        $sql = 'SELECT p.id, p.user_id, p.practice_number, p.institution, p.specialty, p.status,
+                       p.verified_by_user_id, p.verified_at, p.review_note, p.created_at,
+                       u.name AS account_name, u.email AS account_email
+                  FROM physician_profiles p
+                  JOIN users u ON u.id = p.user_id';
+
+        if ($status !== null) {
+            $sql .= ' WHERE p.status = :status';
+        }
+
+        $sql .= ' ORDER BY p.created_at ASC, p.id ASC';
+
+        $statement = $this->pdo->prepare($sql);
+
+        if ($status !== null) {
+            $statement->execute(['status' => $status->value]);
+        } else {
+            $statement->execute();
+        }
+
+        $entries = [];
+
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            /** @var array<string, mixed> $row */
+            $entries[] = new PhysicianQueueEntry(
+                profile: PhysicianProfile::fromRow($row),
+                name: is_string($row['account_name'] ?? null) ? $row['account_name'] : '',
+                email: is_string($row['account_email'] ?? null) ? $row['account_email'] : '',
+            );
+        }
+
+        return $entries;
+    }
     public function create(PhysicianProfile $profile, string $createdAtUtc): PhysicianProfile
     {
         return $this->transaction->run(

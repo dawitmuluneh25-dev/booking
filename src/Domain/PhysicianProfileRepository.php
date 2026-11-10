@@ -19,6 +19,18 @@ interface PhysicianProfileRepository
     /** @return list<PhysicianProfile> oldest first */
     public function pending(): array;
 
+    /**
+     * The queue, filtered by status, with the account's name and address.
+     *
+     *
+ull means every profile: an administrator reviewing a suspension needs to
+     * see the verified records as well as the pending ones, and a queue that can
+     * only show one status is a queue that hides the decision it is asking about.
+     *
+     * @return list<PhysicianQueueEntry> oldest first
+     */
+    public function queued(?PhysicianStatus $status = null): array;
+
     /** Persist a status change and return the stored profile. */
     public function review(
         PhysicianProfile $profile,
