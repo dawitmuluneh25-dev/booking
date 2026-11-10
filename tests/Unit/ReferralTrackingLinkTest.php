@@ -53,7 +53,7 @@ final class ReferralTrackingLinkTest extends TestCase
                 guardianName: null,
                 guardianPhone: null,
                 guardianRelationship: null,
-                procedureCode: 'fluoroscopic_biopsy',
+                procedureCode: 'image_guided_biopsy',
                 requestedUrgency: 'routine',
                 clinicalSummary: null,
                 targetSite: null,

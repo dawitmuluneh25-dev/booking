@@ -37,6 +37,7 @@ use Tests\Support\InMemoryPhysicianProfileRepository;
 use Tests\Support\InMemoryReferralRepository;
 use Tests\Support\InMemoryTrackingTokenRepository;
 use Tests\Support\InlineTransaction;
+use Tests\Support\RecordingAuditTrail;
 
 /**
  * Phase 4 criterion 3.
@@ -174,7 +175,7 @@ final class DocumentLoggingTest extends TestCase
                 $resolver,
                 new InlineTransaction(),
             ),
-            new ReviewQuarantinedDocument($documents, $access),
+            new ReviewQuarantinedDocument($documents, $access, new RecordingAuditTrail(), new InlineTransaction()),
             $access,
             new \App\Domain\ReferralTrackingLink(new InMemoryTrackingTokenRepository(), $referrals),
             new DocumentTypes(),
@@ -218,7 +219,7 @@ final class DocumentLoggingTest extends TestCase
             guardianName: null,
             guardianPhone: null,
             guardianRelationship: null,
-            procedureCode: 'fluoroscopic_biopsy',
+            procedureCode: 'image_guided_biopsy',
             requestedUrgency: 'routine',
             clinicalSummary: null,
             targetSite: null,

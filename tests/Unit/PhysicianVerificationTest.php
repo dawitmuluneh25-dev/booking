@@ -15,6 +15,8 @@ use App\Domain\VerifyPhysician;
 use App\Security\PasswordHasher;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryPhysicianProfileRepository;
+use Tests\Support\InlineTransaction;
+use Tests\Support\RecordingAuditTrail;
 use Tests\Support\InMemoryUserRepository;
 
 final class PhysicianVerificationTest extends TestCase
@@ -31,7 +33,7 @@ final class PhysicianVerificationTest extends TestCase
     {
         $this->profiles = new InMemoryPhysicianProfileRepository();
         $this->users = new InMemoryUserRepository();
-        $this->verify = new VerifyPhysician($this->profiles);
+        $this->verify = new VerifyPhysician($this->profiles, new RecordingAuditTrail(), new InlineTransaction());
     }
 
     public function testAnAdministratorVerifiesAPendingProfile(): void
@@ -101,7 +103,7 @@ final class PhysicianVerificationTest extends TestCase
     public function testProvisioningCreatesAnAccountThatMustResetItsPassword(): void
     {
         $this->users->seed('admin@example.test', 'Admin', Role::Admin, 'hash');
-        $command = new CreateUserAccount($this->users, new PasswordHasher());
+        $command = new CreateUserAccount($this->users, new PasswordHasher(), new RecordingAuditTrail(), new InlineTransaction());
 
         $result = $command->execute(
             new Actor(1, Role::Admin),
@@ -121,7 +123,7 @@ final class PhysicianVerificationTest extends TestCase
     public function testATakenEmailIsRefused(): void
     {
         $this->users->seed('taken@example.test', 'Existing', Role::Staff, 'hash');
-        $command = new CreateUserAccount($this->users, new PasswordHasher());
+        $command = new CreateUserAccount($this->users, new PasswordHasher(), new RecordingAuditTrail(), new InlineTransaction());
 
         $this->expectException(ValidationException::class);
         $command->execute(
@@ -132,7 +134,7 @@ final class PhysicianVerificationTest extends TestCase
 
     public function testAnUnknownRoleIsRefusedRatherThanDefaulted(): void
     {
-        $command = new CreateUserAccount($this->users, new PasswordHasher());
+        $command = new CreateUserAccount($this->users, new PasswordHasher(), new RecordingAuditTrail(), new InlineTransaction());
 
         $this->expectException(ValidationException::class);
         $command->execute(

@@ -19,8 +19,11 @@ namespace App\Domain;
  */
 final class VerifyPhysician
 {
-    public function __construct(private readonly PhysicianProfileRepository $profiles)
-    {
+    public function __construct(
+        private readonly PhysicianProfileRepository $profiles,
+        private readonly AuditTrail $audit,
+        private readonly Transaction $transaction,
+    ) {
     }
 
     /**
@@ -65,12 +68,40 @@ final class VerifyPhysician
             return $profile;
         }
 
-        return $this->profiles->review(
-            $profile,
-            $decision,
-            $actor->userId,
-            $note === '' ? null : $note,
-            $nowUtc ?? gmdate('Y-m-d H:i:s'),
-        );
+        // A review ends in one of three states. `pending` is where a profile starts,
+        // not a verdict, and recording it as one would put a decision in the audit
+        // trail that nobody made.
+        $action = match ($decision) {
+            PhysicianStatus::Verified => AuditAction::PhysicianVerified,
+            PhysicianStatus::Rejected => AuditAction::PhysicianRejected,
+            PhysicianStatus::Suspended => AuditAction::PhysicianSuspended,
+            PhysicianStatus::Pending => throw new ValidationException([
+                'decision' => 'A review ends in verified, rejected or suspended.',
+            ]),
+        };
+
+        $when = $nowUtc ?? gmdate('Y-m-d H:i:s');
+
+        return $this->transaction->run(function () use ($actor, $profile, $decision, $note, $when, $action): PhysicianProfile {
+            $reviewed = $this->profiles->review(
+                $profile,
+                $decision,
+                $actor->userId,
+                $note === '' ? null : $note,
+                $when,
+            );
+
+            $this->audit->record(AuditEntry::byActor(
+                actor: $actor,
+                action: $action,
+                objectType: 'physician_profile',
+                objectRef: (string) $profile->id,
+                before: ['status' => $profile->status->value],
+                after: ['status' => $decision->value],
+                occurredAtUtc: $when,
+            ));
+
+            return $reviewed;
+        });
     }
 }

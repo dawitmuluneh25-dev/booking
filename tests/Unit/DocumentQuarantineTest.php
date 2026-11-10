@@ -28,6 +28,8 @@ use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryDocumentRepository;
 use Tests\Support\InMemoryPhysicianProfileRepository;
 use Tests\Support\InMemoryReferralRepository;
+use Tests\Support\InlineTransaction;
+use Tests\Support\RecordingAuditTrail;
 
 /**
  * HAK-0904 and DOC-005: nothing is served until a named reviewer releases it.
@@ -66,7 +68,7 @@ final class DocumentQuarantineTest extends TestCase
                 guardianName: null,
                 guardianPhone: null,
                 guardianRelationship: null,
-                procedureCode: 'fluoroscopic_biopsy',
+                procedureCode: 'image_guided_biopsy',
                 requestedUrgency: 'routine',
                 clinicalSummary: 'Summary',
                 targetSite: 'Lung',
@@ -88,7 +90,7 @@ final class DocumentQuarantineTest extends TestCase
         );
 
         $this->access = new DocumentAccessService($this->documents, $referrals, $resolver);
-        $this->review = new ReviewQuarantinedDocument($this->documents, $this->access);
+        $this->review = new ReviewQuarantinedDocument($this->documents, $this->access, new RecordingAuditTrail(), new InlineTransaction());
     }
 
     public function testReleasingADocumentMakesItServable(): void

@@ -24,6 +24,8 @@ final class CreateUserAccount
     public function __construct(
         private readonly UserRepository $users,
         private readonly PasswordHasher $hasher,
+        private readonly AuditTrail $audit,
+        private readonly Transaction $transaction,
     ) {
     }
 
@@ -71,13 +73,29 @@ final class CreateUserAccount
         \assert($role instanceof Role);
 
         $password = $this->temporaryPassword();
-        $id = $this->users->create($email, $name, $role, $this->hasher->hash($password));
 
-        $user = $this->users->findById($id);
+        $user = $this->transaction->run(function () use ($actor, $email, $name, $role, $password): User {
+            $id = $this->users->create($email, $name, $role, $this->hasher->hash($password));
 
-        if ($user === null) {
-            throw new UserNotFoundException($id);
-        }
+            $created = $this->users->findById($id);
+
+            if ($created === null) {
+                throw new UserNotFoundException($id);
+            }
+
+            // The temporary password is deliberately absent: the audit trail is
+            // readable by administrators, and a credential in a table that exists
+            // to be read is a credential leak.
+            $this->audit->record(AuditEntry::byActor(
+                actor: $actor,
+                action: AuditAction::UserCreated,
+                objectType: 'user',
+                objectRef: (string) $id,
+                after: ['email' => $email, 'role' => $role->value],
+            ));
+
+            return $created;
+        });
 
         return ['user' => $user, 'temporary_password' => $password];
     }

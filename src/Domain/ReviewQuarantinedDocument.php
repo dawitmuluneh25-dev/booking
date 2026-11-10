@@ -21,6 +21,8 @@ final class ReviewQuarantinedDocument
     public function __construct(
         private readonly DocumentRepository $documents,
         private readonly DocumentAccessService $access,
+        private readonly AuditTrail $audit,
+        private readonly Transaction $transaction,
     ) {
     }
 
@@ -63,25 +65,49 @@ final class ReviewQuarantinedDocument
             ]);
         }
 
-        $reviewed = $this->documents->recordScanVerdict(
+        return $this->transaction->run(function () use (
             $document,
             $verdict,
-            $reviewer->id,
-            mb_substr($note, 0, 190),
-            $occurredAtUtc,
-        );
-
-        $this->access->record(
-            $reviewed,
             $reviewer,
-            DocumentAction::QuarantineReview,
-            AccessOutcome::Allowed,
+            $note,
             $occurredAtUtc,
-            $verdict->value,
             $ipAddress,
             $userAgent,
-        );
+        ): ReferralDocument {
+            $reviewed = $this->documents->recordScanVerdict(
+                $document,
+                $verdict,
+                $reviewer->id,
+                mb_substr($note, 0, 190),
+                $occurredAtUtc,
+            );
 
-        return $reviewed;
+            $this->access->record(
+                $reviewed,
+                $reviewer,
+                DocumentAction::QuarantineReview,
+                AccessOutcome::Allowed,
+                $occurredAtUtc,
+                $verdict->value,
+                $ipAddress,
+                $userAgent,
+            );
+
+            // The verdict is the release decision, so it is the thing the unified
+            // trail records. The object reference is the opaque handle, never the
+            // filename: a released document's name can name a patient's diagnosis.
+            $this->audit->record(AuditEntry::byActor(
+                actor: new Actor($reviewer->id, $reviewer->role),
+                action: $verdict === DocumentScanStatus::Clean
+                    ? AuditAction::DocumentReleased
+                    : AuditAction::DocumentWithheld,
+                objectType: 'document',
+                objectRef: $reviewed->documentRef,
+                after: ['scan_status' => $verdict->value],
+                occurredAtUtc: $occurredAtUtc,
+            ));
+
+            return $reviewed;
+        });
     }
 }

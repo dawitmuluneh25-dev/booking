@@ -257,7 +257,7 @@ final class RecordClinicalDecisionTest extends TestCase
             guardianName: null,
             guardianPhone: null,
             guardianRelationship: null,
-            procedureCode: 'fluoroscopic_biopsy',
+            procedureCode: 'image_guided_biopsy',
             requestedUrgency: 'routine',
             clinicalSummary: 'Six weeks of right upper quadrant pain.',
             targetSite: 'Liver, segment VI',

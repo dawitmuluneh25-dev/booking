@@ -260,7 +260,7 @@ final class AppointmentRepositoryTest extends TestCase
                 (reference, status, patient_name, patient_phone, procedure_code,
                  submitted_by_user_id, submitted_on_behalf_of, created_at, updated_at)
              VALUES (:reference, 'converted_to_appointment', 'Selamawit Girma', '+251911000333',
-                 'fluoroscopic_biopsy', :user_id, 'staff', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+                 'image_guided_biopsy', :user_id, 'staff', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
         $statement->execute([
             'reference' => 'RF-PROBE-' . bin2hex(random_bytes(4)),

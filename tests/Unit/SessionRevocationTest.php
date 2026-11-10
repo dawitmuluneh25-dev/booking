@@ -11,6 +11,8 @@ use App\Security\Auth;
 use App\Security\PasswordHasher;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryUserRepository;
+use Tests\Support\InlineTransaction;
+use Tests\Support\RecordingAuditTrail;
 
 /**
  * A role change must end the live session, not just the next sign-in.
@@ -60,7 +62,7 @@ final class SessionRevocationTest extends TestCase
     {
         $this->signIn('staff@example.test');
 
-        (new ChangeUserRole($this->users))->execute(
+        (new ChangeUserRole($this->users, new RecordingAuditTrail(), new InlineTransaction()))->execute(
             new Actor($this->adminId, Role::Admin),
             $this->staffId,
             Role::Radiologist,
@@ -73,7 +75,7 @@ final class SessionRevocationTest extends TestCase
     {
         $this->signIn('staff@example.test');
 
-        (new ChangeUserRole($this->users))->execute(
+        (new ChangeUserRole($this->users, new RecordingAuditTrail(), new InlineTransaction()))->execute(
             new Actor($this->adminId, Role::Admin),
             $this->staffId,
             Role::Radiologist,

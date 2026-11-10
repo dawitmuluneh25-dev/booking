@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Domain\AuditAction;
+use App\Domain\AuditEntry;
+use App\Domain\AuditTrail;
 use App\Http\HttpException;
 use App\Http\Request;
 use App\Http\Response;
@@ -19,6 +22,7 @@ final class AuthController
     public function __construct(
         private readonly View $view,
         private readonly Auth $auth,
+        private readonly AuditTrail $audit,
     ) {
     }
 
@@ -43,10 +47,18 @@ final class AuthController
         try {
             $this->auth->attempt($email, $password, $request->ip());
         } catch (TooManyAttemptsException $exception) {
+            $this->recordAttempt(AuditAction::LoginThrottled, $email);
+
             return $this->loginForm($request, $exception->getMessage(), $email, 429);
         } catch (InvalidCredentialsException) {
+            // A failed sign-in has no authenticated actor, so the row names the
+            // address that was tried and nobody else. The password never reaches here.
+            $this->recordAttempt(AuditAction::LoginFailed, $email);
+
             return $this->loginForm($request, 'Email or password is incorrect.', $email, 422);
         }
+
+        $this->recordAttempt(AuditAction::LoginSucceeded, $email);
 
         return Response::redirect($this->safeNext($request));
     }
@@ -64,6 +76,23 @@ final class AuthController
         // in the session, and the next page that rendered a notice claimed the
         // user had just signed out after they had signed back in.
         return Response::redirect('/login');
+    }
+
+    /**
+     * One row per attempt, failures included: a trail that records only successes
+     * cannot answer "was somebody trying to get in".
+     */
+    private function recordAttempt(AuditAction $action, string $email): void
+    {
+        $user = $this->auth->user();
+
+        $this->audit->record(new AuditEntry(
+            action: $action,
+            objectType: 'user',
+            objectRef: $user->email ?? mb_substr(mb_strtolower(trim($email)), 0, 120),
+            actorUserId: $user?->id,
+            actorRole: $user?->role,
+        ));
     }
 
     private function loginForm(Request $request, ?string $error, ?string $email, int $status): Response

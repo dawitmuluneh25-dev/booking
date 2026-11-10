@@ -315,7 +315,7 @@ final class DocumentUploadTest extends TestCase
             guardianName: null,
             guardianPhone: null,
             guardianRelationship: null,
-            procedureCode: 'fluoroscopic_biopsy',
+            procedureCode: 'image_guided_biopsy',
             requestedUrgency: 'routine',
             clinicalSummary: 'A summary',
             targetSite: 'Liver',

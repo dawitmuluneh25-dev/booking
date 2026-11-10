@@ -357,7 +357,7 @@ final class SchedulingFlowTest extends TestCase
                  submitted_by_user_id, submitted_on_behalf_of, created_at, updated_at)
              VALUES
                 ('RF-FLOW-01', 'approved_for_scheduling', 'Flow Fixture', '+251911000000',
-                 'fluoroscopic_biopsy', :user_id, 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+                 'image_guided_biopsy', :user_id, 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
         $statement->execute(['user_id' => $this->actorUserId]);
 

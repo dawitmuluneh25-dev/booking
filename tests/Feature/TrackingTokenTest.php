@@ -161,7 +161,7 @@ final class TrackingTokenTest extends TestCase
                 (reference, status, patient_name, patient_phone, procedure_code,
                  submitted_by_user_id, submitted_on_behalf_of, created_at, updated_at)
              VALUES (:reference, 'submitted', 'Token Probe', '+251911000444',
-                 'fluoroscopic_biopsy', :user_id, 'staff', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+                 'image_guided_biopsy', :user_id, 'staff', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
         $statement->execute([
             'reference' => 'RF-TOKEN-' . bin2hex(random_bytes(4)),

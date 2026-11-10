@@ -230,7 +230,7 @@ final class SchedulePageTest extends TestCase
             guardianName: null,
             guardianPhone: null,
             guardianRelationship: null,
-            procedureCode: 'fluoroscopic_biopsy',
+            procedureCode: 'image_guided_biopsy',
             requestedUrgency: 'routine',
             clinicalSummary: 'Summary',
             targetSite: 'Liver',

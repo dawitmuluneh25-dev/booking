@@ -29,7 +29,7 @@ return static function (Application $app): void {
     $router = $app->router();
 
     $home = new HomeController($app->view(), $app->auth());
-    $auth = new AuthController($app->view(), $app->auth());
+    $auth = new AuthController($app->view(), $app->auth(), $app->auditTrail());
     $reset = new PasswordResetController($app->view(), $app->auth());
     $adminUsers = new AdminUserController($app->view(), $app->users(), $app->auth(), $app->gate());
     $admin = new AdminController($app->view(), $app->auth(), $app->gate());
@@ -39,6 +39,7 @@ return static function (Application $app): void {
         $app->auth(),
         $app->gate(),
         $app->audit(),
+        $app->auditTrail(),
         $app->retentionRepository(),
     );
 

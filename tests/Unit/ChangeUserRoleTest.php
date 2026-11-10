@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Domain\Actor;
+use App\Domain\AuditAction;
 use App\Domain\AuthorisationException;
 use App\Domain\ChangeUserRole;
 use App\Domain\Role;
@@ -12,6 +13,8 @@ use App\Domain\UserNotFoundException;
 use App\Security\PasswordHasher;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryUserRepository;
+use Tests\Support\InlineTransaction;
+use Tests\Support\RecordingAuditTrail;
 
 /**
  * Phase 3 acceptance 3: no role is self-assignable, and a role change revokes
@@ -23,6 +26,8 @@ final class ChangeUserRoleTest extends TestCase
     private InMemoryUserRepository $users;
 
     private ChangeUserRole $command;
+
+    private RecordingAuditTrail $audit;
 
     private int $adminId;
 
@@ -36,7 +41,8 @@ final class ChangeUserRoleTest extends TestCase
         $this->adminId = $this->users->seed('admin@example.test', 'Admin', Role::Admin, $hash);
         $this->staffId = $this->users->seed('staff@example.test', 'Staff', Role::Staff, $hash);
 
-        $this->command = new ChangeUserRole($this->users);
+        $this->audit = new RecordingAuditTrail();
+        $this->command = new ChangeUserRole($this->users, $this->audit, new InlineTransaction());
     }
 
     public function testAnAdministratorChangesAnotherUsersRole(): void
@@ -86,6 +92,45 @@ final class ChangeUserRoleTest extends TestCase
         $this->command->execute(new Actor($this->adminId, Role::Admin), $this->staffId, Role::Staff);
 
         self::assertSame($before, $this->user($this->staffId)->authVersion);
+    }
+
+    /**
+     * Acceptance 1 of BL-B2, at command level: one role change, one row, naming
+     * the actor, the target and both roles.
+     */
+    public function testTheChangeProducesExactlyOneAuditEntry(): void
+    {
+        $this->command->execute(new Actor($this->adminId, Role::Admin), $this->staffId, Role::Radiologist);
+
+        $entries = $this->audit->entries();
+
+        self::assertCount(1, $entries);
+        self::assertSame(AuditAction::UserRoleChanged, $entries[0]->action);
+        self::assertSame('user', $entries[0]->objectType);
+        self::assertSame((string) $this->staffId, $entries[0]->objectRef);
+        self::assertSame($this->adminId, $entries[0]->actorUserId);
+        self::assertSame(Role::Admin, $entries[0]->actorRole);
+        self::assertSame('staff', ($entries[0]->before ?? [])['role'] ?? null);
+        self::assertSame('radiologist', ($entries[0]->after ?? [])['role'] ?? null);
+    }
+
+    public function testARefusedChangeWritesNothing(): void
+    {
+        try {
+            $this->command->execute(new Actor($this->adminId, Role::Admin), $this->adminId, Role::Radiologist);
+            self::fail('An administrator changed their own role.');
+        } catch (AuthorisationException) {
+            // Expected.
+        }
+
+        self::assertSame([], $this->audit->entries());
+    }
+
+    public function testAnUnchangedRoleWritesNothing(): void
+    {
+        $this->command->execute(new Actor($this->adminId, Role::Admin), $this->staffId, Role::Staff);
+
+        self::assertSame([], $this->audit->entries());
     }
 
     private function user(int $id): \App\Domain\User

@@ -10,6 +10,7 @@ use App\Database\Migrator;
 use App\Database\PdoTransaction;
 use LogicException;
 use App\Domain\AuditRepository;
+use App\Domain\AuditTrail;
 use App\Domain\BookingService;
 use App\Domain\ClinicCalendar;
 use App\Domain\OutboxRepository;
@@ -49,6 +50,7 @@ use App\Domain\RescheduleAppointment;
 use App\Storage\FileSignatureScanner;
 use App\Storage\FilesystemDocumentStorage;
 use App\Domain\RegisterUrgentCase;
+use App\Domain\ProcedureRepository;
 use App\Domain\ReferralRepository;
 use App\Domain\RetentionRepository;
 use App\Domain\SubmitElectiveReferral;
@@ -69,6 +71,7 @@ use App\Http\RouteAccess;
 use App\Http\Router;
 use App\Repositories\PdoAppointmentRepository;
 use App\Repositories\PdoAuditRepository;
+use App\Repositories\PdoAuditTrail;
 use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoDocumentRepository;
@@ -78,6 +81,7 @@ use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoPatientRelationshipRepository;
 use App\Repositories\PdoPhysicianProfileRepository;
+use App\Repositories\PdoProcedureRepository;
 use App\Repositories\PdoUrgentCaseRepository;
 use App\Repositories\PdoReferralRepository;
 use App\Repositories\PdoRetentionRepository;
@@ -195,6 +199,12 @@ final class Application
     private ?ReferralTrackingLink $trackingLink = null;
 
     private ?ReferralRetentionRepository $referralRetentionRepository = null;
+
+    private ?AuditTrail $auditTrail = null;
+
+    private ?ProcedureRepository $procedures = null;
+
+    private ?string $requestId = null;
 
     private function __construct(
         private readonly Config $config,
@@ -324,6 +334,11 @@ final class Application
         return $this->acknowledgeUrgent ??= new AcknowledgeUrgentCase($this->urgentCases());
     }
 
+    public function procedures(): ProcedureRepository
+    {
+        return $this->procedures ??= new PdoProcedureRepository($this->pdo());
+    }
+
     public function physicians(): PhysicianProfileRepository
     {
         return $this->physicians ??= new PdoPhysicianProfileRepository($this->pdo(), $this->transaction());
@@ -331,17 +346,30 @@ final class Application
 
     public function changeUserRole(): ChangeUserRole
     {
-        return $this->changeUserRole ??= new ChangeUserRole($this->users());
+        return $this->changeUserRole ??= new ChangeUserRole(
+            $this->users(),
+            $this->auditTrail(),
+            $this->transaction(),
+        );
     }
 
     public function createUserAccount(): CreateUserAccount
     {
-        return $this->createUserAccount ??= new CreateUserAccount($this->users(), new PasswordHasher());
+        return $this->createUserAccount ??= new CreateUserAccount(
+            $this->users(),
+            new PasswordHasher(),
+            $this->auditTrail(),
+            $this->transaction(),
+        );
     }
 
     public function verifyPhysician(): VerifyPhysician
     {
-        return $this->verifyPhysician ??= new VerifyPhysician($this->physicians());
+        return $this->verifyPhysician ??= new VerifyPhysician(
+            $this->physicians(),
+            $this->auditTrail(),
+            $this->transaction(),
+        );
     }
 
     public function relationships(): PatientRelationshipRepository
@@ -544,7 +572,12 @@ final class Application
             $access,
         );
 
-        $review = $this->reviewDocument ??= new ReviewQuarantinedDocument($this->documents(), $accessService);
+        $review = $this->reviewDocument ??= new ReviewQuarantinedDocument(
+            $this->documents(),
+            $accessService,
+            $this->auditTrail(),
+            $this->transaction(),
+        );
 
         return new DocumentWorkspace(
             $this->referrals(),
@@ -576,6 +609,24 @@ final class Application
     public function audit(): AuditRepository
     {
         return new PdoAuditRepository($this->pdo());
+    }
+
+    /**
+     * The append-only trail for authority, credential and document decisions.
+     *
+     * One per process: PHP serves one request per process here, and a console
+     * invocation is one run, so a per-process id is a faithful correlation id
+     * without threading a value through every command signature.
+     */
+    public function auditTrail(): AuditTrail
+    {
+        return $this->auditTrail ??= new PdoAuditTrail($this->pdo(), $this->requestId());
+    }
+
+    /** Correlation id for this request or console run, generated once. */
+    public function requestId(): string
+    {
+        return $this->requestId ??= bin2hex(random_bytes(8));
     }
 
     public function logReader(): LogReader

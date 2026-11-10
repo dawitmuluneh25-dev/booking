@@ -344,7 +344,7 @@ final class SubmitElectiveReferralTest extends TestCase
             'patient_name' => 'Selamawit Girma',
             'patient_phone' => '+251911000333',
             'patient_dob' => '1991-04-12',
-            'procedure_code' => 'fluoroscopic_biopsy',
+            'procedure_code' => 'image_guided_biopsy',
             'requested_urgency' => 'routine',
             'clinical_summary' => 'Six weeks of right upper quadrant pain; ultrasound shows a 2 cm hepatic lesion.',
             'target_site' => 'Liver, segment VI',

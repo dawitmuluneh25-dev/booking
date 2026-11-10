@@ -38,6 +38,7 @@ use Tests\Support\InMemoryReferralRepository;
 use Tests\Support\InMemoryTrackingTokenRepository;
 use Tests\Support\InMemoryUserRepository;
 use Tests\Support\InlineTransaction;
+use Tests\Support\RecordingAuditTrail;
 
 /**
  * The two pages, rendered through the real templates.
@@ -115,7 +116,7 @@ final class DocumentPageTest extends TestCase
                 $resolver,
                 new InlineTransaction(),
             ),
-            new ReviewQuarantinedDocument($documents, $access),
+            new ReviewQuarantinedDocument($documents, $access, new RecordingAuditTrail(), new InlineTransaction()),
             $access,
             $this->links,
             new DocumentTypes(),
@@ -207,7 +208,7 @@ final class DocumentPageTest extends TestCase
             guardianName: null,
             guardianPhone: null,
             guardianRelationship: null,
-            procedureCode: 'fluoroscopic_biopsy',
+            procedureCode: 'image_guided_biopsy',
             requestedUrgency: 'routine',
             clinicalSummary: 'Suspected lymphoma',
             targetSite: 'Lung',

@@ -380,27 +380,22 @@ level above the document root.
 
 Recorded here so later changes are deliberate rather than accidental.
 
-| ID | Decision | Rationale |
+The decisions below are recorded in the standalone register at [docs/adr/README.md](docs/adr/README.md),
+one entry per decision with its context, consequences, owner and status. That register, not this
+section, is authoritative: it distinguishes a decision that has been **approved** from one that is
+merely **implemented**, and it records ADR-013, the accepted boundary between the referral and booking intakes.
+
+| ID | Decision | Status |
 |---|---|---|
-| ADR-001 | Server-rendered PHP monolith, no SPA framework | Works on plain PHP hosting, no build step, no client state to secure |
-| ADR-002 | Zero runtime Composer dependencies | `--no-dev` deploys only the autoloader; smaller supply chain |
-| ADR-003 | MySQL only, no silent fallback | One dialect, one behaviour; a missing driver is a startup error |
-| ADR-004 | UTC in storage, IANA zone at the edges | Removes DST/offset bugs from persisted data |
-| ADR-005 | A request is not an appointment | New bookings are `requested`; confirmation is an explicit later transition |
-| ADR-006 | Service worker caches static assets only | A cached page must never imply a submission succeeded |
-| ADR-007 | Explicit route table, thin controllers | Every route declares method, handler and (later) authorization |
-| ADR-008 | Forward-only migrations with checksums | MySQL DDL cannot roll back atomically; drift must be detected |
-| ADR-009 | Backups are written in PHP, not by `mysqldump` | Shared hosting disables `exec()`, and a backup that only restores on the machine that wrote it is not a backup |
-| ADR-010 | Retention redacts instead of deleting | The schedule, status and audit history stay useful; the person is removed. Refuses windows under 30 days |
-| ADR-011 | Opening hours are data, not constants | The clinic changes its week without a deployment; the same table drives the calendar and booking validation |
-| ADR-012 | Notifications leave through a bridge we own | Provider choice, credentials and sender IDs stay in the bridge; the app posts one minimal JSON payload and never calls a provider from a request |
+| ADR-001 … ADR-012 | Foundation, storage, workflow and operations decisions | Implemented, unapproved |
+| ADR-013 | Public intake model: referrals, bookings, or both | Proposed — blocked on product owner |
 
 ### Security posture in the baseline
 
 - Output escaped through `e()` in every template; no raw interpolation.
 - CSP with `default-src 'self'`, no inline scripts or styles.
 - `HttpOnly`, `SameSite=Lax` session cookie; `Secure` when HTTPS is detected.
-- CSRF token required on the only state-changing route (`POST /bookings`).
+- CSRF token validated on every state-changing request; a POST without one returns 419 and stores nothing.
 - Prepared statements everywhere; identifiers never come from input.
 - Validation is an allowlist; unknown fields are ignored, not persisted.
 - Errors never expose stack traces when `APP_DEBUG=false`.
@@ -641,7 +636,11 @@ bytes are gone, which is worse than either half on its own.
 
 ## 14. Remaining backlog
 
-Nothing in the original plan is outstanding. These are deliberate next steps, in order of value:
+The application implements the foundation, the clinical command layer, scheduling and documents;
+it does **not** yet implement the whole plan. The current gap analysis is
+`../audit/implimentation_review_and_audit.md`, and the approved work is
+`../audit/implimentation_backlog_and_plan.md` — read those before treating this section as
+complete. These are deliberate next steps, in order of value:
 
 1. **Bridge deployment** — run the HTTP bridge against the chosen provider and set `NOTIFY_*`.
 2. **Off-host backups** — push `db:backup` output somewhere else, and alarm when the newest file is

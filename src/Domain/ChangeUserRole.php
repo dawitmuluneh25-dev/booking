@@ -16,11 +16,18 @@ namespace App\Domain;
  * The revocation is not a separate action. `UserRepository::changeRole()` bumps
  * `auth_version` in the same statement, so there is no window in which the role is
  * new and the sessions are still the old one's.
+ *
+ * The audit row is written inside the same transaction as the change. A privilege
+ * change that survives while its record does not is the one failure this command
+ * must not have (F-04).
  */
 final class ChangeUserRole
 {
-    public function __construct(private readonly UserRepository $users)
-    {
+    public function __construct(
+        private readonly UserRepository $users,
+        private readonly AuditTrail $audit,
+        private readonly Transaction $transaction,
+    ) {
     }
 
     /**
@@ -51,7 +58,18 @@ final class ChangeUserRole
             return $target;
         }
 
-        $this->users->changeRole($targetUserId, $role);
+        $this->transaction->run(function () use ($actor, $target, $targetUserId, $role): void {
+            $this->users->changeRole($targetUserId, $role);
+
+            $this->audit->record(AuditEntry::byActor(
+                actor: $actor,
+                action: AuditAction::UserRoleChanged,
+                objectType: 'user',
+                objectRef: (string) $targetUserId,
+                before: ['role' => $target->role->value, 'email' => $target->email],
+                after: ['role' => $role->value, 'email' => $target->email],
+            ));
+        });
 
         $updated = $this->users->findById($targetUserId);
 

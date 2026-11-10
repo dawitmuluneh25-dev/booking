@@ -35,6 +35,7 @@ final class MigrationIntegrityTest extends TestCase
 
     private const CORE_TABLES = [
         'appointment_resources',
+        'audit_events',
         'appointment_status_history',
         'appointments',
         'booking_events',
@@ -239,6 +240,7 @@ final class MigrationIntegrityTest extends TestCase
             'urgent_escalations',
             'urgent_events',
             'appointment_status_history',
+            'audit_events',
         ];
 
         foreach ($historyTables as $table) {
@@ -276,7 +278,7 @@ final class MigrationIntegrityTest extends TestCase
                 procedure_code, submitted_by_user_id, submitted_on_behalf_of,
                 created_at, updated_at)
              VALUES ('REF-VOCAB-1', 'submitted', 'Probe Patient', '+251911000003',
-                'fluoroscopic_biopsy', :user, 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+                'image_guided_biopsy', :user, 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
         $statement->execute(['user' => $userId]);
         $referralId = (int) self::pdo()->lastInsertId();
@@ -428,7 +430,7 @@ final class MigrationIntegrityTest extends TestCase
                 procedure_code, submitted_by_user_id, submitted_on_behalf_of,
                 created_at, updated_at)
              VALUES ('REF-PROBE-1', 'clinical_review', 'Probe Patient', '+251911000001',
-                'fluoroscopic_biopsy', " . $userId . ", 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+                'image_guided_biopsy', " . $userId . ", 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
         $referralId = (int) self::pdo()->lastInsertId();
 
@@ -496,7 +498,7 @@ final class MigrationIntegrityTest extends TestCase
                 procedure_code, submitted_by_user_id, submitted_on_behalf_of,
                 created_at, updated_at)
              VALUES ('REF-DOC-1', 'awaiting_imaging', 'Probe Patient', '+251911000002',
-                'fluoroscopic_biopsy', " . $userId . ", 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+                'image_guided_biopsy', " . $userId . ", 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
         $referralId = (int) self::pdo()->lastInsertId();
 
@@ -593,6 +595,60 @@ final class MigrationIntegrityTest extends TestCase
             "INSERT INTO referral_tracking_tokens (referral_id, token_hash, expires_at, created_at)
              VALUES (" . $referralId . ", '" . str_repeat('e', 64) . "', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
+    }
+
+    /**
+     * 0019: `procedure_code` is a reference, not a string that happens to look
+     * like one, and a clinical field set cannot be added without naming who
+     * approved it (REF-02, ADM-03).
+     */
+    public function testProcedureCatalogueRefusesUnknownCodesAndUnapprovedFieldSets(): void
+    {
+        $this->insertUser('procedure-probe@example.test', 'staff');
+        $userId = $this->userId('procedure-probe@example.test');
+
+        $insert = static function (string $code) use ($userId): void {
+            $statement = self::pdo()->prepare(
+                "INSERT INTO referrals (reference, status, patient_name, patient_phone,
+                    procedure_code, submitted_by_user_id, submitted_on_behalf_of,
+                    created_at, updated_at)
+                 VALUES ('REF-PROC-1', 'submitted', 'Probe Patient', '+251911000009',
+                    :code, :user, 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+            );
+            $statement->execute(['code' => $code, 'user' => $userId]);
+        };
+
+        try {
+            $insert('not_a_procedure');
+            self::fail('An unknown procedure code was accepted by the database.');
+        } catch (PDOException) {
+            // Expected: fk_referrals_procedure.
+        }
+
+        $insert('image_guided_biopsy');
+        self::assertSame(1, $this->countWhere('referrals', "reference = 'REF-PROC-1'"));
+
+        // A field set with nobody's name on it is exactly what REF-02 forbids.
+        try {
+            self::pdo()->exec(
+                "UPDATE procedures SET required_fields = '{\"lesion_size\":\"required\"}'
+                 WHERE code = 'image_guided_biopsy'"
+            );
+            self::fail('An unapproved clinical field set was stored.');
+        } catch (PDOException) {
+            // Expected: ck_procedures_approved.
+        }
+
+        self::pdo()->exec(
+            "UPDATE procedures SET required_fields = '{\"lesion_size\":\"required\"}',
+                approved_by = 'Clinical lead', approved_at = UTC_TIMESTAMP()
+             WHERE code = 'image_guided_biopsy'"
+        );
+
+        $rows = $this->query(
+            "SELECT approved_by FROM procedures WHERE code = 'image_guided_biopsy'"
+        );
+        self::assertSame('Clinical lead', self::text($rows[0]['approved_by'] ?? null));
     }
 
     private static function pdo(): PDO
