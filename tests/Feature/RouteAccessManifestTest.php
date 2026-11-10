@@ -40,7 +40,7 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        self::assertSame(36, count($manifest));
+        self::assertSame(38, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);
@@ -86,6 +86,8 @@ final class RouteAccessManifestTest extends TestCase
         self::assertSame('referral.triage', $guarded['GET /referrals'] ?? null);
         self::assertSame('referral.submit', $guarded['POST /referrals'] ?? null);
         self::assertSame('referral.triage', $guarded['GET /referrals/{reference}'] ?? null);
+        self::assertSame('referral.submit', $guarded['POST /referrals/draft'] ?? null);
+        self::assertSame('referral.submit', $guarded['POST /referrals/{reference}/submit'] ?? null);
         self::assertSame('schedule.manage', $guarded['GET /schedule/{reference}/move'] ?? null);
         self::assertSame('bookings.manage', $guarded['POST /schedule/{reference}/cancel'] ?? null);
         self::assertSame('referral.triage', $guarded['POST /referrals/{reference}/status-link'] ?? null);

@@ -209,6 +209,8 @@ return static function (Application $app): void {
         $app->view(),
         $app->gate(),
         $app->submitReferral(),
+        $app->saveReferralDraft(),
+        $app->submitDraft(),
         $app->referrals(),
         $app->procedures(),
     );
@@ -231,6 +233,17 @@ return static function (Application $app): void {
         static fn (Request $request) => $referrals()->store($request),
         RouteAccess::permission(Permission::ReferralSubmit),
     );
+    $router->post(
+        '/referrals/draft',
+        static fn (Request $request) => $referrals()->saveDraft($request),
+        RouteAccess::permission(Permission::ReferralSubmit),
+    );
+    $router->post(
+        '/referrals/{reference}/submit',
+        static fn (Request $request, array $params) => $referrals()->submit($request, $params),
+        RouteAccess::permission(Permission::ReferralSubmit),
+    );
+
     $router->get(
         '/referrals/{reference}',
         static fn (Request $request, array $params) => $referrals()->show($request, $params),

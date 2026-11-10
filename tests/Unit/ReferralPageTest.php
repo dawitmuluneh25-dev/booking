@@ -10,6 +10,8 @@ use App\Domain\Procedure;
 use App\Domain\Referral;
 use App\Domain\ReferralStatus;
 use App\Domain\Role;
+use App\Domain\SaveReferralDraft;
+use App\Domain\SubmitDraft;
 use App\Domain\SubmitElectiveReferral;
 use App\Validation\Validator;
 use App\Http\HttpException;
@@ -67,6 +69,8 @@ final class ReferralPageTest extends TestCase
                 new InMemoryIdempotencyStore(),
                 new InMemoryPhysicianProfileRepository(),
             ),
+            new SaveReferralDraft($this->referrals, $procedures),
+            new SubmitDraft($this->referrals),
             $this->referrals,
             $procedures,
         );
@@ -149,6 +153,62 @@ final class ReferralPageTest extends TestCase
 
         self::assertStringContainsString('This referral was not submitted.', $body);
         self::assertStringContainsString('clinical_summary', $body);
+    }
+
+    public function testADraftCanBeSavedAndIsNotInTheQueue(): void
+    {
+        $payload = $this->payload();
+        $payload['patient_name'] = '';
+        $payload['clinical_summary'] = '';
+
+        $response = $this->controller->saveDraft(
+            Request::create('POST', '/referrals/draft', [], $payload + [Csrf::FIELD => Csrf::token()]),
+        );
+
+        self::assertSame(303, $response->status);
+        self::assertStringStartsWith('/referrals/', (string) $response->header('Location'));
+
+        $queue = $this->body($this->controller->index(Request::create('GET', '/referrals')));
+        self::assertStringNotContainsString('Draft (not submitted)', $queue);
+    }
+
+    public function testAnIncompleteDraftCannotBeSubmitted(): void
+    {
+        $payload = $this->payload();
+        $payload['clinical_summary'] = '';
+
+        $saved = $this->controller->saveDraft(
+            Request::create('POST', '/referrals/draft', [], $payload + [Csrf::FIELD => Csrf::token()]),
+        );
+        $location = (string) $saved->header('Location');
+        $reference = basename($location);
+
+        $response = $this->controller->submit(
+            Request::create('POST', $location . '/submit', [], [Csrf::FIELD => Csrf::token()]),
+            ['reference' => $reference],
+        );
+
+        // The draft is re-rendered with the missing piece marked, not redirected:
+        // a flash message would vanish on the next page load.
+        self::assertSame(422, $response->status);
+        self::assertStringContainsString('not complete yet', $this->body($response));
+        self::assertSame(ReferralStatus::Draft, $this->referrals->findByReference($reference)?->status);
+    }
+
+    public function testACompleteDraftBecomesASubmittedReferral(): void
+    {
+        $saved = $this->controller->saveDraft(
+            Request::create('POST', '/referrals/draft', [], $this->payload() + [Csrf::FIELD => Csrf::token()]),
+        );
+        $location = (string) $saved->header('Location');
+        $reference = basename($location);
+
+        $this->controller->submit(
+            Request::create('POST', $location . '/submit', [], [Csrf::FIELD => Csrf::token()]),
+            ['reference' => $reference],
+        );
+
+        self::assertSame(ReferralStatus::Submitted, $this->referrals->findByReference($reference)?->status);
     }
 
     /** @return array<string, string> */

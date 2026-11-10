@@ -3,6 +3,7 @@
  * @var \App\Domain\Referral       $referral
  * @var \App\Domain\Procedure|null $procedure
  * @var string|null                $notice
+ * @var array<string, string>      $errors
  */
 ?>
 <section class="panel">
@@ -17,6 +18,25 @@
 
     <?php if ($notice !== null): ?>
         <div class="alert alert-success" role="status"><?= e($notice) ?></div>
+    <?php endif; ?>
+
+    <?php if ($errors !== []): ?>
+        <div class="alert alert-error" role="alert">
+            <p>This draft is not complete yet.</p>
+            <ul>
+                <?php foreach ($errors as $message): ?>
+                    <li><?= e($message) ?></li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($referral->status === \App\Domain\ReferralStatus::Draft): ?>
+        <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/submit" class="inline-form">
+            <?= \App\Security\Csrf::field() ?>
+            <button class="button" type="submit">Submit this referral</button>
+            <span class="muted">Submitting sends it to the clinic and it cannot be edited afterwards.</span>
+        </form>
     <?php endif; ?>
 
     <p class="status-line">

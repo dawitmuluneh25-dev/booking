@@ -115,12 +115,14 @@ final class PdoReferralRepository implements ReferralRepository
         return $this->findOne('id = :value', (string) $id);
     }
 
+    /** @param list<OutboundMessage> $messages */
     public function transition(
         Referral $referral,
         ReferralStatus $target,
         Actor $actor,
         ?string $reason,
         string $occurredAtUtc,
+        array $messages = [],
     ): Referral {
         // The command has already checked these, but the repository is the last
         // thing between a caller and the table, so it refuses on its own rather
@@ -138,7 +140,7 @@ final class PdoReferralRepository implements ReferralRepository
         }
 
         return $this->transaction->run(
-            function () use ($referral, $target, $actor, $reason, $occurredAtUtc): Referral {
+            function () use ($referral, $target, $actor, $reason, $occurredAtUtc, $messages): Referral {
                 $sets = [
                     'status = :target',
                     'version = version + 1',
@@ -189,6 +191,8 @@ final class PdoReferralRepository implements ReferralRepository
                     $reason,
                     $occurredAtUtc,
                 );
+
+                $this->enqueue($referral->id, $messages);
 
                 return $referral->withStatus($target, $referral->version + 1);
             },

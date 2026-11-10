@@ -41,6 +41,9 @@ interface ReferralRepository
     /**
      * Apply a transition only if the stored version is still the one read.
      *
+     * @param list<OutboundMessage> $messages notifications to enqueue in the same
+     *                                      transaction as the status change (WF-14)
+     *
      * @throws ReferralTransitionException when the referral has moved on since it
      *                                    was read, or the transition is not allowed
      */
@@ -50,6 +53,7 @@ interface ReferralRepository
         Actor $actor,
         ?string $reason,
         string $occurredAtUtc,
+        array $messages = [],
     ): Referral;
 
     /**

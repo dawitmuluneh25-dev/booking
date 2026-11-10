@@ -171,6 +171,9 @@ $error = static fn (string $field): ?string => $errors[$field] ?? null;
 
         <div class="form-actions">
             <button class="button" type="submit">Submit referral</button>
+            <button class="button button-secondary" type="submit" formaction="/referrals/draft" formnovalidate>
+                Save as draft
+            </button>
             <a class="link" href="/referrals">Cancel</a>
         </div>
     </form>

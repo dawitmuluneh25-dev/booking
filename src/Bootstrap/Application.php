@@ -52,6 +52,8 @@ use App\Storage\FilesystemDocumentStorage;
 use App\Domain\RegisterUrgentCase;
 use App\Domain\ProcedureRepository;
 use App\Domain\ReferralRepository;
+use App\Domain\SaveReferralDraft;
+use App\Domain\SubmitDraft;
 use App\Domain\RetentionRepository;
 use App\Domain\SubmitElectiveReferral;
 use App\Domain\Transaction;
@@ -204,6 +206,10 @@ final class Application
 
     private ?ProcedureRepository $procedures = null;
 
+    private ?SaveReferralDraft $saveDraft = null;
+
+    private ?SubmitDraft $submitDraft = null;
+
     private ?string $requestId = null;
 
     private function __construct(
@@ -332,6 +338,16 @@ final class Application
     public function acknowledgeUrgentCase(): AcknowledgeUrgentCase
     {
         return $this->acknowledgeUrgent ??= new AcknowledgeUrgentCase($this->urgentCases());
+    }
+
+    public function saveReferralDraft(): SaveReferralDraft
+    {
+        return $this->saveDraft ??= new SaveReferralDraft($this->referrals(), $this->procedures());
+    }
+
+    public function submitDraft(): SubmitDraft
+    {
+        return $this->submitDraft ??= new SubmitDraft($this->referrals());
     }
 
     public function procedures(): ProcedureRepository

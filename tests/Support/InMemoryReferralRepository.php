@@ -72,12 +72,14 @@ final class InMemoryReferralRepository implements ReferralRepository
         return $this->referrals[$id] ?? null;
     }
 
+    /** @param list<OutboundMessage> $messages */
     public function transition(
         Referral $referral,
         ReferralStatus $target,
         Actor $actor,
         ?string $reason,
         string $occurredAtUtc,
+        array $messages = [],
     ): Referral {
         $stored = $this->referrals[$referral->id] ?? null;
 
