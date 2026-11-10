@@ -300,6 +300,28 @@ final class PdoReferralRepository implements ReferralRepository
 
         return $referrals;
     }
+    /** @return list<Referral> */
+    public function awaitingClinicalReview(int $limit = 100): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT ' . self::COLUMNS . " FROM referrals
+             WHERE status = 'clinical_review'
+             ORDER BY created_at ASC, id ASC
+             LIMIT :limit"
+        );
+        $statement->bindValue('limit', max(1, min($limit, 200)), PDO::PARAM_INT);
+        $statement->execute();
+
+        $referrals = [];
+        foreach ($statement->fetchAll() as $row) {
+            if (is_array($row)) {
+                /** @var array<string, mixed> $row */
+                $referrals[] = Referral::fromRow($row);
+            }
+        }
+
+        return $referrals;
+    }
     private function findOne(string $condition, string $value): ?Referral
     {
         $statement = $this->pdo->prepare(

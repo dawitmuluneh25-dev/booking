@@ -32,6 +32,9 @@
             <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::ReferralTriage)): ?>
                 <a href="/referrals">Referrals</a>
             <?php endif; ?>
+            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::ClinicalReview)): ?>
+                <a href="/review">Review</a>
+            <?php endif; ?>
             <?php if (($currentUser ?? null) !== null): ?>
                 <a href="/bookings/new">New booking</a>
                 <a href="/bookings">Upcoming</a>

@@ -1,0 +1,129 @@
+<?php
+/**
+ * @var \App\Domain\Referral            $referral
+ * @var \App\Domain\Procedure|null      $procedure
+ * @var list<\App\Domain\ClinicalDecisionType> $decisions
+ * @var array<string, string>           $errors
+ */
+?>
+<section class="panel">
+    <div class="panel-head">
+        <h1>Review <?= e($referral->reference) ?></h1>
+        <a class="button button-secondary button-small" href="/review">Queue</a>
+    </div>
+
+    <?php if ($errors !== []): ?>
+        <div class="alert alert-error" role="alert">
+            <p>The decision was not recorded.</p>
+            <ul>
+                <?php foreach ($errors as $field => $message): ?>
+                    <li><a href="#<?= e((string) $field) ?>"><?= e($message) ?></a></li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+    <?php endif; ?>
+
+    <div class="table-wrap">
+        <table>
+            <caption class="visually-hidden">Referral details</caption>
+            <tbody>
+                <tr>
+                    <th scope="row">Patient</th>
+                    <td><?= e($referral->patientName) ?></td>
+                </tr>
+                <tr>
+                    <th scope="row">Procedure</th>
+                    <td><?= e($procedure?->label ?? $referral->procedureCode) ?></td>
+                </tr>
+                <tr>
+                    <th scope="row">Requested urgency</th>
+                    <td><?= e(ucfirst($referral->requestedUrgency)) ?></td>
+                </tr>
+                <tr>
+                    <th scope="row">Target site</th>
+                    <td><?= e($referral->targetSite ?? '—') ?></td>
+                </tr>
+                <tr>
+                    <th scope="row">Referring clinician</th>
+                    <td><?= e($referral->referringPhysicianName ?? '—') ?></td>
+                </tr>
+                <tr>
+                    <th scope="row">Clinical summary</th>
+                    <td><?= nl2br(e($referral->clinicalSummary ?? '—')) ?></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <?php if ($currentUser->can(\App\Domain\Permission::ClinicalApprove)): ?>
+        <h2 class="section-title">Decision</h2>
+        <p class="muted">
+            A rationale is required. The decision is recorded against your name and cannot
+            be edited afterwards; a correction is a new decision.
+        </p>
+
+        <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/decision" class="stack">
+            <?= \App\Security\Csrf::field() ?>
+
+            <div class="field">
+                <label for="decision_type">Outcome</label>
+                <select id="decision_type" name="decision_type" required>
+                    <?php foreach ($decisions as $decision): ?>
+                        <option value="<?= e($decision->value) ?>"><?= e($decision->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="rationale">Rationale</label>
+                <textarea id="rationale" name="rationale" rows="4" required minlength="10"></textarea>
+                <?php if (isset($errors['rationale'])): ?>
+                    <p class="field-error"><?= e($errors['rationale']) ?></p>
+                <?php endif; ?>
+            </div>
+
+            <h3 class="section-title">If approved</h3>
+            <div class="grid">
+                <div class="field">
+                    <label for="approved_technique">Approved technique</label>
+                    <input id="approved_technique" name="approved_technique" type="text">
+                </div>
+                <div class="field">
+                    <label for="modality">Modality</label>
+                    <input id="modality" name="modality" type="text">
+                </div>
+                <div class="field">
+                    <label for="sedation">Sedation</label>
+                    <input id="sedation" name="sedation" type="text">
+                </div>
+                <div class="field">
+                    <label for="estimated_duration_minutes">Estimated minutes</label>
+                    <input id="estimated_duration_minutes" name="estimated_duration_minutes" type="text" inputmode="numeric">
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="preprocedure_conditions">Pre-procedure conditions</label>
+                <textarea id="preprocedure_conditions" name="preprocedure_conditions" rows="3"></textarea>
+            </div>
+
+            <h3 class="section-title">If redirected or more information is needed</h3>
+            <div class="grid">
+                <div class="field">
+                    <label for="redirect_destination">Redirect to</label>
+                    <input id="redirect_destination" name="redirect_destination" type="text">
+                </div>
+                <div class="field">
+                    <label for="information_requested">Information requested</label>
+                    <textarea id="information_requested" name="information_requested" rows="2"></textarea>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button class="button" type="submit">Record decision</button>
+            </div>
+        </form>
+    <?php else: ?>
+        <p class="muted">You can see this referral but not decide it.</p>
+    <?php endif; ?>
+</section>

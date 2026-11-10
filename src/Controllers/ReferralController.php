@@ -164,6 +164,7 @@ final class ReferralController
         'receive' => ReferralStatus::Received,
         'triage' => ReferralStatus::AdministrativeReview,
         'request-information' => ReferralStatus::AwaitingInformation,
+        'send-to-review' => ReferralStatus::ClinicalReview,
     ];
 
     /** @param array<string, string> $params */

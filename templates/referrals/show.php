@@ -55,6 +55,7 @@
         'receive' => ['label' => 'Mark received', 'target' => \App\Domain\ReferralStatus::Received],
         'triage' => ['label' => 'Start administrative review', 'target' => \App\Domain\ReferralStatus::AdministrativeReview],
         'request-information' => ['label' => 'Request information', 'target' => \App\Domain\ReferralStatus::AwaitingInformation],
+        'send-to-review' => ['label' => 'Send for clinical review', 'target' => \App\Domain\ReferralStatus::ClinicalReview],
     ];
     ?>
     <?php if ($currentUser->can(\App\Domain\Permission::ReferralTriage)): ?>

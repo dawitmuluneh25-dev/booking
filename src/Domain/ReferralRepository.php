@@ -86,6 +86,13 @@ interface ReferralRepository
      * Newest-by-timestamp would be wrong after a correction, because the corrected
      * row is not necessarily the later one.
      */
+    /**
+     * Referrals a radiologist has been asked to review, oldest first.
+     *
+     * @return list<Referral>
+     */
+    public function awaitingClinicalReview(int $limit = 100): array;
+
     public function currentDecision(int $referralId): ?ClinicalDecision;
 
     /**

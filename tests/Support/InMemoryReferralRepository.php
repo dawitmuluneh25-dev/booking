@@ -170,6 +170,19 @@ final class InMemoryReferralRepository implements ReferralRepository
 
         return array_slice($queued, 0, max(1, $limit));
     }
+    /** @return list<Referral> */
+    public function awaitingClinicalReview(int $limit = 100): array
+    {
+        $waiting = [];
+
+        foreach ($this->referrals as $referral) {
+            if ($referral->status === ReferralStatus::ClinicalReview) {
+                $waiting[] = $referral;
+            }
+        }
+
+        return array_slice($waiting, 0, max(1, $limit));
+    }
     public function currentDecision(int $referralId): ?ClinicalDecision
     {
         $standing = null;

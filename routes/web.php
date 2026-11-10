@@ -22,6 +22,7 @@ use App\Controllers\ScheduleController;
 use App\Controllers\HomeController;
 use App\Controllers\PasswordResetController;
 use App\Controllers\ReferralController;
+use App\Controllers\ReviewController;
 use App\Domain\Permission;
 use App\Http\Request;
 use App\Http\RouteAccess;
@@ -261,6 +262,29 @@ return static function (Application $app): void {
         RouteAccess::permission(Permission::ReferralTriage),
     );
 
+    $review = new ReviewController(
+        $app->view(),
+        $app->gate(),
+        $app->recordClinicalDecision(),
+        $app->referrals(),
+        $app->procedures(),
+    );
+
+    $router->get(
+        '/review',
+        static fn (Request $request) => $review->index($request),
+        RouteAccess::permission(Permission::ClinicalReview),
+    );
+    $router->get(
+        '/review/{reference}',
+        static fn (Request $request, array $params) => $review->show($request, $params),
+        RouteAccess::permission(Permission::ClinicalReview),
+    );
+    $router->post(
+        '/referrals/{reference}/decision',
+        static fn (Request $request, array $params) => $review->decide($request, $params),
+        RouteAccess::permission(Permission::ClinicalApprove),
+    );
     $documents = new DocumentController(
         $app->view(),
         $app->gate(),
