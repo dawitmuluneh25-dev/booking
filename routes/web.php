@@ -21,6 +21,7 @@ use App\Controllers\HealthController;
 use App\Controllers\ScheduleController;
 use App\Controllers\HomeController;
 use App\Controllers\PasswordResetController;
+use App\Controllers\ReferralController;
 use App\Domain\Permission;
 use App\Http\Request;
 use App\Http\RouteAccess;
@@ -204,6 +205,38 @@ return static function (Application $app): void {
         static fn (Request $request, array $params) => $schedule->cancel($request, $params),
         RouteAccess::permission(Permission::BookingsManage),
     );
+    $referrals = static fn (): ReferralController => new ReferralController(
+        $app->view(),
+        $app->gate(),
+        $app->submitReferral(),
+        $app->referrals(),
+        $app->procedures(),
+    );
+
+    // The queue and the intake form are staff and referrer surfaces. There is no
+    // anonymous intake: a referral names a submitting account, and a patient
+    // without one tracks a case through the status link instead (ADR-013).
+    $router->get(
+        '/referrals',
+        static fn (Request $request) => $referrals()->index($request),
+        RouteAccess::permission(Permission::ReferralTriage),
+    );
+    $router->get(
+        '/referrals/new',
+        static fn (Request $request) => $referrals()->create($request),
+        RouteAccess::permission(Permission::ReferralSubmit),
+    );
+    $router->post(
+        '/referrals',
+        static fn (Request $request) => $referrals()->store($request),
+        RouteAccess::permission(Permission::ReferralSubmit),
+    );
+    $router->get(
+        '/referrals/{reference}',
+        static fn (Request $request, array $params) => $referrals()->show($request, $params),
+        RouteAccess::permission(Permission::ReferralTriage),
+    );
+
     $documents = new DocumentController(
         $app->view(),
         $app->gate(),

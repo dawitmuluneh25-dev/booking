@@ -65,6 +65,18 @@ interface ReferralRepository
     public function approvedForScheduling(int $limit = 50): array;
 
     /**
+     * Referrals a person can act on at the front desk: submitted, received, in
+     * administrative review, or waiting on the referrer. Oldest first, because the
+     * queue is worked from the top.
+     *
+     * draft is deliberately absent: a draft belongs to its author and has not
+     * been submitted, so it is not the clinic's work yet.
+     *
+     * @return list<Referral>
+     */
+    public function queued(int $limit = 100): array;
+
+    /**
      * The decision that currently stands: the row nothing supersedes.
      *
      * Newest-by-timestamp would be wrong after a correction, because the corrected

@@ -29,8 +29,11 @@
             <span><?= e($appName ?? 'Booking') ?></span>
         </a>
         <nav class="site-nav" aria-label="Main">
-            <a href="/bookings/new">New booking</a>
+            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::ReferralTriage)): ?>
+                <a href="/referrals">Referrals</a>
+            <?php endif; ?>
             <?php if (($currentUser ?? null) !== null): ?>
+                <a href="/bookings/new">New booking</a>
                 <a href="/bookings">Upcoming</a>
                 <a href="/availability">Availability</a>
             <?php endif; ?>
