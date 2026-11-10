@@ -9,6 +9,7 @@ use App\Domain\NotificationTemplate;
 use App\Domain\OutboundMessage;
 use App\Domain\OutboxStatus;
 use App\Notifications\OutboxDispatcher;
+use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\InMemoryOutboxRepository;
 use Tests\Support\RecordingTransport;
@@ -26,7 +27,7 @@ final class OutboxDispatcherTest extends TestCase
         self::assertSame(1, $result['sent']);
         self::assertSame(OutboxStatus::Sent, $outbox->statusOf($id));
         self::assertCount(1, $transport->sent);
-        self::assertStringContainsString('BK-1', $transport->sent[0]->body());
+        self::assertStringContainsString('BK-1', $transport->sent[0]->body(new DateTimeZone('UTC')));
     }
 
     public function testItSchedulesARetryWhenDeliveryFails(): void

@@ -143,7 +143,10 @@ final class ScheduleController
         } catch (SlotUnavailableException $exception) {
             // The authoritative refusal. The desk gets a sentence it can act on,
             // and the times it sees next are recomputed from occupancy.
-            return $this->backToForm('/schedule/book?referral_id=' . $referralId, ['starts_at' => $exception->getMessage()]);
+            return $this->backToForm(
+                '/schedule/book?referral_id=' . $referralId,
+                ['starts_at' => $exception->getMessage()],
+            );
         } catch (ReferralTransitionException | ReferralNotFoundException $exception) {
             return $this->backToForm('/schedule/book', ['referral_id' => $exception->getMessage()]);
         } catch (AuthorisationException) {

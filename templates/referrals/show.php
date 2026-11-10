@@ -2,6 +2,7 @@
 /**
  * @var \App\Domain\Referral       $referral
  * @var \App\Domain\Procedure|null $procedure
+ * @var array{type: string, rationale: string, reviewer: string, decidedAt: string, technique: ?string, modality: ?string, sedation: ?string, minutes: ?int}|null $decision
  * @var string|null                $notice
  * @var array<string, string>      $errors
  * @var \App\Domain\User           $currentUser
@@ -23,7 +24,11 @@
 
     <?php if ($errors !== []): ?>
         <div class="alert alert-error" role="alert">
-            <p>This draft is not complete yet.</p>
+            <p>
+                <?= $referral->status === \App\Domain\ReferralStatus::Draft
+                    ? 'This draft is not complete yet.'
+                    : 'That could not be recorded.' ?>
+            </p>
             <ul>
                 <?php foreach ($errors as $message): ?>
                     <li><?= e($message) ?></li>
@@ -49,6 +54,61 @@
         This is a request for clinical review. It is not an appointment and no time has been
         reserved; scheduling happens only after clinical approval.
     </p>
+
+    <?php if ($decision !== null): ?>
+        <h2 class="section-title">Clinical decision</h2>
+        <div class="table-wrap">
+            <table>
+                <caption class="visually-hidden">The standing clinical decision</caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">Outcome</th>
+                        <td><span class="badge badge-current"><?= e($decision['type']) ?></span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Rationale</th>
+                        <td><?= nl2br(e($decision['rationale'])) ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Decided by</th>
+                        <td><?= e($decision['reviewer']) ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Decided</th>
+                        <td><?= e($decision['decidedAt']) ?></td>
+                    </tr>
+                    <?php if ($decision['technique'] !== null || $decision['modality'] !== null || $decision['sedation'] !== null || $decision['minutes'] !== null): ?>
+                        <tr>
+                            <th scope="row">Planned</th>
+                            <td>
+                                <?= e(implode(' · ', array_filter([
+                                    $decision['technique'],
+                                    $decision['modality'],
+                                    $decision['sedation'],
+                                    $decision['minutes'] === null ? null : $decision['minutes'] . ' minutes',
+                                ]))) ?>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($referral->status === \App\Domain\ReferralStatus::ClinicallyApproved
+        && $currentUser->can(\App\Domain\Permission::ScheduleManage)): ?>
+        <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/release" class="inline-form">
+            <?= \App\Security\Csrf::field() ?>
+            <button class="button" type="submit">Release for scheduling</button>
+            <span class="muted">Moves the referral into the booking queue the desk works from.</span>
+        </form>
+    <?php elseif ($referral->status === \App\Domain\ReferralStatus::ApprovedForScheduling
+        && $currentUser->can(\App\Domain\Permission::ScheduleManage)): ?>
+        <p>
+            <a class="button" href="/schedule/book?referral_id=<?= e((string) $referral->id) ?>">Book the appointment</a>
+            <span class="muted">The referral is in the scheduling queue; booking it creates the appointment.</span>
+        </p>
+    <?php endif; ?>
 
     <?php
     $advancements = [

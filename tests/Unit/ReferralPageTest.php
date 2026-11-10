@@ -6,6 +6,9 @@ namespace Tests\Unit;
 
 use App\Controllers\ReferralController;
 use App\Domain\Actor;
+use App\Domain\ApproveForScheduling;
+use App\Domain\ClinicalDecision;
+use App\Domain\ClinicalDecisionType;
 use App\Domain\Procedure;
 use App\Domain\Referral;
 use App\Domain\ReferralStatus;
@@ -73,6 +76,8 @@ final class ReferralPageTest extends TestCase
             new SubmitDraft($this->referrals),
             $this->referrals,
             $procedures,
+            new ApproveForScheduling($this->referrals),
+            'Africa/Addis_Ababa',
         );
     }
 
@@ -260,6 +265,96 @@ final class ReferralPageTest extends TestCase
         self::assertContains('CT report uploaded.', $reasons);
     }
 
+    public function testTheDeskReleasesAClinicallyApprovedReferralToTheSchedulingQueue(): void
+    {
+        $referral = $this->approvedReferral();
+
+        $response = $this->controller->release(
+            Request::create('POST', '/referrals/' . $referral->reference . '/release', [], [
+                Csrf::FIELD => Csrf::token(),
+            ]),
+            ['reference' => $referral->reference],
+        );
+
+        self::assertSame(303, $response->status);
+        self::assertSame(ReferralStatus::ApprovedForScheduling, $this->statusOf($referral->reference));
+    }
+
+    public function testAReferralWhoseStandingDecisionIsNotAnApprovalCannotBeReleased(): void
+    {
+        $referral = $this->approvedReferral();
+        $approved = $this->referrals->findByReference($referral->reference);
+        self::assertInstanceOf(Referral::class, $approved);
+
+        // A later decision replaced the approval: the status still reads approved,
+        // and the page must refuse rather than book on a judgement that was undone.
+        $current = $this->referrals->currentDecision($approved->id);
+        self::assertNotNull($current);
+        $this->referrals->recordDecision(new ClinicalDecision(
+            id: 0,
+            referralId: $approved->id,
+            type: ClinicalDecisionType::Deferred,
+            rationale: 'The lesion is better assessed after a repeat CT in six weeks.',
+            technique: null,
+            modality: null,
+            sedation: null,
+            estimatedDurationMinutes: null,
+            preprocedureConditions: null,
+            redirectDestination: null,
+            informationRequested: null,
+            decidedByUserId: 3,
+            decidedAtUtc: '2026-11-10 10:00:00',
+            supersedesId: $current->id,
+        ));
+
+        $response = $this->controller->release(
+            Request::create('POST', '/referrals/' . $approved->reference . '/release', [], [
+                Csrf::FIELD => Csrf::token(),
+            ]),
+            ['reference' => $approved->reference],
+        );
+
+        self::assertSame(422, $response->status);
+        self::assertStringContainsString('standing clinical approval', $this->body($response));
+        self::assertSame(ReferralStatus::ClinicallyApproved, $this->statusOf($approved->reference));
+    }
+
+    /** A referral that has been through triage and carries a standing approval. */
+    private function approvedReferral(): Referral
+    {
+        $this->advance('RF-2026-0001', ['action' => 'receive']);
+        $this->advance('RF-2026-0001', ['action' => 'triage']);
+        $this->advance('RF-2026-0001', ['action' => 'send-to-review']);
+
+        $referral = $this->referrals->findByReference('RF-2026-0001');
+        self::assertInstanceOf(Referral::class, $referral);
+
+        $this->referrals->recordDecision(new ClinicalDecision(
+            id: 0,
+            referralId: $referral->id,
+            type: ClinicalDecisionType::Approved,
+            rationale: 'Lesion is accessible and the indication is clear.',
+            technique: null,
+            modality: null,
+            sedation: null,
+            estimatedDurationMinutes: null,
+            preprocedureConditions: null,
+            redirectDestination: null,
+            informationRequested: null,
+            decidedByUserId: 3,
+            decidedAtUtc: '2026-11-10 09:30:00',
+            supersedesId: null,
+        ));
+
+        return $this->referrals->transition(
+            $referral,
+            ReferralStatus::ClinicallyApproved,
+            new Actor(3, Role::Radiologist),
+            null,
+            '2026-11-10 09:30:00',
+        );
+    }
+
     private function statusOf(string $reference): ReferralStatus
     {
         $referral = $this->referrals->findByReference($reference);
@@ -272,7 +367,9 @@ final class ReferralPageTest extends TestCase
     private function advance(string $reference, array $body, int $expected = 303): Response
     {
         $response = $this->controller->advance(
-            Request::create('POST', '/referrals/' . $reference . '/advance', [], $body + [Csrf::FIELD => Csrf::token()]),
+            Request::create('POST', '/referrals/' . $reference . '/advance', [], $body + [
+                Csrf::FIELD => Csrf::token(),
+            ]),
             ['reference' => $reference],
         );
 

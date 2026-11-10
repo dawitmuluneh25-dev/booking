@@ -103,7 +103,12 @@ final class PhysicianVerificationTest extends TestCase
     public function testProvisioningCreatesAnAccountThatMustResetItsPassword(): void
     {
         $this->users->seed('admin@example.test', 'Admin', Role::Admin, 'hash');
-        $command = new CreateUserAccount($this->users, new PasswordHasher(), new RecordingAuditTrail(), new InlineTransaction());
+        $command = new CreateUserAccount(
+            $this->users,
+            new PasswordHasher(),
+            new RecordingAuditTrail(),
+            new InlineTransaction(),
+        );
 
         $result = $command->execute(
             new Actor(1, Role::Admin),
@@ -123,7 +128,12 @@ final class PhysicianVerificationTest extends TestCase
     public function testATakenEmailIsRefused(): void
     {
         $this->users->seed('taken@example.test', 'Existing', Role::Staff, 'hash');
-        $command = new CreateUserAccount($this->users, new PasswordHasher(), new RecordingAuditTrail(), new InlineTransaction());
+        $command = new CreateUserAccount(
+            $this->users,
+            new PasswordHasher(),
+            new RecordingAuditTrail(),
+            new InlineTransaction(),
+        );
 
         $this->expectException(ValidationException::class);
         $command->execute(
@@ -134,7 +144,12 @@ final class PhysicianVerificationTest extends TestCase
 
     public function testAnUnknownRoleIsRefusedRatherThanDefaulted(): void
     {
-        $command = new CreateUserAccount($this->users, new PasswordHasher(), new RecordingAuditTrail(), new InlineTransaction());
+        $command = new CreateUserAccount(
+            $this->users,
+            new PasswordHasher(),
+            new RecordingAuditTrail(),
+            new InlineTransaction(),
+        );
 
         $this->expectException(ValidationException::class);
         $command->execute(

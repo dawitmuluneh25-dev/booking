@@ -214,6 +214,8 @@ return static function (Application $app): void {
         $app->submitDraft(),
         $app->referrals(),
         $app->procedures(),
+        $app->approveForScheduling(),
+        $app->config()->timezone(),
     );
 
     // The queue and the intake form are staff and referrer surfaces. There is no
@@ -256,6 +258,15 @@ return static function (Application $app): void {
         RouteAccess::permission(Permission::ReferralTriage),
     );
 
+    // Releasing a clinically approved referral is a scheduling act, not a triage
+    // one, so the route carries the scheduling permission and the command repeats
+    // the check before it moves anything.
+    $router->post(
+        '/referrals/{reference}/release',
+        static fn (Request $request, array $params) => $referrals()->release($request, $params),
+        RouteAccess::permission(Permission::ScheduleManage),
+    );
+
     $router->get(
         '/referrals/{reference}',
         static fn (Request $request, array $params) => $referrals()->show($request, $params),
@@ -268,6 +279,7 @@ return static function (Application $app): void {
         $app->recordClinicalDecision(),
         $app->referrals(),
         $app->procedures(),
+        $app->config()->timezone(),
     );
 
     $router->get(

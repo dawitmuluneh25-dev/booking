@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Notifications;
 
 use App\Domain\OutboundMessage;
+use DateTimeZone;
 use RuntimeException;
 
 /**
@@ -15,8 +16,14 @@ use RuntimeException;
  */
 final class LogTransport implements NotificationTransport
 {
-    public function __construct(private readonly string $path)
-    {
+    /**
+     * The zone is an argument because a log line is read by a person, and a
+     * person reads the clinic's clock rather than UTC.
+     */
+    public function __construct(
+        private readonly string $path,
+        private readonly DateTimeZone $zone,
+    ) {
     }
 
     public function send(OutboundMessage $message): void
@@ -32,7 +39,7 @@ final class LogTransport implements NotificationTransport
             'template' => $message->template->value,
             'to' => self::mask($message->recipient),
             'reference' => $message->payload['reference'] ?? '',
-            'body' => $message->body(),
+            'body' => $message->body($this->zone),
         ];
 
         $line = json_encode($record, JSON_UNESCAPED_SLASHES);

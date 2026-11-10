@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\Actor;
+use App\Domain\ApproveForScheduling;
 use App\Domain\AuthorisationException;
+use App\Domain\ClinicalDecisionRecord;
 use App\Domain\Permission;
 use App\Domain\Procedure;
 use App\Domain\ProcedureRepository;
@@ -25,6 +27,8 @@ use App\Security\Csrf;
 use App\Security\Gate;
 use App\Security\Session;
 use App\Support\View;
+use DateTimeImmutable;
+use DateTimeZone;
 use PDOException;
 
 /**
@@ -65,6 +69,8 @@ final class ReferralController
         private readonly SubmitDraft $submitDraft,
         private readonly ReferralRepository $referrals,
         private readonly ProcedureRepository $procedures,
+        private readonly ApproveForScheduling $release,
+        private readonly string $timezone,
     ) {
     }
 
@@ -149,10 +155,72 @@ final class ReferralController
             'title' => 'Referral ' . $referral->reference,
             'referral' => $referral,
             'procedure' => $this->procedures->find($referral->procedureCode),
+            'decision' => $this->standingDecision($referral),
             'notice' => $notice,
             'errors' => $errors,
             'currentUser' => $this->gate->authenticate(),
         ]), $status);
+    }
+
+    /**
+     * The clinical decision the desk is acting on, if there is one.
+     *
+     * The desk books what a clinician approved, so it has to be able to read the
+     * approval: who signed it, when, and with what technique and duration. A page
+     * that only shows "clinically approved" asks reception to trust a status.
+     *
+     * @return array{
+     *     type: string,
+     *     rationale: string,
+     *     reviewer: string,
+     *     decidedAt: string,
+     *     technique: ?string,
+     *     modality: ?string,
+     *     sedation: ?string,
+     *     minutes: ?int
+     * }|null
+     */
+    private function standingDecision(Referral $referral): ?array
+    {
+        foreach ($this->referrals->decisionHistory($referral->id) as $record) {
+            if ($record->isCurrent()) {
+                return $this->decisionRow($record);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{
+     *     type: string,
+     *     rationale: string,
+     *     reviewer: string,
+     *     decidedAt: string,
+     *     technique: ?string,
+     *     modality: ?string,
+     *     sedation: ?string,
+     *     minutes: ?int
+     * }
+     */
+    private function decisionRow(ClinicalDecisionRecord $record): array
+    {
+        $decision = $record->decision;
+        $at = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $decision->decidedAtUtc, new DateTimeZone('UTC'));
+
+        return [
+            'type' => $decision->type->label(),
+            'rationale' => $decision->rationale,
+            'reviewer' => $record->reviewerName === '' ? 'Unknown reviewer' : $record->reviewerName,
+            'decidedAt' => $at === false
+                ? $decision->decidedAtUtc
+                : $at->setTimezone(new DateTimeZone($this->timezone))->format('D j M Y, H:i')
+                    . ' (' . $this->timezone . ')',
+            'technique' => $decision->technique,
+            'modality' => $decision->modality,
+            'sedation' => $decision->sedation,
+            'minutes' => $decision->estimatedDurationMinutes,
+        ];
     }
 
     /**
@@ -208,7 +276,10 @@ final class ReferralController
             return $this->detail($referral, ['action' => $exception->getMessage()], null, 422);
         }
 
-        Session::flash('notice', 'Referral ' . $updated->reference . ' is now ' . mb_strtolower($updated->status->label()) . '.');
+        Session::flash(
+            'notice',
+            'Referral ' . $updated->reference . ' is now ' . mb_strtolower($updated->status->label()) . '.',
+        );
 
         return Response::redirect('/referrals/' . rawurlencode($reference));
     }
@@ -257,6 +328,51 @@ final class ReferralController
         Session::flash('notice', 'Reply recorded; ' . $updated->reference . ' is back in administrative review.');
 
         return Response::redirect('/referrals/' . rawurlencode($reference));
+    }
+
+    /**
+     * Release a clinically approved referral to the booking desk.
+     *
+     * The status change is not made here: `ApproveForScheduling` reads the
+     * standing clinical decision before it moves anything, so a referral whose
+     * approval was superseded cannot be released by a URL (WF-02). Without a
+     * route, an approved referral had nowhere to go and the desk had to retype a
+     * reference into the scheduling form — a working system with no way through it.
+     *
+     * @param array<string, string> $params
+     */
+    public function release(Request $request, array $params): Response
+    {
+        $this->assertCsrf($request);
+
+        $user = $this->gate->authenticate();
+        $reference = (string) ($params['reference'] ?? '');
+        $referral = $this->referrals->findByReference($reference);
+
+        if ($referral === null) {
+            throw new HttpException(404);
+        }
+
+        try {
+            $released = $this->release->execute(
+                new Actor($user->id, $user->role),
+                $referral->id,
+                gmdate('Y-m-d H:i:s'),
+            );
+        } catch (AuthorisationException) {
+            throw HttpException::forbidden('Your role may not release a referral for scheduling.');
+        } catch (ReferralTransitionException $exception) {
+            return $this->detail($referral, ['release' => $exception->getMessage()], null, 422);
+        } catch (ReferralNotFoundException) {
+            throw new HttpException(404);
+        }
+
+        Session::flash(
+            'notice',
+            'Referral ' . $released->reference . ' is released; it is now in the scheduling queue.',
+        );
+
+        return Response::redirect('/referrals/' . rawurlencode($released->reference));
     }
 
     public function saveDraft(Request $request): Response

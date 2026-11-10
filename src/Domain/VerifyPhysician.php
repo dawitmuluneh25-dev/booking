@@ -82,7 +82,14 @@ final class VerifyPhysician
 
         $when = $nowUtc ?? gmdate('Y-m-d H:i:s');
 
-        return $this->transaction->run(function () use ($actor, $profile, $decision, $note, $when, $action): PhysicianProfile {
+        return $this->transaction->run(function () use (
+            $actor,
+            $profile,
+            $decision,
+            $note,
+            $when,
+            $action,
+        ): PhysicianProfile {
             $reviewed = $this->profiles->review(
                 $profile,
                 $decision,

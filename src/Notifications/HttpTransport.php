@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Notifications;
 
 use App\Domain\OutboundMessage;
+use DateTimeZone;
 use RuntimeException;
 
 /**
@@ -17,6 +18,10 @@ use RuntimeException;
  * in the bridge, so changing provider never touches this application.
  *
  * A non-2xx answer is a failure the outbox will retry; it is never swallowed.
+ *
+ * The optional zone exists for tests and for a deployment that genuinely runs in
+ * UTC. The application always passes the clinic zone, so a patient reading the
+ * message sees the clock of the department, not the server's.
  */
 final class HttpTransport implements NotificationTransport
 {
@@ -25,6 +30,7 @@ final class HttpTransport implements NotificationTransport
         private readonly string $url,
         private readonly string $token = '',
         private readonly int $timeoutSeconds = 5,
+        private readonly ?DateTimeZone $zone = null,
     ) {
     }
 
@@ -38,7 +44,7 @@ final class HttpTransport implements NotificationTransport
             'channel' => $message->channel->value,
             'template' => $message->template->value,
             'to' => $message->recipient,
-            'body' => $message->body(),
+            'body' => $message->body($this->zone ?? new DateTimeZone('UTC')),
             'reference' => $message->payload['reference'] ?? '',
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 

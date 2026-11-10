@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain;
 
+use DateTimeImmutable;
+use DateTimeZone;
+
 /**
  * One notification to deliver. Contains no clinical detail: a reference, a
  * time and a service name are enough for a message that may leave the system.
@@ -12,6 +15,12 @@ final class OutboundMessage
 {
     /**
      * @param array<string, string> $payload
+     * @param string|null $dedupeKey what makes this transition unique, e.g.
+     *                               "appointment:BK-260110-ABC123:moved:2026-11-12 09:00:00".
+     *                               The outbox refuses a second row with the same key, so a
+     *                               retried request sends once while a second move still sends.
+     *                               Null falls back to the subject-and-template key the schema
+     *                               used before 0021, which is right for a one-off message.
      */
     public function __construct(
         public readonly NotificationChannel $channel,
@@ -22,7 +31,24 @@ final class OutboundMessage
         public readonly int $attempts = 0,
         public readonly OutboxStatus $status = OutboxStatus::Pending,
         public readonly ?string $lastError = null,
+        public readonly ?string $dedupeKey = null,
     ) {
+    }
+
+    /** The key the outbox will store this message under. */
+    public function dedupeKeyFor(?int $bookingId, ?int $referralId): string
+    {
+        if ($this->dedupeKey !== null) {
+            return $this->dedupeKey;
+        }
+
+        return sprintf(
+            'subject:%d:%d:%s:%s',
+            $bookingId ?? 0,
+            $referralId ?? 0,
+            $this->template->value,
+            $this->channel->value,
+        );
     }
 
     public function withDispatch(int $id, int $attempts): self
@@ -45,14 +71,22 @@ final class OutboundMessage
             attempts: $attempts,
             status: $status,
             lastError: $lastError,
+            dedupeKey: $this->dedupeKey,
         );
     }
 
-    /** Rendered message body. Kept generic on purpose. */
-    public function body(): string
+    /**
+     * Rendered message body.
+     *
+     * The zone is a parameter rather than configuration read here, because the
+     * message is stored in UTC and rendered at the edge: a patient reading "09:00"
+     * when the clinic means 12:00 has been given the wrong appointment. A default
+     * would have made printing UTC look deliberate.
+     */
+    public function body(DateTimeZone $zone): string
     {
         $reference = $this->payload['reference'] ?? '';
-        $when = $this->payload['scheduled_at'] ?? '';
+        $when = $this->when($zone);
 
         return match ($this->template) {
             NotificationTemplate::BookingRequested => sprintf(
@@ -77,6 +111,42 @@ final class OutboundMessage
                 'We received referral %s. The clinical team will review it and contact you.',
                 $reference,
             ),
+            // Appointment messages name the reference and the time and nothing
+            // else: no patient name, no procedure, no clinical reason. A message
+            // that may be read by whoever holds the phone must not disclose why
+            // somebody is attending.
+            NotificationTemplate::AppointmentBooked => sprintf(
+                'Appointment %s is booked for %s.',
+                $reference,
+                $when,
+            ),
+            NotificationTemplate::AppointmentMoved => sprintf(
+                'Appointment %s has been moved to %s.',
+                $reference,
+                $when,
+            ),
+            NotificationTemplate::AppointmentCancelled => sprintf(
+                'Appointment %s on %s has been cancelled. Please contact the clinic to rebook.',
+                $reference,
+                $when,
+            ),
         };
+    }
+
+    private function when(DateTimeZone $zone): string
+    {
+        $utc = $this->payload['scheduled_at_utc'] ?? '';
+
+        if ($utc !== '') {
+            $at = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $utc, new DateTimeZone('UTC'));
+
+            if ($at !== false) {
+                return $at->setTimezone($zone)->format('D j M Y, H:i T');
+            }
+        }
+
+        // Older callers pre-format the time themselves; the string is printed as
+        // given rather than guessed at.
+        return $this->payload['scheduled_at'] ?? '';
     }
 }

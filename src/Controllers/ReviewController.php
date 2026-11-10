@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Domain\Actor;
 use App\Domain\AuthorisationException;
+use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
 use App\Domain\Permission;
 use App\Domain\ProcedureRepository;
@@ -22,6 +23,8 @@ use App\Security\Csrf;
 use App\Security\Gate;
 use App\Security\Session;
 use App\Support\View;
+use DateTimeImmutable;
+use DateTimeZone;
 
 /**
  * The radiologist's queue and the decision form.
@@ -39,6 +42,7 @@ final class ReviewController
         private readonly RecordClinicalDecision $decision,
         private readonly ReferralRepository $referrals,
         private readonly ProcedureRepository $procedures,
+        private readonly string $timezone,
     ) {
     }
 
@@ -140,8 +144,48 @@ final class ReviewController
             'referral' => $referral,
             'procedure' => $this->procedures->find($referral->procedureCode),
             'decisions' => ClinicalDecisionType::cases(),
+            'history' => $this->history($referral->id),
             'errors' => $errors,
             'currentUser' => $this->gate->authenticate(),
         ]), $status);
+    }
+
+    /**
+     * The decision history, with the two facts the reader needs: who decided, in
+     * the clinic's own time, and which rows a later decision replaced.
+     *
+     * The times are converted here rather than in the template because UTC in a
+     * clinical record is a reading error waiting to happen: a clinician in Addis
+     * reading "14:10 UTC" for a decision taken at 17:10 local has no way to tell
+     * which clock the page means.
+     *
+     * @return list<array{decision: ClinicalDecision, reviewer: string, decidedAt: string, superseded: bool}>
+     */
+    private function history(int $referralId): array
+    {
+        $rows = [];
+
+        foreach ($this->referrals->decisionHistory($referralId) as $record) {
+            $rows[] = [
+                'decision' => $record->decision,
+                'reviewer' => $record->reviewerName === '' ? 'Unknown reviewer' : $record->reviewerName,
+                'decidedAt' => $this->localTime($record->decision->decidedAtUtc),
+                'superseded' => !$record->isCurrent(),
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function localTime(string $utc): string
+    {
+        $at = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $utc, new DateTimeZone('UTC'));
+
+        if ($at === false) {
+            return $utc;
+        }
+
+        return $at->setTimezone(new DateTimeZone($this->timezone))->format('D j M Y, H:i')
+            . ' (' . $this->timezone . ')';
     }
 }

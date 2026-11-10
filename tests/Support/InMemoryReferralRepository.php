@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
+use App\Domain\ClinicalDecisionRecord;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
 use App\Domain\ReferralRepository;
@@ -32,6 +33,15 @@ final class InMemoryReferralRepository implements ReferralRepository
     private array $decisions = [];
 
     private int $nextId = 1;
+
+    /**
+     * @param array<int, string> $reviewerNames user id => display name, so a page
+     *                                          test can assert the history names
+     *                                          the person who decided
+     */
+    public function __construct(private readonly array $reviewerNames = [])
+    {
+    }
 
     /** @param list<OutboundMessage> $messages */
     public function create(
@@ -204,6 +214,33 @@ final class InMemoryReferralRepository implements ReferralRepository
         return $standing;
     }
 
+    /** @return list<ClinicalDecisionRecord> */
+    public function decisionHistory(int $referralId): array
+    {
+        $records = [];
+
+        foreach ($this->decisions as $decision) {
+            if ($decision->referralId !== $referralId) {
+                continue;
+            }
+
+            $records[] = new ClinicalDecisionRecord(
+                decision: $decision,
+                reviewerName: $this->reviewerNames[$decision->decidedByUserId]
+                    ?? 'User #' . $decision->decidedByUserId,
+                supersededById: $this->supersederOf($decision->id),
+            );
+        }
+
+        usort(
+            $records,
+            static fn (ClinicalDecisionRecord $a, ClinicalDecisionRecord $b): int =>
+                [$a->decision->decidedAtUtc, $a->decision->id] <=> [$b->decision->decidedAtUtc, $b->decision->id],
+        );
+
+        return $records;
+    }
+
     public function recordDecision(ClinicalDecision $decision): ClinicalDecision
     {
         if ($decision->supersedesId !== null && $this->isSuperseded($decision->supersedesId)) {
@@ -215,6 +252,18 @@ final class InMemoryReferralRepository implements ReferralRepository
         $this->decisions[] = $stored;
 
         return $stored;
+    }
+
+    /** The id of the decision that replaced this one, if any. */
+    private function supersederOf(int $decisionId): ?int
+    {
+        foreach ($this->decisions as $decision) {
+            if ($decision->supersedesId === $decisionId) {
+                return $decision->id;
+            }
+        }
+
+        return null;
     }
 
     private function isSuperseded(int $decisionId): bool

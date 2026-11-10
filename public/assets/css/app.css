@@ -478,6 +478,26 @@ tbody tr:last-child th { border-bottom: 0; }
     color: var(--text);
 }
 
+/* A decision that still stands, next to one a later decision replaced: the
+   difference has to survive a greyscale print and a colour-blind reader, so the
+   superseded row is also dimmed and its badge says so in words. */
+.badge-current {
+    background: var(--success-bg);
+    border-color: var(--success-border);
+    color: var(--success-text);
+}
+
+.badge-superseded {
+    background: var(--surface-alt);
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+
+tr.is-superseded th,
+tr.is-superseded td {
+    color: var(--text-muted);
+}
+
 /* Details list */
 .details {
     display: grid;

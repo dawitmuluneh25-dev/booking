@@ -61,6 +61,27 @@ final class ApproveForSchedulingTest extends TestCase
         $this->command->execute(new Actor(4, Role::Staff), $referral->id, self::NOW);
     }
 
+    public function testASupersededApprovalCannotBeReleased(): void
+    {
+        // The state machine does not produce this shape — an approval leaves
+        // clinical review — so this is the guard against a record that arrived
+        // another way: an import, a manual fix, a migration. The standing decision
+        // is the deferral, and the approval that it replaced releases nothing.
+        $referral = $this->referralAt(ReferralStatus::ClinicallyApproved);
+
+        $approval = $this->repository->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Approved),
+        );
+        $this->repository->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Deferred, $approval->id),
+        );
+
+        $this->expectException(ReferralTransitionException::class);
+        $this->expectExceptionMessageMatches('/standing clinical approval/i');
+
+        $this->command->execute(new Actor(4, Role::Staff), $referral->id, self::NOW);
+    }
+
     public function testItDoesNotActOnAReferralThatIsNotClinicallyApproved(): void
     {
         $referral = $this->referralAt(ReferralStatus::ClinicalReview);
@@ -132,8 +153,11 @@ final class ApproveForSchedulingTest extends TestCase
         return $this->repository->create($referral, new Actor(3, Role::Physician), '2026-11-07 08:00:00');
     }
 
-    private function decision(int $referralId, ClinicalDecisionType $type): ClinicalDecision
-    {
+    private function decision(
+        int $referralId,
+        ClinicalDecisionType $type,
+        ?int $supersedesId = null,
+    ): ClinicalDecision {
         return new ClinicalDecision(
             id: 0,
             referralId: $referralId,
@@ -148,7 +172,7 @@ final class ApproveForSchedulingTest extends TestCase
             informationRequested: null,
             decidedByUserId: 2,
             decidedAtUtc: '2026-11-08 09:00:00',
-            supersedesId: null,
+            supersedesId: $supersedesId,
         );
     }
 }

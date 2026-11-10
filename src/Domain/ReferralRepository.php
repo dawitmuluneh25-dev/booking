@@ -81,19 +81,31 @@ interface ReferralRepository
     public function queued(int $limit = 100): array;
 
     /**
-     * The decision that currently stands: the row nothing supersedes.
-     *
-     * Newest-by-timestamp would be wrong after a correction, because the corrected
-     * row is not necessarily the later one.
-     */
-    /**
      * Referrals a radiologist has been asked to review, oldest first.
      *
      * @return list<Referral>
      */
     public function awaitingClinicalReview(int $limit = 100): array;
 
+    /**
+     * The decision that currently stands: the row nothing supersedes.
+     *
+     * Newest-by-timestamp would be wrong after a correction, because the corrected
+     * row is not necessarily the later one.
+     */
     public function currentDecision(int $referralId): ?ClinicalDecision;
+
+    /**
+     * Every decision on a referral, oldest first, with the reviewer's name and a
+     * marker for the ones a later decision replaced.
+     *
+     * A decision is never deleted, so this is the record of clinical judgement as
+     * it happened rather than as it ended up (WF-09). The page shows it in full and
+     * marks what no longer stands.
+     *
+     * @return list<ClinicalDecisionRecord>
+     */
+    public function decisionHistory(int $referralId): array;
 
     /**
      * Append a decision. The row is never updated afterwards; the database allows

@@ -244,6 +244,32 @@ final class ReferralRepositoryTest extends TestCase
         );
     }
 
+    public function testTheHistoryNamesTheReviewerAndMarksTheDecisionThatWasReplaced(): void
+    {
+        $referral = $this->moveToClinicalReview();
+
+        $first = $this->repository()->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Deferred, null),
+        );
+        $second = $this->repository()->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Approved, $first->id),
+        );
+
+        $history = $this->repository()->decisionHistory($referral->id);
+        self::assertCount(2, $history);
+
+        // Oldest first, and the reader can tell which one still stands without
+        // reading a second table for the reviewer's name.
+        self::assertSame($first->id, $history[0]->decision->id);
+        self::assertFalse($history[0]->isCurrent());
+        self::assertSame($second->id, $history[0]->supersededById);
+        self::assertSame('Referral Repository Probe', $history[0]->reviewerName);
+
+        self::assertSame($second->id, $history[1]->decision->id);
+        self::assertTrue($history[1]->isCurrent());
+        self::assertNull($history[1]->supersededById);
+    }
+
     private function moveToClinicalReview(): Referral
     {
         $referral = $this->createReferral();

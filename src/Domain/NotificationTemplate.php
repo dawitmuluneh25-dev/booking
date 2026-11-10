@@ -14,6 +14,9 @@ enum NotificationTemplate: string
     case BookingConfirmed = 'booking_confirmed';
     case BookingCancelled = 'booking_cancelled';
     case ReferralReceived = 'referral_received';
+    case AppointmentBooked = 'appointment_booked';
+    case AppointmentMoved = 'appointment_moved';
+    case AppointmentCancelled = 'appointment_cancelled';
 
     public function label(): string
     {
@@ -22,6 +25,9 @@ enum NotificationTemplate: string
             self::BookingConfirmed => 'Booking confirmed',
             self::BookingCancelled => 'Booking cancelled',
             self::ReferralReceived => 'Referral received',
+            self::AppointmentBooked => 'Appointment booked',
+            self::AppointmentMoved => 'Appointment moved',
+            self::AppointmentCancelled => 'Appointment cancelled',
         };
     }
 }

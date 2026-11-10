@@ -15,6 +15,11 @@
 
 declare(strict_types=1);
 
+// This file is a script, not a library: declaring a symbol and doing something are
+// the same act here, and separating them would break the separate-process contract
+// the concurrency test depends on.
+// phpcs:disable PSR1.Files.SideEffects
+
 use App\Database\PdoTransaction;
 use App\Domain\Actor;
 use App\Domain\Appointment;

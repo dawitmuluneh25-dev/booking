@@ -59,8 +59,14 @@ final class ReviewPageTest extends TestCase
         $procedures = new InMemoryProcedureRepository();
         $procedures->add($this->procedure('image_guided_fnac', 'Image-guided fine needle aspiration (FNAC)'));
 
-        $this->referrals = new InMemoryReferralRepository();
-        $this->referrals->create($this->referralEntity(), new Actor($this->radiologistId, Role::Radiologist), self::NOW);
+        // The history names the person who decided, so the double needs the same
+        // id => name mapping the users table would supply.
+        $this->referrals = new InMemoryReferralRepository([$this->radiologistId => 'Dr Selam Bekele']);
+        $this->referrals->create(
+            $this->referralEntity(),
+            new Actor($this->radiologistId, Role::Radiologist),
+            self::NOW,
+        );
 
         $this->controller = new ReviewController(
             new View(dirname(__DIR__, 2) . '/templates'),
@@ -68,6 +74,7 @@ final class ReviewPageTest extends TestCase
             new RecordClinicalDecision($this->referrals, new Validator(), new InlineTransaction()),
             $this->referrals,
             $procedures,
+            'Africa/Addis_Ababa',
         );
     }
 
@@ -129,6 +136,58 @@ final class ReviewPageTest extends TestCase
         $this->expectException(\App\Http\HttpException::class);
 
         $this->controller->show(Request::create('GET', '/review/RF-REV-0001'), ['reference' => 'RF-REV-0001']);
+    }
+
+    public function testTheHistoryNamesTheReviewerInClinicTimeAndMarksWhatWasReplaced(): void
+    {
+        $referral = $this->referrals->findByReference('RF-REV-0001');
+        self::assertInstanceOf(Referral::class, $referral);
+
+        // Two decisions, the second replacing the first: the shape a clinician
+        // produces by asking for information twice.
+        $first = $this->referrals->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::MoreInformation, '2026-11-10 06:10:00'),
+        );
+        $this->referrals->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::MoreInformation, '2026-11-10 08:30:00', $first->id),
+        );
+
+        $body = $this->body(
+            $this->controller->show(Request::create('GET', '/review/RF-REV-0001'), ['reference' => 'RF-REV-0001']),
+        );
+
+        self::assertStringContainsString('Decision history', $body);
+        self::assertStringContainsString('Dr Selam Bekele', $body);
+        // 06:10 UTC is 09:10 in Addis Ababa, and the page must not print the UTC hour.
+        self::assertStringContainsString('09:10', $body);
+        self::assertStringContainsString('Africa/Addis_Ababa', $body);
+        self::assertStringNotContainsString('06:10', $body);
+        self::assertStringContainsString('Superseded', $body);
+        self::assertStringContainsString('In force', $body);
+    }
+
+    private function decision(
+        int $referralId,
+        ClinicalDecisionType $type,
+        string $decidedAtUtc,
+        ?int $supersedesId = null,
+    ): \App\Domain\ClinicalDecision {
+        return new \App\Domain\ClinicalDecision(
+            id: 0,
+            referralId: $referralId,
+            type: $type,
+            rationale: 'Reviewed the imaging in full before deciding what to ask for.',
+            technique: null,
+            modality: null,
+            sedation: null,
+            estimatedDurationMinutes: null,
+            preprocedureConditions: null,
+            redirectDestination: null,
+            informationRequested: $type === ClinicalDecisionType::MoreInformation ? 'Clotting screen.' : null,
+            decidedByUserId: $this->radiologistId,
+            decidedAtUtc: $decidedAtUtc,
+            supersedesId: $supersedesId,
+        );
     }
 
     private function statusOf(string $reference): ReferralStatus

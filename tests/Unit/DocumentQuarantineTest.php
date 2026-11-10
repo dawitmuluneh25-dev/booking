@@ -90,7 +90,12 @@ final class DocumentQuarantineTest extends TestCase
         );
 
         $this->access = new DocumentAccessService($this->documents, $referrals, $resolver);
-        $this->review = new ReviewQuarantinedDocument($this->documents, $this->access, new RecordingAuditTrail(), new InlineTransaction());
+        $this->review = new ReviewQuarantinedDocument(
+            $this->documents,
+            $this->access,
+            new RecordingAuditTrail(),
+            new InlineTransaction(),
+        );
     }
 
     public function testReleasingADocumentMakesItServable(): void

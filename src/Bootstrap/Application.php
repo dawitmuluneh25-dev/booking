@@ -511,10 +511,14 @@ final class Application
                 $this->config->notificationUrl(),
                 $this->config->notificationToken(),
                 $this->config->notificationTimeout(),
+                new DateTimeZone($this->config->timezone()),
             );
         }
 
-        return new LogTransport($this->config->root('var/logs/notifications.log'));
+        return new LogTransport(
+            $this->config->root('var/logs/notifications.log'),
+            new DateTimeZone($this->config->timezone()),
+        );
     }
 
     public function retentionRepository(): RetentionRepository

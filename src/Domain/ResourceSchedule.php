@@ -92,7 +92,9 @@ final class ResourceSchedule
                 continue;
             }
 
-            for ($cursor = $opens; $cursor <= $latestStart; $cursor = $cursor->modify('+' . self::SLOT_MINUTES . ' minutes')) {
+            $step = '+' . self::SLOT_MINUTES . ' minutes';
+
+            for ($cursor = $opens; $cursor <= $latestStart; $cursor = $cursor->modify($step)) {
                 if ($cursor === false) {
                     break;
                 }

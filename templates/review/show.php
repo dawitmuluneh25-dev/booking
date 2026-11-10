@@ -3,6 +3,7 @@
  * @var \App\Domain\Referral            $referral
  * @var \App\Domain\Procedure|null      $procedure
  * @var list<\App\Domain\ClinicalDecisionType> $decisions
+ * @var list<array{decision: \App\Domain\ClinicalDecision, reviewer: string, decidedAt: string, superseded: bool}> $history
  * @var array<string, string>           $errors
  */
 ?>
@@ -54,6 +55,44 @@
             </tbody>
         </table>
     </div>
+
+    <?php if ($history !== []): ?>
+        <h2 class="section-title">Decision history</h2>
+        <p class="muted">
+            Decisions are never edited. A change of mind is a new decision, and the one it
+            replaced is kept here, marked as no longer standing.
+        </p>
+        <div class="table-wrap">
+            <table>
+                <caption class="visually-hidden">Clinical decisions recorded on this referral</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">Rationale</th>
+                        <th scope="col">Decided by</th>
+                        <th scope="col">Decided</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($history as $entry): ?>
+                        <tr<?= $entry['superseded'] ? ' class="is-superseded"' : '' ?>>
+                            <th scope="row">
+                                <?= e($entry['decision']->type->label()) ?>
+                                <?php if ($entry['superseded']): ?>
+                                    <span class="badge badge-superseded">Superseded — no longer in force</span>
+                                <?php else: ?>
+                                    <span class="badge badge-current">In force</span>
+                                <?php endif; ?>
+                            </th>
+                            <td><?= nl2br(e($entry['decision']->rationale)) ?></td>
+                            <td><?= e($entry['reviewer']) ?></td>
+                            <td><?= e($entry['decidedAt']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
 
     <?php if ($currentUser->can(\App\Domain\Permission::ClinicalApprove)): ?>
         <h2 class="section-title">Decision</h2>

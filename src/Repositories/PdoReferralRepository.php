@@ -6,6 +6,7 @@ namespace App\Repositories;
 
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
+use App\Domain\ClinicalDecisionRecord;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
 use App\Domain\ReferralRepository;
@@ -242,6 +243,32 @@ final class PdoReferralRepository implements ReferralRepository
         return $row === false ? null : ClinicalDecision::fromRow($row);
     }
 
+    /** @return list<ClinicalDecisionRecord> */
+    public function decisionHistory(int $referralId): array
+    {
+        // The join to `users` is for a reader, not for the record: the row keeps
+        // the id, so renaming an account does not rewrite who decided what.
+        $statement = $this->pdo->prepare(
+            'SELECT d.*, u.name AS reviewer_name, s.id AS superseded_by_id
+               FROM clinical_decisions d
+               LEFT JOIN users u ON u.id = d.decided_by_user_id
+               LEFT JOIN clinical_decisions s ON s.supersedes_decision_id = d.id
+              WHERE d.referral_id = :referral_id
+              ORDER BY d.decided_at ASC, d.id ASC'
+        );
+        $statement->execute(['referral_id' => $referralId]);
+
+        $records = [];
+        foreach ($statement->fetchAll() as $row) {
+            if (is_array($row)) {
+                /** @var array<string, mixed> $row */
+                $records[] = ClinicalDecisionRecord::fromRow($row);
+            }
+        }
+
+        return $records;
+    }
+
     public function recordDecision(ClinicalDecision $decision): ClinicalDecision
     {
         return $this->transaction->run(
@@ -344,30 +371,9 @@ final class PdoReferralRepository implements ReferralRepository
      */
     private function enqueue(int $referralId, array $messages): void
     {
-        if ($messages === []) {
-            return;
-        }
-
-        $statement = $this->pdo->prepare(
-            "INSERT IGNORE INTO notification_outbox
-                (referral_id, channel, template, recipient, payload, status, attempts,
-                 available_at, created_at, updated_at)
-             VALUES
-                (:referral_id, :channel, :template, :recipient, :payload, 'pending', 0,
-                 UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())"
-        );
-
-        foreach ($messages as $message) {
-            $payload = json_encode($message->payload, JSON_UNESCAPED_SLASHES);
-
-            $statement->execute([
-                'referral_id' => $referralId,
-                'channel' => $message->channel->value,
-                'template' => $message->template->value,
-                'recipient' => $message->recipient,
-                'payload' => $payload === false ? '{}' : $payload,
-            ]);
-        }
+        // One writer for every outbox insert, so the dedupe key cannot be
+        // forgotten by the next subject that starts sending messages.
+        (new OutboxWriter($this->pdo))->write(null, $referralId, $messages);
     }
 
     private function appendHistory(
