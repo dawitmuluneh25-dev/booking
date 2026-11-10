@@ -9,8 +9,7 @@ namespace App\Domain;
  *
  * The permission check answers "may this role touch referrals at all"; this
  * answers "may this person touch *this* referral". Both are needed: a verified
- * physician holds referral.submit, but must not read a colleague's referrals from
- * another institution (AUTH-03).
+ * physician holds referral.submit, but must not read a colleague's referrals (AUTH-03).
  *
  * The rules, and why each is what it is:
  *
@@ -21,6 +20,10 @@ namespace App\Domain;
  *   none (AUTH-02);
  * - a patient sees the referrals they submitted, and a recorded guardian with
  *   acting authority sees the same set.
+ *
+ * Institution is not part of this decision anywhere, and must not become part of
+ * it: it is free text on the profile, so treating it as a boundary would mean
+ * enforcing tenancy with a string somebody typed (ADR-014).
  *
  * A refusal is answered as 404 by the caller, never 403 (SEC 8.4): confirming that
  * a referral exists to somebody who may not see it is itself a disclosure.

@@ -36,6 +36,8 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-011](#adr-011) | Opening hours are data, not constants | Implemented, unapproved | Operations | not recorded | — |
 | [ADR-012](#adr-012) | Notifications leave through a bridge we own | Implemented, unapproved | Architecture + Operations | not recorded | — |
 | [ADR-013](#adr-013) | Both intake models remain, with a stated boundary | **Accepted** | Product owner | 2026-11-10 | — |
+| [ADR-014](#adr-014) | Institution is descriptive metadata, not a boundary | **Accepted** | Product owner | 2026-11-10 | — |
+| [ADR-015](#adr-015) | Patients hold accounts and sign in during release 1 | **Accepted** | Product owner | 2026-11-10 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -226,6 +228,76 @@ missing feature; it was an undefined boundary producing a broken front door.
 
 **Not decided here.** Whether `bookings` is eventually retired once the referral pathway handles the
 same volume is left open, and would be a new ADR superseding this one.
+
+**Status.** Accepted. **Owner.** Product owner. **Date.** 2026-11-10. **Supersedes.** —
+
+---
+
+## ADR-014
+
+**Decision.** An institution is descriptive metadata. It is not a tenancy boundary, not an
+authorisation input, and nothing in the product may present it as one.
+
+**Context.** `physician_profiles.institution` is free text typed by the physician. Two options were
+put to the Product Owner: add institutions and membership and enforce hospital-level isolation, or
+record that institution is a label. The Technical Advisory Committee recommended the second for
+release 1 and the Product Owner accepted it.
+
+**Why this needed deciding at all.** The access policy's own comment claimed a physician "must not
+read a colleague's referrals from another institution", which implies institution is what stops
+them. It is not: a physician sees a referral only when their own profile is the one it was
+submitted under. That rule is narrower than institution scoping and depends on no text field — but
+the comment told a reader the opposite, and a comment that overstates a control is how a control
+gets removed later by somebody who believed it was there.
+
+**Consequences.**
+
+- Authorisation continues to key on the physician profile (AUTH-02/AUTH-03), never on institution.
+- `testTheSameInstitutionIsNotTheSameAuthorization` is the executable statement of this decision and
+  must keep passing: two physicians at one hospital still cannot see each other's referrals.
+- Renaming a physician's institution changes a label and nothing else. No access is gained or lost.
+- The product must not offer institution-level filtering as though it were isolation.
+- If multi-hospital tenancy is later required, it is a new ADR superseding this one, and it must
+  bring institution records, membership, and a test proving cross-institution denial.
+
+**Status.** Accepted. **Owner.** Product owner. **Date.** 2026-11-10. **Supersedes.** —
+
+---
+
+## ADR-015
+
+**Decision.** Patients hold accounts and sign in during release 1. The patient portal is in scope,
+not conditional.
+
+**Context.** `Role::Patient` existed with grants and no sign-in path, which the audit called out as
+either a missing capability or a dormant permission. The Technical Advisory Committee recommended
+removing the role for release 1. The Product Owner decided the opposite: patients sign in, and the
+role stays because it is used.
+
+**What this commits the product to.** The decision is larger than a login form, and the cost is
+recorded here rather than discovered later:
+
+- **Identity.** A patient account must be tied to a referral without letting anybody claim somebody
+  else's case. The existing single-use status link (BL-A2) proves possession of a phone number; it
+  is not an account. Linking an account to an existing referral is the step that needs designing.
+- **Authorisation.** Every patient-facing endpoint enforces object-level access on the server: a
+  patient sees referrals they submitted, and a recorded guardian with acting authority sees the same
+  set. Denial is 404, never 403 (SEC 8.4).
+- **Notifications.** Sign-in needs a recovery path, so BL-E3 (a real email provider behind the
+  outbox) becomes a prerequisite rather than a parallel task.
+- **Support.** Somebody has to answer "I cannot get in" outside office hours, and that owner is not
+  yet named (BL-G6).
+- **Privacy.** The portal shows the patient their own data, which is the point — and it means the
+  retention rule (ADR-010) is now visible to the person it protects, not only to staff.
+
+**Consequences for the backlog.**
+
+- BL-E1 splits in two: the **referrer** portal and the **patient** portal are separate deliverables
+  with separate authorisation tests, so the patient half cannot delay the physician half.
+- The physician dashboard is explicitly not weakened to make the patient path simpler.
+- Patient and guardian identity data stay recorded whether or not the patient ever signs in: no
+  patient login would not have meant no patient record, and having the login does not make the
+  record optional.
 
 **Status.** Accepted. **Owner.** Product owner. **Date.** 2026-11-10. **Supersedes.** —
 
