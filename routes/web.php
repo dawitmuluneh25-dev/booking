@@ -244,6 +244,17 @@ return static function (Application $app): void {
         RouteAccess::permission(Permission::ReferralSubmit),
     );
 
+    $router->post(
+        '/referrals/{reference}/advance',
+        static fn (Request $request, array $params) => $referrals()->advance($request, $params),
+        RouteAccess::permission(Permission::ReferralTriage),
+    );
+    $router->post(
+        '/referrals/{reference}/reply',
+        static fn (Request $request, array $params) => $referrals()->reply($request, $params),
+        RouteAccess::permission(Permission::ReferralTriage),
+    );
+
     $router->get(
         '/referrals/{reference}',
         static fn (Request $request, array $params) => $referrals()->show($request, $params),

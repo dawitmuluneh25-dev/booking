@@ -12,6 +12,7 @@ use App\Domain\ProcedureRepository;
 use App\Domain\Referral;
 use App\Domain\ReferralNotFoundException;
 use App\Domain\ReferralRepository;
+use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
 use App\Domain\SaveReferralDraft;
 use App\Domain\SubmitDraft;
@@ -152,6 +153,109 @@ final class ReferralController
             'errors' => $errors,
             'currentUser' => $this->gate->authenticate(),
         ]), $status);
+    }
+
+    /**
+     * The desk's three moves, as a fixed map rather than a target taken from the
+     * request. A generic "set status" endpoint would let a hand-crafted POST reach
+     * `clinically_approved`, which is the one thing this route must not allow.
+     */
+    private const ADVANCE = [
+        'receive' => ReferralStatus::Received,
+        'triage' => ReferralStatus::AdministrativeReview,
+        'request-information' => ReferralStatus::AwaitingInformation,
+    ];
+
+    /** @param array<string, string> $params */
+    public function advance(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::ReferralTriage);
+        $this->assertCsrf($request);
+
+        $user = $this->gate->authenticate();
+        $reference = (string) ($params['reference'] ?? '');
+        $target = self::ADVANCE[(string) $request->input('action', '')] ?? null;
+
+        if ($target === null) {
+            throw new HttpException(422, 'Unknown action.');
+        }
+
+        $referral = $this->referrals->findByReference($reference);
+
+        if ($referral === null) {
+            throw new HttpException(404);
+        }
+
+        $reason = trim((string) $request->input('reason', ''));
+
+        // The state machine does not require a reason for this transition, but a
+        // request for information with no statement of what is missing is a
+        // message the referrer cannot act on.
+        if ($target === ReferralStatus::AwaitingInformation && $reason === '') {
+            return $this->detail($referral, ['reason' => 'Say what is missing.'], null, 422);
+        }
+
+        try {
+            $updated = $this->referrals->transition(
+                $referral,
+                $target,
+                new Actor($user->id, $user->role),
+                $reason === '' ? null : mb_substr($reason, 0, 480),
+                gmdate('Y-m-d H:i:s'),
+            );
+        } catch (ReferralTransitionException $exception) {
+            return $this->detail($referral, ['action' => $exception->getMessage()], null, 422);
+        }
+
+        Session::flash('notice', 'Referral ' . $updated->reference . ' is now ' . mb_strtolower($updated->status->label()) . '.');
+
+        return Response::redirect('/referrals/' . rawurlencode($reference));
+    }
+
+    /**
+     * Record what the referrer sent back.
+     *
+     * The desk records it rather than the referrer: a status transition is an
+     * authority the role table gives staff and administrators, not physicians.
+     * A referrer-facing reply surface arrives with the portal (BL-E1), where the
+     * actor is the referrer's own account.
+     *
+     * @param array<string, string> $params
+     */
+    public function reply(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::ReferralTriage);
+        $this->assertCsrf($request);
+
+        $user = $this->gate->authenticate();
+        $reference = (string) ($params['reference'] ?? '');
+        $referral = $this->referrals->findByReference($reference);
+
+        if ($referral === null) {
+            throw new HttpException(404);
+        }
+
+        $reply = trim((string) $request->input('reply', ''));
+
+        if (mb_strlen($reply) < 5) {
+            return $this->detail($referral, ['reply' => 'Record what was sent back.'], null, 422);
+        }
+
+        try {
+            $updated = $this->referrals->transition(
+                $referral,
+                ReferralStatus::AdministrativeReview,
+                new Actor($user->id, $user->role),
+                mb_substr($reply, 0, 480),
+                gmdate('Y-m-d H:i:s'),
+            );
+        } catch (ReferralTransitionException $exception) {
+            return $this->detail($referral, ['reply' => $exception->getMessage()], null, 422);
+        }
+
+        Session::flash('notice', 'Reply recorded; ' . $updated->reference . ' is back in administrative review.');
+
+        return Response::redirect('/referrals/' . rawurlencode($reference));
     }
 
     public function saveDraft(Request $request): Response

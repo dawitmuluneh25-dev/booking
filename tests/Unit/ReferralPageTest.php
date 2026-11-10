@@ -211,6 +211,75 @@ final class ReferralPageTest extends TestCase
         self::assertSame(ReferralStatus::Submitted, $this->referrals->findByReference($reference)?->status);
     }
 
+    public function testTheDeskCanReceiveAReferralAndStartAdministrativeReview(): void
+    {
+        $this->advance('RF-2026-0001', ['action' => 'receive']);
+        self::assertSame(ReferralStatus::Received, $this->statusOf('RF-2026-0001'));
+
+        $this->advance('RF-2026-0001', ['action' => 'triage']);
+        self::assertSame(ReferralStatus::AdministrativeReview, $this->statusOf('RF-2026-0001'));
+    }
+
+    public function testARequestForInformationMustSayWhatIsMissing(): void
+    {
+        $this->advance('RF-2026-0001', ['action' => 'receive']);
+        $this->advance('RF-2026-0001', ['action' => 'triage']);
+
+        $response = $this->advance('RF-2026-0001', ['action' => 'request-information'], 422);
+
+        self::assertStringContainsString('Say what is missing', $this->body($response));
+        self::assertSame(ReferralStatus::AdministrativeReview, $this->statusOf('RF-2026-0001'));
+    }
+
+    public function testARecordedReplyReturnsTheReferralToAdministrativeReviewWithHistory(): void
+    {
+        $this->advance('RF-2026-0001', ['action' => 'receive']);
+        $this->advance('RF-2026-0001', ['action' => 'triage']);
+        $this->advance('RF-2026-0001', ['action' => 'request-information', 'reason' => 'Need the CT report.']);
+
+        self::assertSame(ReferralStatus::AwaitingInformation, $this->statusOf('RF-2026-0001'));
+
+        $referral = $this->referrals->findByReference('RF-2026-0001');
+        self::assertInstanceOf(Referral::class, $referral);
+
+        $response = $this->controller->reply(
+            Request::create('POST', '/referrals/RF-2026-0001/reply', [], [
+                'reply' => 'CT report uploaded.',
+                Csrf::FIELD => Csrf::token(),
+            ]),
+            ['reference' => 'RF-2026-0001'],
+        );
+
+        self::assertSame(303, $response->status);
+        self::assertSame(ReferralStatus::AdministrativeReview, $this->statusOf('RF-2026-0001'));
+
+        $history = $this->referrals->historyFor($referral->id);
+        $reasons = array_map(static fn ($row): string => (string) ($row['reason'] ?? ''), $history);
+
+        self::assertContains('Need the CT report.', $reasons);
+        self::assertContains('CT report uploaded.', $reasons);
+    }
+
+    private function statusOf(string $reference): ReferralStatus
+    {
+        $referral = $this->referrals->findByReference($reference);
+        self::assertInstanceOf(Referral::class, $referral);
+
+        return $referral->status;
+    }
+
+    /** @param array<string, string> $body */
+    private function advance(string $reference, array $body, int $expected = 303): Response
+    {
+        $response = $this->controller->advance(
+            Request::create('POST', '/referrals/' . $reference . '/advance', [], $body + [Csrf::FIELD => Csrf::token()]),
+            ['reference' => $reference],
+        );
+
+        self::assertSame($expected, $response->status);
+
+        return $response;
+    }
     /** @return array<string, string> */
     private function payload(): array
     {

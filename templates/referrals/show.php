@@ -4,6 +4,7 @@
  * @var \App\Domain\Procedure|null $procedure
  * @var string|null                $notice
  * @var array<string, string>      $errors
+ * @var \App\Domain\User           $currentUser
  */
 ?>
 <section class="panel">
@@ -49,6 +50,45 @@
         reserved; scheduling happens only after clinical approval.
     </p>
 
+    <?php
+    $advancements = [
+        'receive' => ['label' => 'Mark received', 'target' => \App\Domain\ReferralStatus::Received],
+        'triage' => ['label' => 'Start administrative review', 'target' => \App\Domain\ReferralStatus::AdministrativeReview],
+        'request-information' => ['label' => 'Request information', 'target' => \App\Domain\ReferralStatus::AwaitingInformation],
+    ];
+    ?>
+    <?php if ($currentUser->can(\App\Domain\Permission::ReferralTriage)): ?>
+        <h2 class="section-title">Desk actions</h2>
+        <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/advance" class="stack">
+            <?= \App\Security\Csrf::field() ?>
+            <div class="field">
+                <label for="reason">Reason or what is missing</label>
+                <input id="reason" name="reason" type="text" maxlength="480">
+                <p class="muted">Required when asking the referrer for something.</p>
+            </div>
+            <div class="form-actions">
+                <?php foreach ($advancements as $action => $advancement): ?>
+                    <?php if ($referral->status->canTransitionTo($advancement['target'])): ?>
+                        <button class="button button-secondary" type="submit" name="action" value="<?= e($action) ?>">
+                            <?= e($advancement['label']) ?>
+                        </button>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+        </form>
+
+        <?php if ($referral->status === \App\Domain\ReferralStatus::AwaitingInformation): ?>
+            <h2 class="section-title">Record the reply</h2>
+            <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/reply" class="stack">
+                <?= \App\Security\Csrf::field() ?>
+                <div class="field">
+                    <label for="reply">What the referrer sent back</label>
+                    <textarea id="reply" name="reply" rows="3" maxlength="480"></textarea>
+                </div>
+                <button class="button" type="submit">Record reply</button>
+            </form>
+        <?php endif; ?>
+    <?php endif; ?>
     <div class="table-wrap">
         <table>
             <caption class="visually-hidden">Referral details</caption>
