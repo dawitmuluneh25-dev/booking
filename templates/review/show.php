@@ -115,9 +115,10 @@
 
             <div class="field">
                 <label for="rationale">Rationale</label>
-                <textarea id="rationale" name="rationale" rows="4" required minlength="10"></textarea>
+                <textarea id="rationale" name="rationale" rows="4" required minlength="10"
+                          <?= isset($errors['rationale']) ? ' aria-describedby="rationale-error" aria-invalid="true"' : '' ?>></textarea>
                 <?php if (isset($errors['rationale'])): ?>
-                    <p class="field-error"><?= e($errors['rationale']) ?></p>
+                    <p class="field-error" id="rationale-error"><?= e($errors['rationale']) ?></p>
                 <?php endif; ?>
             </div>
 

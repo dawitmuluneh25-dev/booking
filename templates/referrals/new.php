@@ -15,6 +15,10 @@
  */
 $value = static fn (string $field): string => e($values[$field] ?? '');
 $error = static fn (string $field): ?string => $errors[$field] ?? null;
+$errorId = static fn (string $field): string => $field . '-error';
+$describedBy = static fn (string $field): string => $error($field) === null
+    ? ''
+    : ' aria-describedby="' . e($errorId($field)) . '" aria-invalid="true"';
 ?>
 <section class="panel">
     <div class="panel-head">
@@ -46,25 +50,25 @@ $error = static fn (string $field): ?string => $errors[$field] ?? null;
         <div class="grid">
             <div class="field">
                 <label for="patient_name">Patient name</label>
-                <input id="patient_name" name="patient_name" type="text" required
+                <input id="patient_name"<?= $describedBy('patient_name') ?> name="patient_name" type="text" required
                        value="<?= $value('patient_name') ?>">
                 <?php if ($error('patient_name') !== null): ?>
-                    <p class="field-error"><?= e((string) $error('patient_name')) ?></p>
+                    <p class="field-error" id="<?= e($errorId('patient_name')) ?>"><?= e((string) $error('patient_name')) ?></p>
                 <?php endif; ?>
             </div>
             <div class="field">
                 <label for="patient_phone">Patient phone</label>
-                <input id="patient_phone" name="patient_phone" type="tel" required
+                <input id="patient_phone"<?= $describedBy('patient_phone') ?> name="patient_phone" type="tel" required
                        value="<?= $value('patient_phone') ?>">
                 <?php if ($error('patient_phone') !== null): ?>
-                    <p class="field-error"><?= e((string) $error('patient_phone')) ?></p>
+                    <p class="field-error" id="<?= e($errorId('patient_phone')) ?>"><?= e((string) $error('patient_phone')) ?></p>
                 <?php endif; ?>
             </div>
             <div class="field">
                 <label for="patient_dob">Date of birth</label>
-                <input id="patient_dob" name="patient_dob" type="date" value="<?= $value('patient_dob') ?>">
+                <input id="patient_dob"<?= $describedBy('patient_dob') ?> name="patient_dob" type="date" value="<?= $value('patient_dob') ?>">
                 <?php if ($error('patient_dob') !== null): ?>
-                    <p class="field-error"><?= e((string) $error('patient_dob')) ?></p>
+                    <p class="field-error" id="<?= e($errorId('patient_dob')) ?>"><?= e((string) $error('patient_dob')) ?></p>
                 <?php endif; ?>
             </div>
         </div>
@@ -73,18 +77,18 @@ $error = static fn (string $field): ?string => $errors[$field] ?? null;
         <div class="grid">
             <div class="field">
                 <label for="guardian_name">Guardian name</label>
-                <input id="guardian_name" name="guardian_name" type="text" value="<?= $value('guardian_name') ?>">
+                <input id="guardian_name"<?= $describedBy('guardian_name') ?> name="guardian_name" type="text" value="<?= $value('guardian_name') ?>">
             </div>
             <div class="field">
                 <label for="guardian_phone">Guardian phone</label>
-                <input id="guardian_phone" name="guardian_phone" type="tel" value="<?= $value('guardian_phone') ?>">
+                <input id="guardian_phone"<?= $describedBy('guardian_phone') ?> name="guardian_phone" type="tel" value="<?= $value('guardian_phone') ?>">
                 <?php if ($error('guardian_phone') !== null): ?>
-                    <p class="field-error"><?= e((string) $error('guardian_phone')) ?></p>
+                    <p class="field-error" id="<?= e($errorId('guardian_phone')) ?>"><?= e((string) $error('guardian_phone')) ?></p>
                 <?php endif; ?>
             </div>
             <div class="field">
                 <label for="guardian_relationship">Relationship</label>
-                <input id="guardian_relationship" name="guardian_relationship" type="text"
+                <input id="guardian_relationship"<?= $describedBy('guardian_relationship') ?> name="guardian_relationship" type="text"
                        value="<?= $value('guardian_relationship') ?>">
             </div>
         </div>
@@ -93,7 +97,7 @@ $error = static fn (string $field): ?string => $errors[$field] ?? null;
         <div class="grid">
             <div class="field">
                 <label for="procedure_code">Procedure</label>
-                <select id="procedure_code" name="procedure_code" required>
+                <select id="procedure_code"<?= $describedBy('procedure_code') ?> name="procedure_code" required>
                     <option value="">Choose a procedure</option>
                     <?php foreach ($procedures as $procedure): ?>
                         <option value="<?= e($procedure->code) ?>"
@@ -103,12 +107,12 @@ $error = static fn (string $field): ?string => $errors[$field] ?? null;
                     <?php endforeach; ?>
                 </select>
                 <?php if ($error('procedure_code') !== null): ?>
-                    <p class="field-error"><?= e((string) $error('procedure_code')) ?></p>
+                    <p class="field-error" id="<?= e($errorId('procedure_code')) ?>"><?= e((string) $error('procedure_code')) ?></p>
                 <?php endif; ?>
             </div>
             <div class="field">
                 <label for="requested_urgency">Requested urgency</label>
-                <select id="requested_urgency" name="requested_urgency" required>
+                <select id="requested_urgency"<?= $describedBy('requested_urgency') ?> name="requested_urgency" required>
                     <?php foreach ($urgencies as $urgency): ?>
                         <option value="<?= e($urgency) ?>"
                             <?= ($values['requested_urgency'] ?? '') === $urgency ? 'selected' : '' ?>>
@@ -118,21 +122,21 @@ $error = static fn (string $field): ?string => $errors[$field] ?? null;
                 </select>
                 <p class="muted">Priority is a request, not a decision. Urgent cases are not booked here.</p>
                 <?php if ($error('requested_urgency') !== null): ?>
-                    <p class="field-error"><?= e((string) $error('requested_urgency')) ?></p>
+                    <p class="field-error" id="<?= e($errorId('requested_urgency')) ?>"><?= e((string) $error('requested_urgency')) ?></p>
                 <?php endif; ?>
             </div>
             <div class="field">
                 <label for="target_site">Target site</label>
-                <input id="target_site" name="target_site" type="text" value="<?= $value('target_site') ?>">
+                <input id="target_site"<?= $describedBy('target_site') ?> name="target_site" type="text" value="<?= $value('target_site') ?>">
             </div>
         </div>
 
         <div class="field">
             <label for="clinical_summary">Clinical summary</label>
-            <textarea id="clinical_summary" name="clinical_summary" rows="5" required><?= $value('clinical_summary') ?></textarea>
+            <textarea id="clinical_summary"<?= $describedBy('clinical_summary') ?> name="clinical_summary" rows="5" required><?= $value('clinical_summary') ?></textarea>
             <p class="muted">Indication, relevant history and imaging to date.</p>
             <?php if ($error('clinical_summary') !== null): ?>
-                <p class="field-error"><?= e((string) $error('clinical_summary')) ?></p>
+                    <p class="field-error" id="<?= e($errorId('clinical_summary')) ?>"><?= e((string) $error('clinical_summary')) ?></p>
             <?php endif; ?>
         </div>
 
@@ -140,17 +144,17 @@ $error = static fn (string $field): ?string => $errors[$field] ?? null;
         <div class="grid">
             <div class="field">
                 <label for="referring_physician_name">Referring physician</label>
-                <input id="referring_physician_name" name="referring_physician_name" type="text"
+                <input id="referring_physician_name"<?= $describedBy('referring_physician_name') ?> name="referring_physician_name" type="text"
                        value="<?= $value('referring_physician_name') ?>">
             </div>
             <div class="field">
                 <label for="referring_facility">Facility</label>
-                <input id="referring_facility" name="referring_facility" type="text"
+                <input id="referring_facility"<?= $describedBy('referring_facility') ?> name="referring_facility" type="text"
                        value="<?= $value('referring_facility') ?>">
             </div>
             <div class="field">
                 <label for="referring_physician_phone">Contact phone</label>
-                <input id="referring_physician_phone" name="referring_physician_phone" type="tel"
+                <input id="referring_physician_phone"<?= $describedBy('referring_physician_phone') ?> name="referring_physician_phone" type="tel"
                        value="<?= $value('referring_physician_phone') ?>">
             </div>
         </div>
