@@ -52,7 +52,7 @@ before production and none has been executed.
 
 | Requirement | Status | Evidence / notes |
 |---|---|---|
-| Four distinct services with stable codes | Implemented with different identifiers | `procedures` rows exist for all four; the stored codes are `image_guided_fnac`, `image_guided_core_biopsy`, `image_guided_abscess_drainage`, `hydrostatic_intussusception_reduction` rather than the document's `FNAC`, `CORE_BIOPSY`, `ABSCESS_DRAINAGE`, `HYDROSTATIC_INTUSSUSCEPTION` — see §4.1 |
+| Four distinct services with stable codes | Implemented | `procedures.clinical_code` carries the document's `FNAC`, `CORE_BIOPSY`, `ABSCESS_DRAINAGE`, `HYDROSTATIC_INTUSSUSCEPTION` next to the stored codes `image_guided_fnac`, `image_guided_core_biopsy`, `image_guided_abscess_drainage`, `hydrostatic_intussusception_reduction`; unique key; migration 0026; `MigrationIntegrityTest::testApprovedProcedureCodesAreRecordedOnceAgainstTheCatalogue` — see §4.1 |
 | A service is not bookable until capability is confirmed | Implemented | `procedures.active`; only active elective rows reach the form (`Procedure::isElective`), `ReferralPageTest` |
 | Modality is configurable per procedure, not a promise | Partial | `procedures` has no modality column; modality is recorded on the clinical decision |
 | Procedure-specific approved field sets | Not started | `procedures.required_fields` is NULL for every row and `ck_procedures_approved` refuses a field set that names no approver. See §4.2 |
@@ -77,8 +77,11 @@ before production and none has been executed.
 | Decision options: approve, defer, decline, alternative pathway, redirect, more information | Implemented | `ClinicalDecisionType`; `RecordClinicalDecisionTest` |
 | A decision requires a rationale | Implemented | `clinical_decisions.rationale NOT NULL` plus a required field; `RecordClinicalDecisionTest` |
 | Only a privileged clinical role may decide | Implemented | `Permission::ClinicalApprove`, checked in the command and again in the repository |
+| Approval available only to a verified, privileged practitioner | Not started | AC-009 requires clinical approval to be unavailable until credential and privilege verification is recorded (LP-003, §16.3). Today `Role::Radiologist` grants it on the role alone. There is no credential register to check against, so there is nothing to verify yet; this stays a release gate rather than a claim |
 | A superseded decision is visible and cannot be acted on | Implemented | `supersedes_decision_id` with a unique key; `ApproveForSchedulingTest` |
-| Clinical priority assigned by a clinician with a reason | Partial | The vocabulary and columns exist; no command assigns it yet, so it is read-only today. See §4.3 |
+| Clinical priority assigned by a clinician with a reason | Implemented | `RecordClinicalDecision` requires a category on approval and stores it on the decision (migration 0025) and on the referral in one unit of work; `RecordClinicalDecisionTest::testAnApprovalRecordsTheCategoryOnBothTheDecisionAndTheReferral` |
+| The assigned category is the clinician's, never the submitter's | Implemented | `referrals.requested_urgency` and `referrals.clinical_priority` are written by different commands and neither copies the other (AC-010); `RecordClinicalDecisionTest::testARequestedUrgencyDoesNotBecomeTheClinicalPriority` |
+| No default category for a review nobody has made | Implemented | The form's first option is "Not stated", and an approval without a category is refused rather than defaulted to routine (§12.4) |
 
 ### 3.5 Priority and escalation (§13, A-08)
 
@@ -86,6 +89,8 @@ before production and none has been executed.
 |---|---|---|
 | Routine / expedited / urgent direct coordination | Implemented | `Priority`; `PriorityTest` |
 | Submitters may request routine or expedited only | Implemented | `SubmitElectiveReferral` validates against `Priority::requestableValues()`; `SaveReferralDraft` refuses an unrequestable value rather than letting the CHECK become a 500 |
+| Urgent direct coordination leaves the ordinary queue | Implemented as a guard | An approval cannot carry it: approval is what releases a referral into the elective queue, and the category exists to say that queue is the wrong route. It is recorded with a redirect instead (`Priority::leavesTheOrdinaryQueue`, `assignableOnApproval`) |
+| Changing an assigned category without a new decision | Not started | §13.1 names "assign/change" as one action. This release assigns on the decision; a standalone reassignment on an already-approved referral is a separate command with its own audit event, and is not built |
 | Escalation levels and acknowledgement intervals | Not started, deliberately | No interval has been approved (LP-020). Escalation has no default, by design |
 
 ### 3.6 Readiness checklists (§14, A-09)
@@ -136,14 +141,17 @@ before production and none has been executed.
 
 ## 4. Deviations and open questions
 
-### 4.1 Procedure codes differ from the document's proposed identifiers
+### 4.1 Procedure codes: reconciled as two identifiers, not a rename
 
-The document proposes `FNAC`, `CORE_BIOPSY`, `ABSCESS_DRAINAGE` and
+**Status: closed as a mapping.** The document proposes `FNAC`, `CORE_BIOPSY`, `ABSCESS_DRAINAGE` and
 `HYDROSTATIC_INTUSSUSCEPTION`. The catalogue stores longer, lower-case codes. The requirement the
-document states is that the four services are **distinct and stable**; that is satisfied, and
-renaming would rewrite the `procedure_code` of every referral in order to match a naming convention,
-including retired codes that exist precisely so old rows keep resolving. The mapping is recorded here
-so a reader can go from the document to the row without guessing:
+document states is that the four services are **distinct and stable**; renaming would rewrite the
+`procedure_code` of every referral to satisfy a naming convention, including the retired combined
+code that exists precisely so old rows keep resolving.
+
+The resolution is that both identifiers are real and both are stored. `procedures.clinical_code`
+(migration 0026) carries the document's code, with a unique key, so the mapping is a row in a table
+the tests can ask rather than a table in a document:
 
 | Document code | Stored code |
 |---|---|
@@ -152,9 +160,13 @@ so a reader can go from the document to the row without guessing:
 | `ABSCESS_DRAINAGE` | `image_guided_abscess_drainage` |
 | `HYDROSTATIC_INTUSSUSCEPTION` | `hydrostatic_intussusception_reduction` |
 
-This is a mapping, not an approval. If the Clinical Lead requires the literal identifiers, that is a
-change decision with a data migration, and it should be taken deliberately rather than folded into
-another slice.
+The retired `image_guided_biopsy` deliberately carries **no** clinical code: it stood for FNAC and
+core biopsy at once, and mapping it to either would claim those referrals recorded a technique nobody
+wrote down. See ADR-019.
+
+What is still the Clinical Lead's to decide is narrower than before: whether the *stored* identifiers
+should also be the document's. That would be a rename with a data migration, and it is no longer
+required for the two vocabularies to be reconcilable.
 
 ### 4.2 The field sets are the largest unimplemented part of A-02
 
@@ -164,29 +176,41 @@ several of them (`MED-*`, `IMG-*`, `CONS-*`) need columns, validation and a visi
 they can be stored at all. The reason this has not been started is that doing it half-way would put
 clinical questions on a form without the review framework that consumes them.
 
-### 4.3 Clinical priority has no writer
+### 4.3 Clinical priority: assigned on the decision, reassignment not yet built
 
-The approved model is stored and both columns enforce it, but no command assigns
-`clinical_priority`, so the column is empty in practice. That is a gap in the review workflow, not in
-the vocabulary: assigning a priority is a clinical decision with a required rationale, and it belongs
-with the review record rather than the intake form.
+**Status: closed for assignment.** `RecordClinicalDecision` now assigns the category, with the rule
+that the category must fit the outcome: an approval states routine or expedited, a redirect may state
+urgent direct coordination, and the outcomes that release nothing store nothing. The value is written
+to the decision row and to the referral in one unit of work, so neither can exist without the other.
 
-### 4.4 The checklist cannot be built on six roles
+What remains open is the other half of §13.1's "assign/change": escalating or downgrading a referral
+that has already been approved. That cannot go through this command, because a referral in
+`clinically_approved` or `approved_for_scheduling` is no longer in clinical review, and it should not
+be a status transition. It needs its own command, its own rationale requirement ("record if changed
+from a previously assigned category") and its own audit event. It is not built, and no screen claims
+it exists.
 
-Section 14 assigns every checklist item to a responsible role, using `REC`, `CLIN`, `PROC`, `TECH`,
-`NUR` and `LAB`. The application has `staff`, `radiologist`, `coordinator`, `admin`, `physician` and
-`patient`. Three of the document's roles have no counterpart, and sixteen of the fifty-four items are
-owned by them.
+### 4.4 The checklist role gap and the checklist gap are the same gap
 
-Two honest options exist and neither is an engineering default:
+**Status: re-framed, no owner decision needed yet.** Section 14 assigns every checklist item to a
+responsible role using `REC`, `CLIN`, `PROC`, `TECH`, `NUR` and `LAB`. The application has `staff`,
+`radiologist`, `coordinator`, `admin`, `physician` and `patient`; three of the document's roles have
+no counterpart, and sixteen of the fifty-four items are owned by them.
 
-1. Add the missing roles to the identity model, with the permissions and verification each implies.
-2. Map several document roles onto one application role and state, in the checklist record, which
-   competence actually completed the item.
+Those three roles (`TECH`, `NUR`, `LAB`) appear nowhere in the approved matrix as holding clinical
+authority. Their only duties are the checklist item, the technical or nursing resource confirmation,
+and procedure-day status — none of which this release implements. So the missing vocabulary blocks
+exactly one thing: the checklist. It does not block a clinical decision, an approval, a priority or a
+booking.
 
-Choosing (1) widens the permission surface and needs the Clinical Lead; choosing (2) loses a
-distinction the approved matrix makes. The checklist slice waits on that answer rather than
-inventing a mapping that would let a receptionist complete a nursing check.
+That collapses two open items into one and removes the need for a decision now. The consequence is a
+constraint on BL-D2 rather than a fork in the road:
+
+- The checklist slice adds `TECH`, `NUR` and `LAB` to `Role` **and** the permissions those roles
+  actually exercise, in one change. Adding empty roles first would create accounts that can sign in
+  and do nothing, which `Role::permissions()` explicitly argues against.
+- Until then, no checklist item may be assigned to a role that does not exist, and the checklist is
+  not partially built on a mapping that would let a receptionist complete a nursing check.
 
 ---
 
@@ -200,6 +224,15 @@ inventing a mapping that would let a receptionist complete a nursing check.
   unconfirmed.
 - Do not let a completed checklist, a delivered email or an opened notification stand in for a
   clinical decision or a human acknowledgement (§2.2, CD-023).
+- Do not let an approval carry "urgent direct coordination". When that category is right, the answer
+  is a redirect to the receiving team, because the approved workflow effect is direct contact and
+  acknowledgement — not a booking that waits in the queue the clinician just left.
+- Do not default a clinical priority. A review nobody has made has no category, which is why the form
+  starts at "not stated" (§12.4).
+- Do not claim the reassignment action of §13.1 exists until it has a command, a rationale
+  requirement and an audit event.
+- Do not describe role-based clinical approval as privilege-verified approval. AC-009 and LP-003
+  require a credential record this release does not have.
 - Do not treat this traceability record, or a passing test suite, as clinical or operational
   acceptance.
 
@@ -207,11 +240,13 @@ inventing a mapping that would let a receptionist complete a nursing check.
 
 ## 6. Next slices, in dependency order
 
-1. Clinical priority assignment on the review record, with a required rationale (closes the read-only
-   column in §3.4).
-2. Urgent board routes and `CloseUrgentCase`, with the escalation panel reading "no policy
-   configured" until LP-020 is answered (BL-D1).
-3. Readiness checklists, once §4.4 is decided (BL-D2, then BL-C3).
+1. Urgent board routes and `CloseUrgentCase`, with the escalation panel reading "no policy
+   configured" until LP-020 is answered (BL-D1). The domain objects exist; what is missing is the
+   screen and the closing command, and the intake path for a case that is not an elective referral.
+2. Readiness checklists, which begin by adding `TECH`, `NUR` and `LAB` with their permissions
+   (BL-D2, see §4.4), then BL-C3.
+3. Reassignment of an assigned category without a new decision (§4.3), which the urgent board will
+   want once a case can move between queues.
 4. Public service, urgent and policy pages against the approved copy (BL-A1, BL-A3, BL-A6, BL-A7).
 5. Consent, specimen and follow-up records with the procedure-day timeline (BL-C3).
 6. Section 24 scenario execution, which needs the screens above and a staging environment.

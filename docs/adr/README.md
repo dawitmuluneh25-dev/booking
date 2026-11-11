@@ -41,6 +41,7 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-016](#adr-016) | No patient sign-in during release 1 | **Accepted** | Product owner | 2026-11-11 | ADR-015 |
 | [ADR-017](#adr-017) | Yegara for human mail, Brevo for transactional email | **Accepted**, activation gated | Product owner | 2026-11-11 | — |
 | [ADR-018](#adr-018) | The clinical particulars are approved; production is not | **Accepted**, implementation in progress | Clinical Lead (A-01–A-11), clinical teams and laboratory leads (A-12–A-15), Operations and Legal/Data Protection (A-16–A-19) | 2026-11-12 | — |
+| [ADR-019](#adr-019) | Two identifiers per service: the catalogue code stays, the approved code is recorded beside it | Implemented | Architecture, on the approved catalogue in HR-IR-CLIN-R1-001 §3.1 | 2026-11-12 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -442,6 +443,14 @@ specified content, and it is the first time the clinical model is fixed enough t
 - A category that claims urgency carries a clinical rationale. The requirement binds the clinical
   decision record, not the request: a referrer's words are not a justification, and the request
   object has no field that could pretend otherwise.
+- The category is assigned by the clinical decision, not by intake. `RecordClinicalDecision` requires
+  it on approval, stores it on the decision row (migration 0025) and on the referral in one unit of
+  work, so there is no state where a referral has been released into a queue without a category
+  behind it, or a category with no decision behind it. Each outcome may only carry a category that
+  fits its workflow effect: an approval takes routine or expedited, a redirect may take urgent direct
+  coordination, and declining, deferring and requesting information store none. An approval carrying
+  urgent direct coordination is refused rather than recorded, because approval is what puts a case
+  into the queue that category exists to avoid.
 - A completed checklist is evidence that checks were recorded, never an authorization to proceed;
   nothing in the checklist path writes a referral status.
 - The role matrix is enforced where it already was — `Role::permissions()` grants no clinical
@@ -466,6 +475,42 @@ the remaining mapping in `docs/clinical/clinical-particulars-traceability.md`. *
 Lead for A-01 to A-11, clinical teams and laboratory leads for A-12 to A-15, Operations and
 Legal/Data Protection for A-16 to A-19, Product Owner and Engineering Lead for A-20. **Date.**
 2026-11-12. **Supersedes.** —
+
+---
+
+## ADR-019
+
+**Two identifiers per service: the catalogue code stays, the approved code is recorded beside it**
+
+**Context.** HR-IR-CLIN-R1-001 §3.1 names the Release 1 services `FNAC`, `CORE_BIOPSY`,
+`ABSCESS_DRAINAGE` and `HYDROSTATIC_INTUSSUSCEPTION`. The catalogue already stores
+`image_guided_fnac`, `image_guided_core_biopsy`, `image_guided_abscess_drainage` and
+`hydrostatic_intussusception_reduction`, and `referrals.procedure_code` is a foreign key onto them.
+The two vocabularies describe the same four services; they are not the same string. A reader moving
+between the approved document, the SOPs, the acceptance scenarios and a database row had no way to
+cross without a table kept in a markdown file, which nothing could test.
+
+**Decision.** Both identifiers are kept, and both are stored. `procedures.code` stays the operational
+identifier that referrals reference; `procedures.clinical_code` carries the document's code with a
+unique key. Neither replaces the other, and neither is derived from the label.
+
+**Consequences.**
+
+- The mapping is a row, so a test can assert it (`testApprovedProcedureCodesAreRecordedOnceAgainstTheCatalogue`)
+  and a report can join on it. The markdown table in the traceability record is now a convenience, not
+  the source of truth.
+- The unique key means one catalogue row cannot claim two approved identities, and the approved code
+  cannot drift onto a second service.
+- The retired `image_guided_biopsy` carries no clinical code. It represented FNAC and core biopsy at
+  once, which is why it was retired; mapping it to either would claim the referrals stored under it
+  recorded a technique nobody wrote down. NULL is the honest value, and the unique index permits many
+  NULLs.
+- Renaming the stored codes to the document's is still open, and still a data migration touching every
+  referral. This decision makes that rename unnecessary rather than forbidding it.
+
+**Status.** Implemented (migration 0026). The catalogue it describes was approved under A-01; the
+choice of *how* to reconcile the two vocabularies is an engineering decision and is recorded here so
+it is not re-litigated. **Owner.** Architecture. **Date.** 2026-11-12. **Supersedes.** —.
 
 ---
 
