@@ -38,7 +38,19 @@ final class SaveReferralDraft
             throw new ValidationException(['procedure_code' => 'Choose a procedure from the list.']);
         }
 
+        // A draft took whatever urgency it was handed, and the column used to
+        // accept it. Now that the vocabulary is the approved one (§13.1, A-08),
+        // an unvalidated value reaches a CHECK constraint and becomes a 500 on a
+        // page a patient is half-way through filling in. Refuse it here, where
+        // the answer can be a message.
         $urgency = $this->text($input, 'requested_urgency');
+
+        if ($urgency !== '' && Priority::tryFrom($urgency)?->isRequestable() !== true) {
+            throw new ValidationException([
+                'requested_urgency' => 'Choose routine or expedited review. '
+                    . 'Urgent cases are coordinated by telephone, not requested here.',
+            ]);
+        }
 
         $referral = new Referral(
             id: 0,

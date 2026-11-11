@@ -8,6 +8,7 @@ use App\Bootstrap\Config;
 use App\Bootstrap\Env;
 use App\Database\Connection;
 use App\Database\Migrator;
+use App\Domain\Priority;
 use App\Domain\ReferralStatus;
 use PDO;
 use PDOException;
@@ -295,6 +296,60 @@ final class MigrationIntegrityTest extends TestCase
             self::assertFalse(
                 $this->acceptsValue('referrals', 'status', $referralId, $state),
                 'WF-01/WF-15: a referral status must not borrow the state ' . $state . '.'
+            );
+        }
+    }
+
+    /**
+     * The two priority columns state the same rule as `Priority`, in two halves.
+     *
+     * If they drift, the form offers a category the database refuses — a 500 on a
+     * page somebody is half-way through — or accepts one clinical governance
+     * never approved. The assertion is on what the columns store, not on the text
+     * of a CHECK clause.
+     */
+    public function testPriorityColumnsAcceptExactlyTheApprovedVocabulary(): void
+    {
+        $this->insertUser('priority-probe@example.test', 'staff');
+        $userId = $this->userId('priority-probe@example.test');
+
+        $statement = self::pdo()->prepare(
+            "INSERT INTO referrals (reference, status, patient_name, patient_phone,
+                procedure_code, submitted_by_user_id, submitted_on_behalf_of,
+                created_at, updated_at)
+             VALUES ('REF-PRIORITY-1', 'submitted', 'Probe Patient', '+251911000004',
+                'image_guided_biopsy', :user, 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
+        $statement->execute(['user' => $userId]);
+        $referralId = (int) self::pdo()->lastInsertId();
+
+        foreach (Priority::requestableValues() as $value) {
+            self::assertTrue(
+                $this->acceptsValue('referrals', 'requested_urgency', $referralId, $value),
+                'The form offers ' . $value . ' but ck_referrals_urgency refuses it.'
+            );
+        }
+
+        // A submitter may not choose the clinical category, and the retired word
+        // must not survive in the column either.
+        foreach (['urgent_direct_coordination', 'priority', 'urgent', 'emergency'] as $refused) {
+            self::assertFalse(
+                $this->acceptsValue('referrals', 'requested_urgency', $referralId, $refused),
+                'A request accepted the non-requestable category ' . $refused . '.'
+            );
+        }
+
+        foreach (Priority::clinicalValues() as $value) {
+            self::assertTrue(
+                $this->acceptsValue('referrals', 'clinical_priority', $referralId, $value),
+                'The clinical model names ' . $value . ' but ck_referrals_priority refuses it.'
+            );
+        }
+
+        foreach (['priority', 'urgent', 'expedited_review', ''] as $refused) {
+            self::assertFalse(
+                $this->acceptsValue('referrals', 'clinical_priority', $referralId, $refused),
+                'A clinical priority accepted the retired or unknown value ' . $refused . '.'
             );
         }
     }

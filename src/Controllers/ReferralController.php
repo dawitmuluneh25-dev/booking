@@ -9,6 +9,7 @@ use App\Domain\ApproveForScheduling;
 use App\Domain\AuthorisationException;
 use App\Domain\ClinicalDecisionRecord;
 use App\Domain\Permission;
+use App\Domain\Priority;
 use App\Domain\Procedure;
 use App\Domain\ProcedureRepository;
 use App\Domain\Referral;
@@ -59,7 +60,24 @@ final class ReferralController
         'referring_physician_phone',
     ];
 
-    private const URGENCIES = ['routine', 'priority'];
+    /**
+     * The approved requestable categories (§13.1, A-08) as value => label.
+     *
+     * The form offers what the model offers. It no longer hard-codes a list that
+     * can drift from the CHECK constraint the value is stored under.
+     *
+     * @return array<string, string>
+     */
+    private static function urgencies(): array
+    {
+        $options = [];
+
+        foreach (Priority::requestable() as $priority) {
+            $options[$priority->value] = $priority->label();
+        }
+
+        return $options;
+    }
 
     public function __construct(
         private readonly View $view,
@@ -439,7 +457,7 @@ final class ReferralController
             'values' => $values,
             'errors' => $errors,
             'procedures' => $catalogue,
-            'urgencies' => self::URGENCIES,
+            'urgencies' => self::urgencies(),
             'idempotencyKey' => bin2hex(random_bytes(16)),
             'currentUser' => $this->gate->authenticate(),
         ]), $status);

@@ -105,6 +105,24 @@ final class ReferralPageTest extends TestCase
         self::assertStringNotContainsString('>image_guided_fnac<', $body);
     }
 
+    /**
+     * The form offers the approved requestable categories and nothing else
+     * (HR-IR-CLIN-R1-001 §13.1, A-08). "Urgent direct coordination" is a clinical
+     * decision to leave the ordinary queue; it must not appear as an option, and
+     * the retired word must not survive in the markup.
+     */
+    public function testTheFormOffersTheApprovedPriorityCategoriesOnly(): void
+    {
+        $body = $this->body($this->controller->create(Request::create('GET', '/referrals/new')));
+
+        // The option text is indented by the template, so the assertion is on the
+        // words rather than on the whitespace around them.
+        self::assertStringContainsString('Routine', $body);
+        self::assertStringContainsString('Expedited', $body);
+        self::assertStringNotContainsString('Urgent direct coordination', $body);
+        self::assertStringNotContainsString('value="priority"', $body);
+    }
+
     public function testTheDetailPageNamesTheProcedureRatherThanPrintingItsCode(): void
     {
         $response = $this->controller->show(
@@ -175,6 +193,29 @@ final class ReferralPageTest extends TestCase
 
         $queue = $this->body($this->controller->index(Request::create('GET', '/referrals')));
         self::assertStringNotContainsString('Draft (not submitted)', $queue);
+    }
+
+    /**
+     * A draft used to store whatever urgency it was given, so an unknown value
+     * could reach the column. Now that the column holds the approved vocabulary
+     * (§13.1, A-08), an unvalidated draft value would surface as a database error
+     * on a form a patient is half-way through. It is refused as a field error.
+     */
+    public function testADraftRefusesAPriorityTheApprovedModelDoesNotOffer(): void
+    {
+        $payload = $this->payload();
+        $payload['requested_urgency'] = 'priority';
+
+        $response = $this->controller->saveDraft(
+            Request::create('POST', '/referrals/draft', [], $payload + [Csrf::FIELD => Csrf::token()]),
+        );
+
+        self::assertSame(422, $response->status);
+
+        $body = $this->body($response);
+
+        self::assertStringContainsString('routine or expedited', $body);
+        self::assertStringNotContainsString('SQLSTATE', $body);
     }
 
     public function testAnIncompleteDraftCannotBeSubmitted(): void

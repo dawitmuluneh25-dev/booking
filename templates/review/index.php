@@ -44,7 +44,7 @@
                             </td>
                             <td><?= e($referral->patientName) ?></td>
                             <td><?= e($labels[$referral->procedureCode] ?? $referral->procedureCode) ?></td>
-                            <td><?= e(ucfirst($referral->requestedUrgency)) ?></td>
+                            <td><?= e($referral->requestedUrgencyLabel()) ?></td>
                             <td><?= e(str_replace('T', ' ', substr($referral->createdAtUtc, 0, 19))) ?></td>
                         </tr>
                     <?php endforeach; ?>

@@ -28,8 +28,6 @@ final class SubmitElectiveReferral
 {
     private const REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-    private const URGENCIES = ['routine', 'priority'];
-
     private const SCOPE = 'referral.submit';
 
     public function __construct(
@@ -79,7 +77,7 @@ final class SubmitElectiveReferral
             'guardian_phone' => 'max:32',
             'guardian_relationship' => 'max:40',
             'procedure_code' => 'required|max:40',
-            'requested_urgency' => 'required|in:' . implode(',', self::URGENCIES),
+            'requested_urgency' => 'required|in:' . implode(',', Priority::requestableValues()),
             'clinical_summary' => 'required|min:10|max:4000',
             'target_site' => 'max:120',
             'referring_physician_name' => 'max:120',
@@ -111,6 +109,15 @@ final class SubmitElectiveReferral
             && preg_match('/^[a-z][a-z0-9_]{2,39}$/', $data['procedure_code']) !== 1
         ) {
             $errors['procedure_code'] = 'Procedure code must be lower case letters, digits and underscores.';
+        }
+
+        if (isset($errors['requested_urgency'])) {
+            // The validator says "not in the list", which tells a frightened parent
+            // nothing. An approved category that the form does not offer is the
+            // likely cause — "urgent" or the retired "priority" — so say what is
+            // allowed and where urgency actually belongs.
+            $errors['requested_urgency'] = 'Choose routine or expedited review. '
+                . 'Urgent cases are coordinated by telephone, not requested here.';
         }
 
         if ($errors !== []) {

@@ -113,10 +113,10 @@ $describedBy = static fn (string $field): string => $error($field) === null
             <div class="field">
                 <label for="requested_urgency">Requested urgency</label>
                 <select id="requested_urgency"<?= $describedBy('requested_urgency') ?> name="requested_urgency" required>
-                    <?php foreach ($urgencies as $urgency): ?>
-                        <option value="<?= e($urgency) ?>"
-                            <?= ($values['requested_urgency'] ?? '') === $urgency ? 'selected' : '' ?>>
-                            <?= e(ucfirst($urgency)) ?>
+                    <?php foreach ($urgencies as $urgencyValue => $urgencyLabel): ?>
+                        <option value="<?= e($urgencyValue) ?>"
+                            <?= ($values['requested_urgency'] ?? '') === $urgencyValue ? 'selected' : '' ?>>
+                            <?= e($urgencyLabel) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>

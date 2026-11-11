@@ -259,13 +259,13 @@ final class SubmitElectiveReferralTest extends TestCase
     {
         $referral = $this->command->execute(
             new Actor(7, Role::Staff),
-            ['requested_urgency' => 'priority'] + $this->validInput(),
+            ['requested_urgency' => 'expedited'] + $this->validInput(),
             self::NOW,
         );
 
         // The referrer's own request is stored, but submission produces no clinical
         // decision and no clinical priority (WF-11).
-        self::assertSame('priority', $referral->requestedUrgency);
+        self::assertSame('expedited', $referral->requestedUrgency);
         self::assertSame(ReferralStatus::Submitted, $referral->status);
         self::assertCount(1, $this->repository->historyFor($referral->id));
     }
@@ -279,6 +279,47 @@ final class SubmitElectiveReferralTest extends TestCase
             ['requested_urgency' => 'emergency'] + $this->validInput(),
             self::NOW,
         );
+    }
+
+    /**
+     * `priority` was the catalogue's own word, retired by HR-IR-CLIN-R1-001 §13.1
+     * (A-08). A form bookmarked before the migration — or a hand-crafted POST —
+     * must be told what the approved categories are, not handed a CHECK violation.
+     */
+    public function testTheRetiredUrgencyWordIsRefusedWithTheApprovedVocabulary(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['requested_urgency' => 'priority'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('The retired category was accepted after the vocabulary changed.');
+        } catch (ValidationException $exception) {
+            $message = $exception->errors['requested_urgency'] ?? '';
+
+            self::assertStringContainsString('routine or expedited', $message);
+            self::assertStringNotContainsString('in:', $message);
+        }
+    }
+
+    /**
+     * The clinician-only category is not requestable. It is the one priority that
+     * sends a case outside the ordinary queue, so a referrer must not be able to
+     * choose it by posting the value the clinical form writes.
+     */
+    public function testUrgentDirectCoordinationCannotBeRequestedByASubmitter(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['requested_urgency' => 'urgent_direct_coordination'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('A submitter assigned a clinical priority.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('requested_urgency', $exception->errors);
+        }
     }
 
     public function testProcedureCodeShapeIsChecked(): void

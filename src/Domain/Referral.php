@@ -105,6 +105,18 @@ final class Referral
         return $this->submittedOnBehalfOf === 'self';
     }
 
+    /**
+     * The requested category as the approved model names it.
+     *
+     * `ucfirst()` used to do this job, which turned the stored token into a word
+     * but could not know that "urgent direct coordination" is one category and
+     * not a capitalised string (§13.1, A-08).
+     */
+    public function requestedUrgencyLabel(): string
+    {
+        return Priority::labelFor($this->requestedUrgency);
+    }
+
     private function copyWith(?int $id = null, ?ReferralStatus $status = null, ?int $version = null): self
     {
         return new self(

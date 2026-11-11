@@ -38,7 +38,7 @@
                 </tr>
                 <tr>
                     <th scope="row">Requested urgency</th>
-                    <td><?= e(ucfirst($referral->requestedUrgency)) ?></td>
+                    <td><?= e($referral->requestedUrgencyLabel()) ?></td>
                 </tr>
                 <tr>
                     <th scope="row">Target site</th>
