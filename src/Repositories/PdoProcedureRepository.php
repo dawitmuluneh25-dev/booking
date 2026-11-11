@@ -17,7 +17,7 @@ final class PdoProcedureRepository implements ProcedureRepository
     public function elective(): array
     {
         $statement = $this->pdo->query(
-            "SELECT code, label, category, default_duration_minutes, required_fields,
+            "SELECT code, label, clinical_code, category, default_duration_minutes, required_fields,
                     field_set_version, approved_by, approved_at, active
              FROM procedures
              WHERE category = 'elective' AND active = 1
@@ -30,7 +30,7 @@ final class PdoProcedureRepository implements ProcedureRepository
     public function find(string $code): ?Procedure
     {
         $statement = $this->pdo->prepare(
-            'SELECT code, label, category, default_duration_minutes, required_fields,
+            'SELECT code, label, clinical_code, category, default_duration_minutes, required_fields,
                     field_set_version, approved_by, approved_at, active
              FROM procedures
              WHERE code = :code'

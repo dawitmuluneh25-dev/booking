@@ -15,6 +15,7 @@ use App\Domain\NotificationChannel;
 use App\Domain\NotificationTemplate;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
+use App\Domain\ReferralNotFoundException;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
 use App\Domain\Role;
@@ -221,6 +222,38 @@ final class ReferralRepositoryTest extends TestCase
         self::assertNull($standing->supersedesId);
     }
 
+    /**
+     * The priority a decision assigned survives a round trip, and the standing
+     * value on the referral is what the clinician set — not the submitter's
+     * request (AC-010).
+     */
+    public function testAClinicalPriorityIsStoredWithItsDecisionAndOnTheReferral(): void
+    {
+        $referral = $this->moveToClinicalReview();
+
+        $decision = $this->repository()->recordDecision(
+            $this->decision($referral->id, ClinicalDecisionType::Approved, null, 'expedited'),
+        );
+        $this->repository()->assignClinicalPriority($referral->id, 'expedited');
+
+        $standing = $this->repository()->currentDecision($referral->id);
+        self::assertNotNull($standing);
+        self::assertSame($decision->id, $standing->id);
+        self::assertSame('expedited', $standing->clinicalPriority);
+        self::assertSame('Expedited', $standing->clinicalPriorityLabel());
+
+        $reloaded = $this->reload($referral->id);
+        self::assertSame('expedited', $reloaded->clinicalPriority);
+        self::assertSame('routine', $reloaded->requestedUrgency);
+    }
+
+    public function testAssigningAPriorityToAMissingReferralIsRefused(): void
+    {
+        $this->expectException(ReferralNotFoundException::class);
+
+        $this->repository()->assignClinicalPriority(999999, 'routine');
+    }
+
     public function testADecisionCanBeSupersededOnceAndNotTwice(): void
     {
         $referral = $this->moveToClinicalReview();
@@ -293,6 +326,7 @@ final class ReferralRepositoryTest extends TestCase
         int $referralId,
         ClinicalDecisionType $type,
         ?int $supersedesId,
+        ?string $clinicalPriority = null,
     ): ClinicalDecision {
         return new ClinicalDecision(
             id: 0,
@@ -309,6 +343,7 @@ final class ReferralRepositoryTest extends TestCase
             decidedByUserId: $this->actorUserId,
             decidedAtUtc: self::NOW,
             supersedesId: $supersedesId,
+            clinicalPriority: $clinicalPriority,
         );
     }
 

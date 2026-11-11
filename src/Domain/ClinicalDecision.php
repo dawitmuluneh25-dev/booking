@@ -32,6 +32,15 @@ final class ClinicalDecision
         public readonly int $decidedByUserId,
         public readonly string $decidedAtUtc,
         public readonly ?int $supersedesId,
+        /**
+         * The category this decision assigned, if it assigned one.
+         *
+         * Kept on the decision rather than inferred from the referral, because the
+         * referral only knows what stands now. §12.1 asks the review record to
+         * carry the priority it assigned; a reader asking "was this expedited when
+         * it was approved" gets the answer from the row that approved it.
+         */
+        public readonly ?string $clinicalPriority = null,
     ) {
     }
 
@@ -52,7 +61,21 @@ final class ClinicalDecision
             decidedByUserId: $this->decidedByUserId,
             decidedAtUtc: $this->decidedAtUtc,
             supersedesId: $this->supersedesId,
+            clinicalPriority: $this->clinicalPriority,
         );
+    }
+
+    /**
+     * The assigned category as the approved model names it.
+     *
+     * Null means this outcome assigned none — a decline or a request for more
+     * information does not release anything into a queue, so it has no priority to
+     * state. That is different from an unknown string, which `labelFor()` returns
+     * verbatim so a legacy row still renders.
+     */
+    public function clinicalPriorityLabel(): ?string
+    {
+        return $this->clinicalPriority === null ? null : Priority::labelFor($this->clinicalPriority);
     }
 
     /** @param array<string, mixed> $row */
@@ -77,6 +100,7 @@ final class ClinicalDecision
             supersedesId: is_numeric($row['supersedes_decision_id'] ?? null)
                 ? (int) $row['supersedes_decision_id']
                 : null,
+            clinicalPriority: self::nullable($row['clinical_priority'] ?? null),
         );
     }
 

@@ -27,6 +27,16 @@ final class Procedure
         public readonly ?string $approvedBy,
         public readonly string $approvedAtUtc,
         public readonly bool $active,
+        /**
+         * The code the approved clinical document uses for this service, if it has
+         * one (HR-IR-CLIN-R1-001 §3.1).
+         *
+         * Two stable identifiers, neither replacing the other: `code` is what
+         * referrals store and what a query joins on, `clinicalCode` is the name the
+         * clinical model, the SOPs and the acceptance scenarios use. Recording both
+         * is what makes the mapping testable instead of a table in a document.
+         */
+        public readonly ?string $clinicalCode = null,
     ) {
     }
 
@@ -62,6 +72,10 @@ final class Procedure
             approvedBy: isset($row['approved_by']) ? self::text($row['approved_by']) : null,
             approvedAtUtc: self::text($row['approved_at'] ?? null),
             active: (bool) ($row['active'] ?? false),
+            clinicalCode: isset($row['clinical_code']) && is_string($row['clinical_code'])
+                && $row['clinical_code'] !== ''
+                ? $row['clinical_code']
+                : null,
         );
     }
 

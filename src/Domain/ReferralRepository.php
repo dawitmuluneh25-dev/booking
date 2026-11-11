@@ -112,4 +112,18 @@ interface ReferralRepository
      * each decision to be superseded once, which keeps the chain linear.
      */
     public function recordDecision(ClinicalDecision $decision): ClinicalDecision;
+
+    /**
+     * Set the clinical priority that stands on the referral.
+     *
+     * Separate from `transition()` because the two answer different questions:
+     * a transition moves the referral, an assignment says how its work is
+     * ordered. Keeping them apart also means the priority is written inside the
+     * caller's unit of work rather than in a second, unrelated one.
+     *
+     * The value is validated by the command against `Priority`, not here; the
+     * column CHECK is the backstop, and passing a word the model does not name is
+     * a programming error rather than a user error.
+     */
+    public function assignClinicalPriority(int $referralId, string $priority): void;
 }

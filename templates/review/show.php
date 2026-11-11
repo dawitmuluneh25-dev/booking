@@ -3,6 +3,7 @@
  * @var \App\Domain\Referral            $referral
  * @var \App\Domain\Procedure|null      $procedure
  * @var list<\App\Domain\ClinicalDecisionType> $decisions
+ * @var list<\App\Domain\Priority>      $priorities
  * @var list<array{decision: \App\Domain\ClinicalDecision, reviewer: string, decidedAt: string, superseded: bool}> $history
  * @var array<string, string>           $errors
  */
@@ -68,6 +69,7 @@
                 <thead>
                     <tr>
                         <th scope="col">Outcome</th>
+                        <th scope="col">Priority assigned</th>
                         <th scope="col">Rationale</th>
                         <th scope="col">Decided by</th>
                         <th scope="col">Decided</th>
@@ -84,6 +86,7 @@
                                     <span class="badge badge-current">In force</span>
                                 <?php endif; ?>
                             </th>
+                            <td><?= e($entry['decision']->clinicalPriorityLabel() ?? '—') ?></td>
                             <td><?= nl2br(e($entry['decision']->rationale)) ?></td>
                             <td><?= e($entry['reviewer']) ?></td>
                             <td><?= e($entry['decidedAt']) ?></td>
@@ -111,6 +114,27 @@
                         <option value="<?= e($decision->value) ?>"><?= e($decision->label()) ?></option>
                     <?php endforeach; ?>
                 </select>
+            </div>
+
+            <div class="field">
+                <label for="clinical_priority">Clinical priority</label>
+                <select id="clinical_priority" name="clinical_priority"
+                        <?= isset($errors['clinical_priority']) ? ' aria-describedby="clinical_priority-error" aria-invalid="true"' : '' ?>>
+                    <option value="">— Not stated —</option>
+                    <?php foreach ($priorities as $priority): ?>
+                        <option value="<?= e($priority->value) ?>"><?= e($priority->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="muted">
+                    Required when approving. Routine and expedited order the elective queue;
+                    urgent direct coordination means the queue is the wrong route, so it is
+                    recorded with a redirect to the receiving team rather than an approval.
+                    Priority is recorded against your name and is never taken from the
+                    submitter's request.
+                </p>
+                <?php if (isset($errors['clinical_priority'])): ?>
+                    <p class="field-error" id="clinical_priority-error"><?= e($errors['clinical_priority']) ?></p>
+                <?php endif; ?>
             </div>
 
             <div class="field">

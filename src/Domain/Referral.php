@@ -39,6 +39,16 @@ final class Referral
         public readonly string $submittedOnBehalfOf,
         public readonly string $createdAtUtc,
         public readonly ?int $referringPhysicianProfileId = null,
+        /**
+         * The clinical priority that stands, assigned by an authorized clinician.
+         *
+         * Null until a clinician assigns one, and null is the honest initial state:
+         * §12.4 forbids defaulting missing information to a reassuring value, so no
+         * "routine" is written on submission. `requestedUrgency` is a separate
+         * field holding the submitter's own request, and nothing copies one to the
+         * other (AC-010).
+         */
+        public readonly ?string $clinicalPriority = null,
     ) {
     }
 
@@ -69,6 +79,7 @@ final class Referral
             referringPhysicianProfileId: is_numeric($row['referring_physician_profile_id'] ?? null)
                 ? (int) $row['referring_physician_profile_id']
                 : null,
+            clinicalPriority: self::nullableText($row, 'clinical_priority'),
         );
     }
 
@@ -81,6 +92,18 @@ final class Referral
     public function withStatus(ReferralStatus $status, int $version): self
     {
         return $this->copyWith(status: $status, version: $version);
+    }
+
+    /**
+     * Attach the category a clinician assigned.
+     *
+     * There is no `withoutClinicalPriority()`: the approved model describes
+     * assignment and reassignment by an authorized clinician, never erasure. A
+     * value is replaced by the next assignment, and the decision rows keep both.
+     */
+    public function withClinicalPriority(string $clinicalPriority): self
+    {
+        return $this->copyWith(clinicalPriority: $clinicalPriority);
     }
 
     /** @return list<string> */
@@ -117,8 +140,31 @@ final class Referral
         return Priority::labelFor($this->requestedUrgency);
     }
 
-    private function copyWith(?int $id = null, ?ReferralStatus $status = null, ?int $version = null): self
+    /**
+     * The assigned clinical category, or null when no clinician has assigned one.
+     *
+     * Null is not "routine". A referral nobody has reviewed has no clinical
+     * priority, and a screen that prints "Routine" for it has replaced a missing
+     * clinical judgement with a reassuring word (§12.4, AC-010).
+     */
+    public function clinicalPriorityLabel(): ?string
     {
+        return $this->clinicalPriority === null ? null : Priority::labelFor($this->clinicalPriority);
+    }
+
+    /** Whether an authorized clinician has removed this case from the ordinary queue. */
+    public function requiresDirectCoordination(): bool
+    {
+        return $this->clinicalPriority !== null
+            && Priority::tryFrom($this->clinicalPriority)?->leavesTheOrdinaryQueue() === true;
+    }
+
+    private function copyWith(
+        ?int $id = null,
+        ?ReferralStatus $status = null,
+        ?int $version = null,
+        ?string $clinicalPriority = null,
+    ): self {
         return new self(
             id: $id ?? $this->id,
             reference: $this->reference,
@@ -141,6 +187,7 @@ final class Referral
             submittedOnBehalfOf: $this->submittedOnBehalfOf,
             createdAtUtc: $this->createdAtUtc,
             referringPhysicianProfileId: $this->referringPhysicianProfileId,
+            clinicalPriority: $clinicalPriority ?? $this->clinicalPriority,
         );
     }
 

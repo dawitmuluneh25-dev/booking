@@ -9,6 +9,7 @@ use App\Domain\AuthorisationException;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
 use App\Domain\Permission;
+use App\Domain\Priority;
 use App\Domain\ProcedureRepository;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\Referral;
@@ -98,6 +99,7 @@ final class ReviewController
         $input = [
             'decision_type' => (string) $request->input('decision_type', ''),
             'rationale' => (string) $request->input('rationale', ''),
+            'clinical_priority' => (string) $request->input('clinical_priority', ''),
             'approved_technique' => (string) $request->input('approved_technique', ''),
             'modality' => (string) $request->input('modality', ''),
             'sedation' => (string) $request->input('sedation', ''),
@@ -144,6 +146,7 @@ final class ReviewController
             'referral' => $referral,
             'procedure' => $this->procedures->find($referral->procedureCode),
             'decisions' => ClinicalDecisionType::cases(),
+            'priorities' => Priority::cases(),
             'history' => $this->history($referral->id),
             'errors' => $errors,
             'currentUser' => $this->gate->authenticate(),

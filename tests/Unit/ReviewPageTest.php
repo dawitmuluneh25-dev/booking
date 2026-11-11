@@ -107,12 +107,51 @@ final class ReviewPageTest extends TestCase
         self::assertSame(ReferralStatus::ClinicalReview, $this->statusOf('RF-REV-0001'));
     }
 
+    /**
+     * §12.4 forbids defaulting missing clinical information to a reassuring value,
+     * so the form starts on "not stated" rather than on Routine, and offers all
+     * three approved categories for the clinician to choose between.
+     */
+    public function testTheDecisionFormOffersTheApprovedClinicalCategoriesWithNoDefault(): void
+    {
+        $body = $this->body(
+            $this->controller->show(Request::create('GET', '/review/RF-REV-0001'), ['reference' => 'RF-REV-0001']),
+        );
+
+        self::assertStringContainsString('Clinical priority', $body);
+        self::assertStringContainsString('Not stated', $body);
+        self::assertStringContainsString('Routine', $body);
+        self::assertStringContainsString('Expedited', $body);
+        self::assertStringContainsString('Urgent direct coordination', $body);
+    }
+
+    public function testTheAssignedPriorityIsWhatTheReferralCarriesAfterApproval(): void
+    {
+        $this->controller->decide(
+            Request::create('POST', '/referrals/RF-REV-0001/decision', [], [
+                'decision_type' => ClinicalDecisionType::Approved->value,
+                'rationale' => 'Imaging suggests progression; earlier scheduling is warranted.',
+                'clinical_priority' => 'expedited',
+                Csrf::FIELD => Csrf::token(),
+            ]),
+            ['reference' => 'RF-REV-0001'],
+        );
+
+        $referral = $this->referrals->findByReference('RF-REV-0001');
+
+        self::assertInstanceOf(Referral::class, $referral);
+        self::assertSame('expedited', $referral->clinicalPriority);
+        // The request is not overwritten by the assignment (AC-010).
+        self::assertSame('routine', $referral->requestedUrgency);
+    }
+
     public function testAnApprovalMovesTheReferralOutOfReview(): void
     {
         $response = $this->controller->decide(
             Request::create('POST', '/referrals/RF-REV-0001/decision', [], [
                 'decision_type' => ClinicalDecisionType::Approved->value,
                 'rationale' => 'Lesion is accessible and the indication is clear.',
+                'clinical_priority' => 'routine',
                 Csrf::FIELD => Csrf::token(),
             ]),
             ['reference' => 'RF-REV-0001'],
@@ -128,6 +167,7 @@ final class ReviewPageTest extends TestCase
             Request::create('POST', '/referrals/RF-REV-0001/decision', [], [
                 'decision_type' => ClinicalDecisionType::Approved->value,
                 'rationale' => 'Lesion is accessible and the indication is clear.',
+                'clinical_priority' => 'routine',
                 Csrf::FIELD => Csrf::token(),
             ]),
             ['reference' => 'RF-REV-0001'],

@@ -171,8 +171,25 @@
                 </tr>
                 <tr>
                     <th scope="row">Requested urgency</th>
-                    <td><?= e($referral->requestedUrgencyLabel()) ?></td>
+                    <td>
+                        <?= e($referral->requestedUrgencyLabel()) ?>
+                        <span class="muted">(the submitter's request, not a clinical decision)</span>
+                    </td>
                 </tr>
+                <?php if ($referral->clinicalPriority !== null): ?>
+                    <tr>
+                        <th scope="row">Clinical priority</th>
+                        <td>
+                            <?= e((string) $referral->clinicalPriorityLabel()) ?>
+                            <?php if ($referral->requiresDirectCoordination()): ?>
+                                <span class="muted">
+                                    — direct coordination with the receiving team is required;
+                                    this case does not wait in the ordinary queue.
+                                </span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endif; ?>
                 <tr>
                     <th scope="row">Target site</th>
                     <td><?= e($referral->targetSite ?? '—') ?></td>

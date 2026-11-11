@@ -56,6 +56,25 @@ final class PriorityTest extends TestCase
     }
 
     /**
+     * Approval is what releases a referral into the elective queue, so the two
+     * categories that describe work in that queue are the ones it may carry. The
+     * third says the queue is the wrong route, which is why it is not among them.
+     */
+    public function testOnlyTheQueueDescribingCategoriesCanBeAssignedOnApproval(): void
+    {
+        self::assertSame(['routine', 'expedited'], Priority::assignableOnApprovalValues());
+        self::assertContains('routine', Priority::clinicalValues());
+        self::assertNotContains('urgent_direct_coordination', Priority::assignableOnApprovalValues());
+    }
+
+    public function testUrgentDirectCoordinationLeavesTheOrdinaryQueue(): void
+    {
+        self::assertTrue(Priority::UrgentDirectCoordination->leavesTheOrdinaryQueue());
+        self::assertFalse(Priority::Expedited->leavesTheOrdinaryQueue());
+        self::assertFalse(Priority::Routine->leavesTheOrdinaryQueue());
+    }
+
+    /**
      * A row written before the vocabulary changed is still shown as something.
      * Hiding it would leave a screen that describes a referral less completely
      * than the database does.

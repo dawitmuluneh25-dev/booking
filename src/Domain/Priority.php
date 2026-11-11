@@ -60,6 +60,47 @@ enum Priority: string
         };
     }
 
+    /**
+     * Whether assigning this category removes the case from the ordinary queue.
+     *
+     * §13.1 states the workflow effect of urgent direct coordination as "direct
+     * contact, human acknowledgement and escalation events required", and its whole
+     * purpose as "rather than relying on the ordinary queue". So a referral cannot
+     * be released into elective scheduling while carrying it: the clinician has
+     * said the queue is the wrong route. Where a case does need this category, the
+     * decision that records it is a redirect to the receiving team, which is the
+     * one elective outcome that does not promise a booking.
+     */
+    public function leavesTheOrdinaryQueue(): bool
+    {
+        return $this === self::UrgentDirectCoordination;
+    }
+
+    /**
+     * The categories an approval may carry.
+     *
+     * Approval is what releases a referral into the elective queue, so only the
+     * categories that describe work in that queue are admissible. This is the
+     * approved model read one way round, not a new rule: the model has no
+     * "urgent direct coordination" approval, because that category exists to say
+     * an ordinary appointment is not the right next step.
+     *
+     * @return list<self>
+     */
+    public static function assignableOnApproval(): array
+    {
+        return array_values(array_filter(
+            self::cases(),
+            static fn (self $case): bool => !$case->leavesTheOrdinaryQueue(),
+        ));
+    }
+
+    /** @return list<string> */
+    public static function assignableOnApprovalValues(): array
+    {
+        return array_map(static fn (self $case): string => $case->value, self::assignableOnApproval());
+    }
+
     /** @return list<self> */
     public static function requestable(): array
     {

@@ -9,6 +9,7 @@ use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionRecord;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
+use App\Domain\ReferralNotFoundException;
 use App\Domain\ReferralRepository;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
@@ -35,7 +36,7 @@ final class PdoReferralRepository implements ReferralRepository
 {
     private const COLUMNS = 'id, reference, status, version, patient_name, patient_phone, patient_dob,
         guardian_name, guardian_phone, guardian_relationship, procedure_code, requested_urgency,
-        clinical_summary, target_site, referring_physician_name, referring_facility,
+        clinical_priority, clinical_summary, target_site, referring_physician_name, referring_facility,
         referring_physician_phone, referring_physician_profile_id, submitted_by_user_id,
         submitted_on_behalf_of, created_at';
 
@@ -275,19 +276,20 @@ final class PdoReferralRepository implements ReferralRepository
             function () use ($decision): ClinicalDecision {
                 $insert = $this->pdo->prepare(
                     'INSERT INTO clinical_decisions
-                        (referral_id, decision_type, rationale, approved_technique, modality,
-                         sedation, estimated_duration_minutes, preprocedure_conditions,
-                         redirect_destination, information_requested, decided_by_user_id,
-                         decided_at, supersedes_decision_id)
+                        (referral_id, decision_type, rationale, clinical_priority,
+                         approved_technique, modality, sedation, estimated_duration_minutes,
+                         preprocedure_conditions, redirect_destination, information_requested,
+                         decided_by_user_id, decided_at, supersedes_decision_id)
                      VALUES
-                        (:referral_id, :decision_type, :rationale, :technique, :modality,
-                         :sedation, :duration, :preprocedure, :redirect, :information,
-                         :decided_by, :decided_at, :supersedes)'
+                        (:referral_id, :decision_type, :rationale, :clinical_priority,
+                         :technique, :modality, :sedation, :duration, :preprocedure, :redirect,
+                         :information, :decided_by, :decided_at, :supersedes)'
                 );
                 $insert->execute([
                     'referral_id' => $decision->referralId,
                     'decision_type' => $decision->type->value,
                     'rationale' => $decision->rationale,
+                    'clinical_priority' => $decision->clinicalPriority,
                     'technique' => $decision->technique,
                     'modality' => $decision->modality,
                     'sedation' => $decision->sedation,
@@ -303,6 +305,30 @@ final class PdoReferralRepository implements ReferralRepository
                 return $decision->withIdentity((int) $this->pdo->lastInsertId());
             },
         );
+    }
+
+    public function assignClinicalPriority(int $referralId, string $priority): void
+    {
+        // No version guard: this is not a state transition and it does not race a
+        // reader into a decision. Two clinicians assigning at once is resolved by
+        // the decision rows, which both remain, and the last assignment stands.
+        $update = $this->pdo->prepare(
+            'UPDATE referrals SET clinical_priority = :priority, updated_at = UTC_TIMESTAMP()
+              WHERE id = :id'
+        );
+        $update->execute(['priority' => $priority, 'id' => $referralId]);
+
+        if ($update->rowCount() === 0) {
+            // Zero affected rows means either "no such referral" or "the value was
+            // already this one", and MySQL reports both the same way. Ask rather
+            // than assume, so re-assigning the same category is not an error.
+            $exists = $this->pdo->prepare('SELECT 1 FROM referrals WHERE id = :id');
+            $exists->execute(['id' => $referralId]);
+
+            if ($exists->fetchColumn() === false) {
+                throw new ReferralNotFoundException('#' . $referralId);
+            }
+        }
     }
 
     /** @return list<Referral> */

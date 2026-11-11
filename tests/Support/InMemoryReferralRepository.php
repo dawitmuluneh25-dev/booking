@@ -9,6 +9,7 @@ use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionRecord;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
+use App\Domain\ReferralNotFoundException;
 use App\Domain\ReferralRepository;
 use App\Domain\ReferralStatus;
 use App\Domain\ReferralTransitionException;
@@ -239,6 +240,17 @@ final class InMemoryReferralRepository implements ReferralRepository
         );
 
         return $records;
+    }
+
+    public function assignClinicalPriority(int $referralId, string $priority): void
+    {
+        $stored = $this->referrals[$referralId] ?? null;
+
+        if ($stored === null) {
+            throw new ReferralNotFoundException('#' . $referralId);
+        }
+
+        $this->referrals[$referralId] = $stored->withClinicalPriority($priority);
     }
 
     public function recordDecision(ClinicalDecision $decision): ClinicalDecision

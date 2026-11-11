@@ -66,6 +66,7 @@ final class RecordClinicalDecision
 
         $data = [
             'rationale' => $this->text($input, 'rationale'),
+            'priority' => $this->text($input, 'clinical_priority'),
             'technique' => $this->text($input, 'approved_technique'),
             'modality' => $this->text($input, 'modality'),
             'sedation' => $this->text($input, 'sedation'),
@@ -98,6 +99,12 @@ final class RecordClinicalDecision
             $errors['information'] = 'State what information is needed.';
         }
 
+        [$priority, $priorityError] = $this->priority($data['priority'], $type);
+
+        if ($priorityError !== null) {
+            $errors['clinical_priority'] = $priorityError;
+        }
+
         if ($errors !== []) {
             throw new ValidationException($errors);
         }
@@ -120,20 +127,96 @@ final class RecordClinicalDecision
             decidedByUserId: $actor->userId,
             decidedAtUtc: $decidedAtUtc,
             supersedesId: $current?->id,
+            clinicalPriority: $priority?->value,
         );
 
         return $this->transaction->run(
-            function () use ($referral, $decision, $target, $actor, $data, $decidedAtUtc): Referral {
+            function () use ($referral, $decision, $priority, $target, $actor, $data, $decidedAtUtc): Referral {
                 $this->repository->recordDecision($decision);
+
+                // The standing value and the decision that assigned it are written
+                // in one unit of work: a referral released for scheduling with no
+                // priority, or a priority with no decision behind it, would each be
+                // a state the approved model does not describe.
+                if ($priority !== null) {
+                    $this->repository->assignClinicalPriority($referral->id, $priority->value);
+                }
 
                 // The rationale becomes the history reason where the transition
                 // demands one, so the audit trail carries the clinician's words and
                 // not just the fact of the change.
                 $reason = $referral->status->requiresReason($target) ? $data['rationale'] : null;
 
-                return $this->repository->transition($referral, $target, $actor, $reason, $decidedAtUtc);
+                $moved = $this->repository->transition($referral, $target, $actor, $reason, $decidedAtUtc);
+
+                // `transition()` returns the entity it was given, moved. It was read
+                // before the assignment above, so attaching the category here keeps
+                // the returned referral identical whichever repository is behind
+                // this command — the caller never has to reload to see what it wrote.
+                return $priority === null ? $moved : $moved->withClinicalPriority($priority->value);
             },
         );
+    }
+
+    /**
+     * Resolve the clinical priority this decision assigns, or say why it cannot.
+     *
+     * §13.1 gives each category a workflow effect, and the effects do not all fit
+     * every outcome:
+     *
+     * - approval releases the referral into the elective queue, so it states a
+     *   category that describes work in that queue — routine or expedited;
+     * - a redirect promises no booking and does not put the referral back in a
+     *   queue, which is what makes it the honest home for "this needs direct
+     *   coordination with the receiving team instead";
+     * - declining, deferring and asking for information release nothing, so there
+     *   is no queue for a priority to order and none is stored. A category chosen
+     *   on such an outcome would sit in the column and be read later as evidence
+     *   that the case was expedited.
+     *
+     * @return array{0: ?Priority, 1: ?string} the category, or the reason there is none
+     */
+    private function priority(string $value, ClinicalDecisionType $type): array
+    {
+        $priority = null;
+
+        if ($value !== '') {
+            $priority = Priority::tryFrom($value);
+
+            if ($priority === null) {
+                return [null, 'Choose one of the approved clinical categories: '
+                    . implode(', ', array_map(
+                        static fn (Priority $case): string => $case->label(),
+                        Priority::cases(),
+                    )) . '.'];
+            }
+        }
+
+        if ($type === ClinicalDecisionType::Approved) {
+            if ($priority === null) {
+                return [null, 'Assign a clinical priority. Approval releases the referral '
+                    . 'into the clinical queue, so the category is stated rather than assumed.'];
+            }
+
+            if ($priority->leavesTheOrdinaryQueue()) {
+                return [null, 'Urgent direct coordination means the ordinary queue is not '
+                    . 'the right route, so it cannot be recorded as an approval. Redirect the '
+                    . 'referral to the receiving team instead.'];
+            }
+
+            return [$priority, null];
+        }
+
+        if ($type === ClinicalDecisionType::Redirected) {
+            return [$priority, null];
+        }
+
+        if ($priority !== null) {
+            return [null, 'Clinical priority is recorded when a referral is approved for '
+                . 'scheduling or redirected. This outcome releases nothing into a queue.'];
+        }
+
+        return [null, null];
     }
 
     /** @param array<string, mixed> $input */

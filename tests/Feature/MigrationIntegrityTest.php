@@ -540,6 +540,103 @@ final class MigrationIntegrityTest extends TestCase
     }
 
     /**
+     * 0025: the category a decision assigned is stored with the decision, and the
+     * column accepts exactly the three approved categories.
+     *
+     * NULL stays legal because every row written before the model existed is NULL,
+     * and back-filling a category would have invented a clinical judgement.
+     */
+    public function testDecisionPriorityColumnAcceptsExactlyTheApprovedVocabulary(): void
+    {
+        $this->insertUser('decision-priority-probe@example.test', 'radiologist');
+        $userId = $this->userId('decision-priority-probe@example.test');
+
+        self::pdo()->exec(
+            "INSERT INTO referrals (reference, status, patient_name, patient_phone,
+                procedure_code, submitted_by_user_id, submitted_on_behalf_of,
+                created_at, updated_at)
+             VALUES ('REF-DECISION-PRIORITY', 'clinical_review', 'Probe Patient', '+251911000005',
+                'image_guided_fnac', " . $userId . ", 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
+        $referralId = (int) self::pdo()->lastInsertId();
+
+        self::pdo()->exec(
+            'INSERT INTO clinical_decisions (referral_id, decision_type, rationale,
+                decided_by_user_id, decided_at)
+             VALUES (' . $referralId . ", 'approved', 'Probe decision.', "
+            . $userId . ', UTC_TIMESTAMP())'
+        );
+        $decisionId = (int) self::pdo()->lastInsertId();
+
+        $stored = $this->query(
+            'SELECT clinical_priority AS chosen FROM clinical_decisions WHERE id = :id',
+            ['id' => (string) $decisionId],
+        );
+
+        self::assertArrayHasKey(0, $stored);
+        self::assertNull(
+            $stored[0]['chosen'],
+            'A decision written without a priority must store NULL, not a category.'
+        );
+
+        foreach (Priority::clinicalValues() as $value) {
+            self::assertTrue(
+                $this->acceptsValue('clinical_decisions', 'clinical_priority', $decisionId, $value),
+                'The model names ' . $value . ' but ck_decisions_priority refuses it.'
+            );
+        }
+
+        foreach (['priority', 'urgent', 'emergency', ''] as $refused) {
+            self::assertFalse(
+                $this->acceptsValue('clinical_decisions', 'clinical_priority', $decisionId, $refused),
+                'A decision stored the retired or unknown priority ' . $refused . '.'
+            );
+        }
+    }
+
+    /**
+     * 0026: the approved clinical codes are recorded against the catalogue, so the
+     * mapping between the document and the stored identifiers is one row in one
+     * table rather than a markdown table nothing can test.
+     */
+    public function testApprovedProcedureCodesAreRecordedOnceAgainstTheCatalogue(): void
+    {
+        $rows = $this->query(
+            'SELECT code, clinical_code, active FROM procedures
+              WHERE clinical_code IS NOT NULL
+              ORDER BY clinical_code'
+        );
+
+        $mapped = [];
+        foreach ($rows as $row) {
+            $mapped[self::text($row['clinical_code'])] = [
+                'catalogue_code' => self::text($row['code']),
+                'active' => self::number($row['active']),
+            ];
+        }
+
+        self::assertSame(
+            ['ABSCESS_DRAINAGE', 'CORE_BIOPSY', 'FNAC', 'HYDROSTATIC_INTUSSUSCEPTION'],
+            array_keys($mapped),
+        );
+
+        foreach ($mapped as $clinical => $entry) {
+            // Each approved identity belongs to a distinct catalogue code...
+            self::assertNotSame('', $entry['catalogue_code'], $clinical . ' maps to no catalogue row.');
+            // ...and to a service the clinic still offers.
+            self::assertSame(1, $entry['active'], $clinical . ' is mapped to an inactive procedure.');
+        }
+
+        // The retired combined code stood for FNAC and core biopsy at once, which is
+        // why it was retired. It must claim neither identity.
+        self::assertSame(
+            0,
+            $this->countWhere('procedures', "code = 'image_guided_biopsy' AND clinical_code IS NOT NULL"),
+            'The retired combined procedure claims an approved clinical code.'
+        );
+    }
+
+    /**
      * 0016: the document vocabulary, the opaque reference and the quarantine
      * default are enforced by the database, not by the repository that happens to
      * write them.
