@@ -40,6 +40,7 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-015](#adr-015) | Patients hold accounts and sign in during release 1 | **Superseded** by ADR-016 | Product owner | 2026-11-10 | — |
 | [ADR-016](#adr-016) | No patient sign-in during release 1 | **Accepted** | Product owner | 2026-11-11 | ADR-015 |
 | [ADR-017](#adr-017) | Yegara for human mail, Brevo for transactional email | **Accepted**, activation gated | Product owner | 2026-11-11 | — |
+| [ADR-018](#adr-018) | The clinical particulars are approved; production is not | **Accepted**, implementation in progress | Clinical Lead (A-01–A-11), clinical teams and laboratory leads (A-12–A-15), Operations and Legal/Data Protection (A-16–A-19) | 2026-11-12 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -401,6 +402,70 @@ evidence that a clinician saw anything.
 the section 8 evidence: mailbox verification, organizational Brevo onboarding, host connectivity and
 staging delivery, DNS and mail-flow checks, and release evidence. **Owner.** Product owner.
 **Date.** 2026-11-11. **Supersedes.** —
+
+---
+
+## ADR-018
+
+**Decision.** The Release 1 clinical particulars are approved. HR-IR-CLIN-R1-001 (v1.0) defines the
+clinical data, review, priority, readiness, consent, specimen and patient-content model for four
+procedures; HR-IR-R1-APP-001 records that A-01 to A-19 are **approved** and that A-20 —
+engineering implementation — is **authorized**. Production release is **not** authorized, and
+neither is production database cutover.
+
+The four procedures keep separate workflows: image-guided FNAC, image-guided core needle biopsy,
+image-guided abscess drainage, and hydrostatic intussusception reduction as urgent hospital
+coordination rather than an elective booking. Limited unauthenticated intake remains the only public
+route: no patient accounts, no public status lookup, no public self-service booking, no institution
+tenancy. Clinical approval precedes scheduling, and a requested priority is never a clinical one.
+
+**Context.** Until this decision every clinical detail in the product was either a preserved
+baseline or a gap engineering had to leave visibly empty. `procedures.required_fields` is NULL by
+design and the schema refuses a field set that names no approver; `referral_checklists` did not
+exist; the urgent board has no configured escalation because no interval had been approved. That
+honest emptiness was the correct state while the decision was open, but it also meant the product
+could not become clinically complete by finishing code. The approval converts those empty slots into
+specified content, and it is the first time the clinical model is fixed enough to implement against.
+
+**How it is enforced, and why there.**
+
+- The approved priority model is a domain enum, not a form option list. `Priority` holds three
+  categories and splits them into requestable (routine, expedited) and clinical (adding urgent
+  direct coordination). The split lives in the enum because a form is not the only caller and a
+  hand-crafted POST is not a different kind of user.
+- The two `referrals` columns state the same rule as the enum in two halves: `requested_urgency`
+  accepts the requestable half only, `clinical_priority` accepts all three. A public intake cannot
+  produce "urgent direct coordination" by posting the value the clinical screen writes.
+- Retired vocabulary is migrated, not abandoned. `priority` and `urgent` had exactly one meaning
+  each in the approved model, so migration 0024 converts them; the columns then refuse them, which
+  is what stops the old words from reappearing in a report that is compared against the model.
+- A category that claims urgency carries a clinical rationale. The requirement binds the clinical
+  decision record, not the request: a referrer's words are not a justification, and the request
+  object has no field that could pretend otherwise.
+- A completed checklist is evidence that checks were recorded, never an authorization to proceed;
+  nothing in the checklist path writes a referral status.
+- The role matrix is enforced where it already was — `Role::permissions()` grants no clinical
+  capability to `Admin`, and `ReferralStatus::allowedActors()` refuses an administrative clinical
+  transition. The approval confirms that model rather than replacing it.
+- Unresolved operational and legal items stay unresolved. The document names 25 local-policy and
+  Operations dependencies (LP-001 to LP-025); none is satisfied by having a field for it.
+
+**What this does not do.** It does not approve a clinical threshold, a fasting duration, a
+medication interruption schedule, a sedation protocol, an observation period or a discharge
+criterion — every one of those remains local policy, and the checklist deliberately contains none of
+them. It does not set an acknowledgement interval in minutes: LP-020 is open, so escalation timing
+still has no default and the escalation panel still reads "no policy configured". It does not confirm
+staffing, equipment, room, modality or laboratory availability (LP-001, LP-002, LP-019); a procedure
+is not bookable on the strength of a catalogue row. It does not authenticate the individual
+signatories — the approval record states that it records decisions communicated by the project
+decision-maker and does not replace institutional records. It does not authorize production release,
+and the Section 24 acceptance scenarios (TS-001 to TS-022) remain mandatory and unexecuted.
+
+**Status.** Accepted 2026-11-12 as recorded in HR-IR-R1-APP-001; implementation in progress, with
+the remaining mapping in `docs/clinical/clinical-particulars-traceability.md`. **Owner.** Clinical
+Lead for A-01 to A-11, clinical teams and laboratory leads for A-12 to A-15, Operations and
+Legal/Data Protection for A-16 to A-19, Product Owner and Engineering Lead for A-20. **Date.**
+2026-11-12. **Supersedes.** —
 
 ---
 
