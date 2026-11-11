@@ -39,6 +39,7 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-014](#adr-014) | Institution is descriptive metadata, not a boundary | **Accepted** | Product owner | 2026-11-10 | — |
 | [ADR-015](#adr-015) | Patients hold accounts and sign in during release 1 | **Superseded** by ADR-016 | Product owner | 2026-11-10 | — |
 | [ADR-016](#adr-016) | No patient sign-in during release 1 | **Accepted** | Product owner | 2026-11-11 | ADR-015 |
+| [ADR-017](#adr-017) | Yegara for human mail, Brevo for transactional email | **Accepted**, activation gated | Product owner | 2026-11-11 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -354,6 +355,52 @@ the identity-linking design ADR-015 set out. Nothing here forecloses it; it fore
 accident.
 
 **Status.** Accepted. **Owner.** Product owner. **Date.** 2026-11-11. **Supersedes.** ADR-015.
+
+---
+
+## ADR-017
+
+**Decision.** Two email providers, each for the job it is good at. Yegara keeps the human inbox
+(`booking@hakimerad.com`). Application-generated notifications are sent through Brevo over its
+HTTPS API from `notifications@hakimerad.com`, behind a provider adapter. The Operations Lead is the
+credential custodian; Engineering receives a scoped service key, never the account password. The
+full decision record is O-3-DEC-01.
+
+**Context.** One shared-hosting mailbox cannot serve both roles. Human correspondence needs an
+inbox somebody reads; transactional delivery needs bounded retries, a record of what the provider
+accepted, and a way to reconcile a message against a later delivery report — none of which a shared
+mailbox offers, and its sending limits are a hard ceiling rather than a policy. The split also keeps
+a deliverability problem from becoming an email outage for staff.
+
+**How it is enforced, and why there.**
+
+- The provider is a `NotificationTransport`, so no workflow knows Brevo exists. A different
+  provider is an adapter, not a rewrite — and O-3 forbids substituting one without a new decision.
+- The credential is read from the environment, so it is not in the document root, not in Git and
+  not in a template anybody can fetch. An empty key fails per message; it never silently succeeds.
+- Production sending is off unless `NOTIFY_PRODUCTION_APPROVED` is set. An unset flag means
+  unapproved, which is the safe reading of a missing decision. The unactivated transport refuses
+  per message rather than falling back to the log driver, because a log driver marks the outbox
+  *sent* and would leave the queue looking healthy while nothing left the building.
+- The email subject carries the notification name and the reference only. A subject is the one line
+  that survives forwarding and lock-screen previews, so it must not say why anybody is attending.
+- On rejection only the provider's machine code is kept, never its message: Brevo's error text can
+  quote the recipient address back, and the outbox persists failures into a column operators read.
+- A 4xx is permanent and dead-letters at once; a 5xx or network error retries on the existing
+  ladder. Retrying a rejected payload five times delays nothing and hides the cause.
+- `notification_outbox.provider_message_id` records what the provider accepted. Acceptance is not
+  delivery and delivery is not acknowledgement; the identifier is only what makes asking possible.
+
+**What this does not do.** It does not activate production email. It does not receive delivery or
+bounce webhooks — the column can hold that data, but the endpoint needs a provider account and a
+staging environment to build against honestly. It does not fall back to personal Gmail, Microsoft
+365 SMTP or Yegara SMTP under any condition; email is not a clinical channel, and an email is never
+evidence that a clinician saw anything.
+
+**Status.** Accepted by the Product owner on 2026-11-11 (O-3-DEC-01), with activation conditional on
+the section 8 evidence: mailbox verification, organizational Brevo onboarding, host connectivity and
+staging delivery, DNS and mail-flow checks, and release evidence. **Owner.** Product owner.
+**Date.** 2026-11-11. **Supersedes.** —
 
 ---
 
