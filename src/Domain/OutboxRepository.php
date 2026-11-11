@@ -30,7 +30,12 @@ interface OutboxRepository
      */
     public function claim(int $limit, string $staleBeforeUtc): array;
 
-    public function markSent(int $id): void;
+    /**
+     * Record acceptance. The provider identifier, when the provider issues one,
+     * is what lets a later delivery report or bounce be matched to this message
+     * rather than guessed at from recipient and time.
+     */
+    public function markSent(int $id, ?string $providerMessageId = null): void;
 
     public function markFailed(int $id, string $error, string $availableAtUtc): void;
 

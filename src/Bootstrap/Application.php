@@ -61,6 +61,7 @@ use App\Domain\TriageReferral;
 use App\Domain\UrgentCaseRepository;
 use App\Domain\RetentionService;
 use App\Domain\UserRepository;
+use App\Notifications\BrevoTransport;
 use App\Notifications\CurlHttpClient;
 use App\Notifications\HttpTransport;
 use App\Notifications\LogTransport;
@@ -542,6 +543,24 @@ final class Application
                 $this->config->notificationToken(),
                 $this->config->notificationTimeout(),
                 new DateTimeZone($this->config->timezone()),
+            );
+        }
+
+        if ($this->config->notificationDriver() === 'brevo') {
+            // Production sending stays off until O-3 section 8 evidence is
+            // accepted. Note what an unactivated transport does: it fails
+            // loudly per message rather than falling back to the log driver,
+            // because a log driver marks the outbox "sent" and would make the
+            // queue look healthy while nothing left the building.
+            return new BrevoTransport(
+                new CurlHttpClient(),
+                $this->config->brevoApiKey(),
+                $this->config->brevoSender(),
+                $this->config->brevoSenderName(),
+                BrevoTransport::ENDPOINT,
+                10,
+                new DateTimeZone($this->config->timezone()),
+                !$this->config->isProduction() || $this->config->mailActivationApproved(),
             );
         }
 

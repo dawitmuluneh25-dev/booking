@@ -34,7 +34,7 @@ final class HttpTransport implements NotificationTransport
     ) {
     }
 
-    public function send(OutboundMessage $message): void
+    public function send(OutboundMessage $message): ?string
     {
         if ($this->url === '') {
             throw new RuntimeException('NOTIFY_HTTP_URL is not configured.');
@@ -62,10 +62,14 @@ final class HttpTransport implements NotificationTransport
             $headers['Authorization'] = 'Bearer ' . $this->token;
         }
 
-        $status = $this->client->post($this->url, $payload, $headers, $this->timeoutSeconds);
+        $response = $this->client->post($this->url, $payload, $headers, $this->timeoutSeconds);
 
-        if ($status < 200 || $status >= 300) {
-            throw new RuntimeException('Notification gateway returned HTTP ' . $status . '.');
+        if (!$response->isSuccess()) {
+            throw new RuntimeException('Notification gateway returned HTTP ' . $response->status . '.');
         }
+
+        // The bridge is the provider from this application's point of view, so
+        // whatever identifier it returns is what can be reconciled later.
+        return $response->messageId();
     }
 }

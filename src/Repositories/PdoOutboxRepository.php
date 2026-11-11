@@ -95,14 +95,15 @@ final class PdoOutboxRepository implements OutboxRepository
         }
     }
 
-    public function markSent(int $id): void
+    public function markSent(int $id, ?string $providerMessageId = null): void
     {
         $statement = $this->pdo->prepare(
             "UPDATE notification_outbox
-             SET status = 'sent', sent_at = UTC_TIMESTAMP(), last_error = NULL, updated_at = UTC_TIMESTAMP()
+             SET status = 'sent', sent_at = UTC_TIMESTAMP(), last_error = NULL,
+                 provider_message_id = :provider_message_id, updated_at = UTC_TIMESTAMP()
              WHERE id = :id"
         );
-        $statement->execute(['id' => $id]);
+        $statement->execute(['id' => $id, 'provider_message_id' => $providerMessageId]);
     }
 
     public function markFailed(int $id, string $error, string $availableAtUtc): void

@@ -154,12 +154,48 @@ final class Config
         return max(1, min($configured, 10080));
     }
 
-    /** `log` (development) or `http` (a gateway bridge you operate). */
+    /** `log` (development), `http` (a gateway bridge you operate) or `brevo` (transactional email, O-3). */
     public function notificationDriver(): string
     {
         $driver = strtolower((string) Env::get('NOTIFY_DRIVER', 'log'));
 
-        return in_array($driver, ['log', 'http'], true) ? $driver : 'log';
+        return in_array($driver, ['log', 'http', 'brevo'], true) ? $driver : 'log';
+    }
+
+    /**
+     * Brevo API key. Read from the environment so the secret never lives in the
+     * document root, in Git, or in a template somebody can fetch.
+     */
+    public function brevoApiKey(): string
+    {
+        return trim((string) Env::get('NOTIFY_BREVO_API_KEY', ''));
+    }
+
+    /** The verified sender address, e.g. notifications@hakimerad.com. */
+    public function brevoSender(): string
+    {
+        return trim((string) Env::get('NOTIFY_BREVO_SENDER', ''));
+    }
+
+    public function brevoSenderName(): string
+    {
+        $name = trim((string) Env::get('NOTIFY_BREVO_SENDER_NAME', 'HakimeRAD'));
+
+        return $name === '' ? 'HakimeRAD' : $name;
+    }
+
+    /**
+     * Whether transactional email may actually send from a production
+     * environment.
+     *
+     * O-3-DEC-01 authorizes the integration but not the activation: production
+     * sending stays off until the mailbox, DNS, credential and staging evidence
+     * in section 8 has been reviewed. An unset flag means unapproved, which is
+     * the safe reading of a missing decision.
+     */
+    public function mailActivationApproved(): bool
+    {
+        return Env::bool('NOTIFY_PRODUCTION_APPROVED', false);
     }
 
     public function notificationUrl(): string

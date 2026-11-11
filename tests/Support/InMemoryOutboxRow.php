@@ -18,6 +18,7 @@ final class InMemoryOutboxRow
         public OutboxStatus $status = OutboxStatus::Pending,
         public int $attempts = 0,
         public string $availableAt = '',
+        public ?string $providerMessageId = null,
     ) {
     }
 }

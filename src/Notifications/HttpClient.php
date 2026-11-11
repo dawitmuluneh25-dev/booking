@@ -13,7 +13,8 @@ interface HttpClient
     /**
      * @param array<string, string> $headers
      *
-     * @return int HTTP status code
+     * @return HttpResponse status and body; the body carries a provider
+     *                      identifier when the provider returns one
      */
-    public function post(string $url, string $body, array $headers, int $timeoutSeconds): int;
+    public function post(string $url, string $body, array $headers, int $timeoutSeconds): HttpResponse;
 }

@@ -85,6 +85,58 @@ final class OutboxDispatcherTest extends TestCase
         self::assertSame(2, $result['sent']);
     }
 
+    /**
+     * O-3 requires that the provider's identifier is kept. Acceptance is not
+     * delivery, but without the identifier there is no way to ask the provider
+     * what became of a message — recipient and time is a guess that fails the
+     * moment somebody is sent two notifications in an afternoon.
+     */
+    public function testItKeepsTheProviderMessageIdOnAcceptance(): void
+    {
+        $outbox = new InMemoryOutboxRepository();
+        $id = $outbox->enqueue($this->message());
+
+        $transport = new RecordingTransport();
+        $transport->providerMessageId = '<202611111200.abc@brevo>';
+
+        (new OutboxDispatcher($outbox, $transport))->dispatch();
+
+        self::assertSame('<202611111200.abc@brevo>', $outbox->providerMessageIdOf($id));
+    }
+
+    public function testATransportWithoutAnIdentifierLeavesItEmpty(): void
+    {
+        $outbox = new InMemoryOutboxRepository();
+        $id = $outbox->enqueue($this->message());
+
+        (new OutboxDispatcher($outbox, new RecordingTransport()))->dispatch();
+
+        self::assertNull($outbox->providerMessageIdOf($id));
+        self::assertSame(OutboxStatus::Sent, $outbox->statusOf($id));
+    }
+
+    /**
+     * A rejected payload is not a transient outage. Retrying it five times over an
+     * hour and a half delays nothing, hides the real problem behind a rising attempt
+     * count, and dead-letters anyway — so it is dead on the first refusal.
+     */
+    public function testAPermanentFailureIsDeadImmediatelyWithoutTheRetryLadder(): void
+    {
+        $outbox = new InMemoryOutboxRepository();
+        $id = $outbox->enqueue($this->message());
+
+        $transport = new RecordingTransport();
+        $transport->permanentFailuresRemaining = 1;
+
+        $result = (new OutboxDispatcher($outbox, $transport))->dispatch();
+
+        self::assertSame(1, $result['dead']);
+        self::assertSame(0, $result['retrying']);
+        self::assertSame(0, $result['sent']);
+        self::assertSame(OutboxStatus::Dead, $outbox->statusOf($id));
+        self::assertCount(0, $transport->sent);
+    }
+
     public function testBackoffGrowsWithAttempts(): void
     {
         self::assertSame(1, OutboxDispatcher::backoffMinutes(1));

@@ -65,10 +65,11 @@ final class InMemoryOutboxRepository implements OutboxRepository
         return $claimed;
     }
 
-    public function markSent(int $id): void
+    public function markSent(int $id, ?string $providerMessageId = null): void
     {
         if (isset($this->rows[$id])) {
             $this->rows[$id]->status = OutboxStatus::Sent;
+            $this->rows[$id]->providerMessageId = $providerMessageId;
         }
     }
 
@@ -119,5 +120,11 @@ final class InMemoryOutboxRepository implements OutboxRepository
     public function forceAttempts(int $id, int $attempts): void
     {
         $this->rows[$id]->attempts = $attempts;
+    }
+
+    /** The identifier the transport returned, as the real repository persists it. */
+    public function providerMessageIdOf(int $id): ?string
+    {
+        return $this->rows[$id]->providerMessageId;
     }
 }

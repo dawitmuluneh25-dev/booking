@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class CurlHttpClient implements HttpClient
 {
-    public function post(string $url, string $body, array $headers, int $timeoutSeconds): int
+    public function post(string $url, string $body, array $headers, int $timeoutSeconds): HttpResponse
     {
         if (!function_exists('curl_init')) {
             throw new RuntimeException('ext-curl is required for the HTTP notification transport.');
@@ -45,6 +45,9 @@ final class CurlHttpClient implements HttpClient
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         curl_close($handle);
 
-        return $status;
+        // The body is returned rather than discarded: a provider that answers with
+        // a message identifier is the only way to reconcile a send against a later
+        // delivery report.
+        return new HttpResponse($status, is_string($result) ? $result : '');
     }
 }

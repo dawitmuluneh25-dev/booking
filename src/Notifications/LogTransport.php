@@ -26,7 +26,7 @@ final class LogTransport implements NotificationTransport
     ) {
     }
 
-    public function send(OutboundMessage $message): void
+    public function send(OutboundMessage $message): ?string
     {
         $directory = dirname($this->path);
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
@@ -50,6 +50,10 @@ final class LogTransport implements NotificationTransport
         if (file_put_contents($this->path, $line . PHP_EOL, FILE_APPEND | LOCK_EX) === false) {
             throw new RuntimeException('Cannot write to the notification log.');
         }
+
+        // Nothing was accepted by a provider, so there is no identifier to keep.
+        // A local log is not evidence that a message reached anybody.
+        return null;
     }
 
     private static function mask(string $recipient): string

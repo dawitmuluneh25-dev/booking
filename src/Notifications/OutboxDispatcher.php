@@ -11,7 +11,14 @@ use Throwable;
  * CLI worker. Never invoked from a web request.
  *
  * Retries use a fixed backoff and give up after MAX_ATTEMPTS so a permanently
- * broken recipient or provider cannot loop forever.
+ * broken recipient or provider cannot loop forever. A failure the transport
+ * classifies as permanent — a rejected payload, a missing credential, a channel
+ * it cannot deliver — skips the ladder entirely: waiting an hour and a half to
+ * repeat a mistake is not resilience.
+ *
+ * A successful send records the provider's identifier when there is one. That
+ * identifier is what makes acceptance distinguishable from delivery, and
+ * delivery from somebody actually reading the message.
  */
 final class OutboxDispatcher
 {
@@ -36,9 +43,15 @@ final class OutboxDispatcher
 
         foreach ($messages as $message) {
             try {
-                $this->transport->send($message);
-                $this->outbox->markSent($message->id);
+                $providerMessageId = $this->transport->send($message);
+                $this->outbox->markSent($message->id, $providerMessageId);
                 $result['sent']++;
+            } catch (PermanentNotificationFailure $exception) {
+                $this->outbox->markDead(
+                    $message->id,
+                    mb_substr($exception->getMessage(), 0, 500),
+                );
+                $result['dead']++;
             } catch (Throwable $exception) {
                 $error = mb_substr($exception->getMessage(), 0, 500);
 
