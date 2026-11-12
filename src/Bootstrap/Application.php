@@ -18,6 +18,7 @@ use App\Domain\RetentionPolicy;
 use App\Domain\IdempotencyStore;
 use App\Domain\AcknowledgeUrgentCase;
 use App\Domain\AppointmentRepository;
+use App\Domain\AdvanceUrgentCoordination;
 use App\Domain\ApproveForScheduling;
 use App\Domain\BookAppointment;
 use App\Domain\CancelAppointment;
@@ -177,6 +178,8 @@ final class Application
     private ?CloseUrgentCase $closeUrgent = null;
 
     private ?RecordUrgentDecision $recordUrgentDecision = null;
+
+    private ?AdvanceUrgentCoordination $advanceCoordination = null;
 
     private ?Kernel $kernel = null;
 
@@ -511,6 +514,11 @@ final class Application
     public function closeUrgentCase(): CloseUrgentCase
     {
         return $this->closeUrgent ??= new CloseUrgentCase($this->urgentCases());
+    }
+
+    public function advanceUrgentCoordination(): AdvanceUrgentCoordination
+    {
+        return $this->advanceCoordination ??= new AdvanceUrgentCoordination($this->urgentCases());
     }
 
     public function recordUrgentDecision(): RecordUrgentDecision

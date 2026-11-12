@@ -399,6 +399,7 @@ return static function (Application $app): void {
         $app->escalateUrgentCase(),
         $app->closeUrgentCase(),
         $app->recordUrgentDecision(),
+        $app->advanceUrgentCoordination(),
         $app->config()->timezone(),
     );
 
@@ -451,6 +452,13 @@ return static function (Application $app): void {
     $router->post(
         '/urgent-cases/{reference}/decision',
         static fn (Request $request, array $params) => $urgent->decide($request, $params),
+        RouteAccess::permission(Permission::UrgentCoordinate),
+    );
+    // The operational axis: whether the receiving team is engaged, and whether
+    // anything is left to coordinate. Neither is inferred from closure.
+    $router->post(
+        '/urgent-cases/{reference}/coordination',
+        static fn (Request $request, array $params) => $urgent->coordinate($request, $params),
         RouteAccess::permission(Permission::UrgentCoordinate),
     );
 

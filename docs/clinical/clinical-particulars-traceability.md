@@ -134,7 +134,7 @@ before production and none has been executed.
 | Consent as a documented dialogue | Not started | No record; A-12 approved the particulars, not a form |
 | Urgent registration, acknowledgement, contact attempts, escalation, closure | Implemented for the coordination axis | `/urgent-cases` board, `/urgent-cases/new` intake, acknowledge, contact log, escalate and close, with a six-table timeline; `CloseUrgentCase` added; `closed_at` and the coordination events named by `UrgentStatus::occurredEventType()` are now written; `urgent.acknowledge` split from `urgent.coordinate` so reception can claim a case without being able to close it; `CloseUrgentCaseTest`, `UrgentBoardPageTest`, `UrgentCaseRepositoryTest` |
 | A clinical decision on an urgent case (`INT-016`) | Implemented | `urgent_decisions` (migration 0027) carries the six controlled choices with a rationale, a decision-maker and a time; `RecordUrgentDecision` writes the decision and the move it releases in one transaction, and refuses a choice that cannot move the case from where it is; the panel offers only the choices the actor's role can record, asked of `UrgentStatus::allowedActors()`; a second decision supersedes the first without erasing it; `RecordUrgentDecisionTest` |
-| The coordination axis completing (`coordinating`, `resolved`) | Not started | Neither state has a writer, so a closed case still reads "Acknowledged" on the board. Naming the moment coordination becomes `resolved` is a workflow statement the package does not make, so it stays open rather than being inferred from closure |
+| The coordination axis completing (`coordinating`, `resolved`) | Implemented | `AdvanceUrgentCoordination` with `urgent_coordination_history` (migration 0029); the two states are explicit acts by a coordinator or radiologist, never inferred — a contact attempt is `contacting`, not `coordinating`, and closing a case does not resolve the coordination, because an Administrator may close but is not named for `Resolved`. `AdvanceUrgentCoordinationTest` |
 | Acknowledgement cannot be produced by a notification path | Implemented | Acknowledgement writes an actor and a channel; the outbox has no path to it |
 | Audit of clinical and operational actions | Partial | `audit_events` covers identity, documents and roles; checklist, milestone and urgent-board actions have nothing to audit yet |
 | Translation governance | Not started | A-19 approved the requirement; no translated content exists |
@@ -260,12 +260,10 @@ constraint on BL-D2 rather than a fork in the road:
 
 ## 6. Next slices, in dependency order
 
-1. The coordination axis finishing — `coordinating` and `resolved` (the remainder of BL-D3). The
-   decision record now releases the clinical states: a case can be reviewed, accepted, redirected,
-   declined, completed and transferred through `RecordUrgentDecision`, and closure from an accepted
-   case is reachable. What is left is that neither coordination state has a writer, so a case reads
-   "Acknowledged" even after it is closed. Naming the moment coordination is resolved is a workflow
-   statement the package does not make, which is why it was not inferred from closure.
+1. The urgent clinical surface is complete: a case can be registered, claimed, contacted, escalated,
+   decided, coordinated and closed. What the urgent pathway still lacks is everything after
+   acceptance — resource confirmation and authorised scheduling (§10.3 steps 8–9), which is BL-C3's
+   territory and needs the resource engine rather than a status.
 2. Readiness checklists, which begin by adding `TECH`, `NUR` and `LAB` with their permissions
    (BL-D2, see §4.4), then BL-C3 and BL-C7.
 3. Credential and privilege verification, so that clinical approval stops resting on a role name

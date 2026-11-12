@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Domain\Actor;
+use App\Domain\AdvanceUrgentCoordination;
 use App\Domain\AcknowledgeUrgentCase;
 use App\Domain\AuthorisationException;
 use App\Domain\CloseUrgentCase;
@@ -13,6 +14,7 @@ use App\Domain\Permission;
 use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RecordUrgentDecision;
 use App\Domain\RegisterUrgentCase;
+use App\Domain\Role;
 use App\Domain\UrgentCase;
 use App\Domain\UrgentCaseNotFoundException;
 use App\Domain\UrgentCaseRepository;
@@ -86,6 +88,7 @@ final class UrgentController
         private readonly EscalateUrgentCase $escalate,
         private readonly CloseUrgentCase $close,
         private readonly RecordUrgentDecision $decideCase,
+        private readonly AdvanceUrgentCoordination $advanceCoordination,
         private readonly string $timezone,
     ) {
     }
@@ -269,6 +272,33 @@ final class UrgentController
     }
 
     /** @param array<string, string> $params */
+    public function coordinate(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::UrgentCoordinate);
+
+        if (!Csrf::validate($request->input(Csrf::FIELD))) {
+            throw new HttpException(419);
+        }
+
+        $case = $this->find((string) ($params['reference'] ?? ''));
+
+        try {
+            $this->advanceCoordination->execute($this->actor(), $case->id, [
+                'coordination' => (string) $request->input('coordination', ''),
+                'note' => (string) $request->input('coordination_note', ''),
+            ]);
+        } catch (ValidationException $exception) {
+            return $this->detail($case, $exception->errors, null, 422);
+        } catch (UrgentTransitionException $exception) {
+            return $this->detail($case, [], $exception->getMessage(), 409);
+        }
+
+        Session::flash('notice', 'Coordination on ' . $case->reference . ' updated.');
+
+        return Response::redirect('/urgent-cases/' . rawurlencode($case->reference));
+    }
+
+    /** @param array<string, string> $params */
     public function decide(Request $request, array $params): Response
     {
         $this->gate->authorize(Permission::UrgentCoordinate);
@@ -311,6 +341,33 @@ final class UrgentController
         $user = $this->gate->authenticate();
 
         return new Actor($user->id, $user->role);
+    }
+
+    /**
+     * Every coordination state this actor may enter from here.
+     *
+     * A list rather than "the next step", because the table allows more than one:
+     * an acknowledged case may go straight to resolved when the family went
+     * elsewhere, and offering only `coordinating` would hide the truthful answer
+     * behind an extra click that says something untrue.
+     *
+     * @return list<UrgentCoordination>
+     */
+    private function coordinationMoves(UrgentCase $case, Role $role): array
+    {
+        $moves = [];
+
+        foreach ([UrgentCoordination::Coordinating, UrgentCoordination::Resolved] as $candidate) {
+            if (
+                $case->coordination->canTransitionTo($candidate)
+                && $case->coordination->canProgressTo($candidate)
+                && in_array($role, $case->coordination->allowedActors($candidate), true)
+            ) {
+                $moves[] = $candidate;
+            }
+        }
+
+        return $moves;
     }
 
     /** @return list<array{decision: UrgentDecision, decidedBy: string, decidedAt: string, superseded: bool}> */
@@ -378,6 +435,8 @@ final class UrgentController
             'mayClose' => in_array($user->role, $case->urgency->allowedActors(UrgentStatus::Closed), true)
                 && $case->urgency->canTransitionTo(UrgentStatus::Closed),
             'mayEscalate' => in_array($user->role, $case->coordination->escalationActors(), true),
+            // Only the coordination moves this actor may actually make are offered.
+            'coordinationMoves' => $this->coordinationMoves($case, $user->role),
             // Only the choices that can legally move this case are offered, so the
             // form cannot suggest a decision the command would refuse.
             'decisionChoices' => array_values(array_filter(

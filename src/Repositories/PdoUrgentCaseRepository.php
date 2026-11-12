@@ -180,8 +180,15 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
                FROM urgent_status_history hist
                JOIN users user ON user.id = hist.actor_user_id
               WHERE hist.urgent_case_id = :status_case
-             UNION ALL
-              SELECT 'decision', dsc.decided_at, user.name,
+              UNION ALL
+             SELECT 'coordination', ch.occurred_at, user.name,
+                    CONCAT(COALESCE(ch.from_status, 'new'), ' → ', ch.to_status),
+                    ch.reason
+               FROM urgent_coordination_history ch
+               JOIN users user ON user.id = ch.actor_user_id
+              WHERE ch.urgent_case_id = :coordination_case
+              UNION ALL
+             SELECT 'decision', dsc.decided_at, user.name,
                      dsc.decision_type,
                      dsc.rationale
                 FROM urgent_decisions dsc
@@ -196,6 +203,7 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
             'event_case' => $caseId,
             'status_case' => $caseId,
             'decision_case' => $caseId,
+            'coordination_case' => $caseId,
         ]);
 
         $entries = [];
@@ -634,6 +642,96 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
             // status label, which is a true statement about the move and not a guess.
             'note' => $reason !== null && trim($reason) !== '' ? $reason : $target->label(),
             'event_at' => $occurredAtUtc,
+        ]);
+    }
+
+    public function transitionCoordination(
+        UrgentCase $case,
+        UrgentCoordination $target,
+        Actor $actor,
+        ?string $reason,
+        string $occurredAtUtc,
+    ): UrgentCase {
+        if (!$case->coordination->canTransitionTo($target)) {
+            throw new UrgentTransitionException(
+                $case->coordination->value,
+                $target->value,
+                'That move is not open from where this case is.',
+                'coordination',
+            );
+        }
+
+        if (!in_array($actor->role, $case->coordination->allowedActors($target), true)) {
+            throw new UrgentTransitionException(
+                $case->coordination->value,
+                $target->value,
+                sprintf('The %s role may not perform this transition.', $actor->role->value),
+                'coordination',
+            );
+        }
+
+        return $this->transaction->run(
+            function () use ($case, $target, $actor, $reason, $occurredAtUtc): UrgentCase {
+                // Version-guarded like the clinical axis: two coordinators moving the
+                // same case at once must not both think they moved it from the state
+                // they each read.
+                $update = $this->pdo->prepare(
+                    'UPDATE urgent_cases
+                        SET coordination_status = :target, version = version + 1, updated_at = :updated_at
+                      WHERE id = :id AND version = :version AND coordination_status = :expected'
+                );
+                $update->execute([
+                    'target' => $target->value,
+                    'updated_at' => $occurredAtUtc,
+                    'id' => $case->id,
+                    'version' => $case->version,
+                    'expected' => $case->coordination->value,
+                ]);
+
+                if ($update->rowCount() === 0) {
+                    throw new UrgentTransitionException(
+                        $case->coordination->value,
+                        $target->value,
+                        'Somebody else moved this case first.',
+                        'coordination',
+                    );
+                }
+
+                $this->appendCoordinationHistory(
+                    $case->id,
+                    $case->coordination,
+                    $target,
+                    $actor,
+                    $reason,
+                    $occurredAtUtc,
+                );
+
+                return $case->withCoordination($target, $case->version + 1);
+            },
+        );
+    }
+
+    private function appendCoordinationHistory(
+        int $caseId,
+        ?UrgentCoordination $from,
+        UrgentCoordination $to,
+        Actor $actor,
+        ?string $reason,
+        string $occurredAtUtc,
+    ): void {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO urgent_coordination_history
+                (urgent_case_id, from_status, to_status, actor_user_id, actor_role, reason, occurred_at)
+             VALUES (:case_id, :from_status, :to_status, :actor_user_id, :actor_role, :reason, :occurred_at)'
+        );
+        $statement->execute([
+            'case_id' => $caseId,
+            'from_status' => $from?->value,
+            'to_status' => $to->value,
+            'actor_user_id' => $actor->userId,
+            'actor_role' => $actor->role->value,
+            'reason' => $reason,
+            'occurred_at' => $occurredAtUtc,
         ]);
     }
 

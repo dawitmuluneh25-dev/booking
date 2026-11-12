@@ -31,6 +31,25 @@ interface UrgentCaseRepository
      */
     public function recordUrgentDecision(UrgentDecision $decision): UrgentDecision;
 
+    /**
+     * Move the coordination axis, with the actor and the time recorded.
+     *
+     * Separate from `transitionUrgency()` because the two axes answer different
+     * questions and are audited in different tables. It is also not one of the
+     * evidence-bearing methods (`acknowledge`, `recordContactAttempt`, `escalate`):
+     * those write a row that *is* the evidence, and these two states have no such
+     * artefact — the move is the record.
+     *
+     * @throws UrgentTransitionException the target is not reachable from where the case is
+     */
+    public function transitionCoordination(
+        UrgentCase $case,
+        UrgentCoordination $target,
+        Actor $actor,
+        ?string $reason,
+        string $occurredAtUtc,
+    ): UrgentCase;
+
     /** The decision that nothing supersedes, or null when none was recorded. */
     public function currentUrgentDecision(int $caseId): ?UrgentDecision;
 

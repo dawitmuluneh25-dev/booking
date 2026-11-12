@@ -40,7 +40,7 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        self::assertSame(65, count($manifest));
+        self::assertSame(66, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);
@@ -111,6 +111,7 @@ final class RouteAccessManifestTest extends TestCase
         self::assertSame('urgent.coordinate', $guarded['POST /urgent-cases/{reference}/close'] ?? null);
         // Deciding is clinical/coordinating authority; seeing the case is not.
         self::assertSame('urgent.coordinate', $guarded['POST /urgent-cases/{reference}/decision'] ?? null);
+        self::assertSame('urgent.coordinate', $guarded['POST /urgent-cases/{reference}/coordination'] ?? null);
         // Intake follows who may submit a referral into the service (§10.3 step 1).
         self::assertSame('referral.submit', $guarded['GET /urgent-cases/new'] ?? null);
         self::assertSame('referral.submit', $guarded['POST /urgent-cases'] ?? null);

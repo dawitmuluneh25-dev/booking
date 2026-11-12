@@ -15,6 +15,7 @@
  * @var bool                   $mayAcknowledge
  * @var bool                   $mayEscalate
  * @var bool                   $mayClose
+ * @var list<\App\Domain\UrgentCoordination> $coordinationMoves
  * @var list<\App\Domain\UrgentDecisionType> $decisionChoices
  * @var list<array{decision: \App\Domain\UrgentDecision, decidedBy: string, decidedAt: string, superseded: bool}> $decisions
  * @var \App\Domain\User       $currentUser
@@ -221,6 +222,44 @@ $closed = $case->urgency === \App\Domain\UrgentStatus::Closed;
                 <button class="button" type="submit">Record attempt</button>
             </div>
         </form>
+    <?php endif; ?>
+
+    <h2 class="section-title">Coordination</h2>
+    <p class="muted">
+        Separate from the clinical question. &ldquo;Coordinating&rdquo; means the receiving team is
+        engaged and the procedure is being arranged; &ldquo;resolved&rdquo; means there is nothing
+        further to coordinate. Neither is inferred: a contact attempt is not an engagement, and
+        closing the case is not the same as finishing the coordination.
+    </p>
+    <?php if ($coordinationMoves === []): ?>
+        <p class="muted">
+            <?php if ($resolved): ?>
+                Nothing further to coordinate on this case.
+            <?php else: ?>
+                No coordination move is open to you here; the current state is
+                &ldquo;<?= e($case->coordination->label()) ?>&rdquo;.
+            <?php endif; ?>
+        </p>
+    <?php else: ?>
+        <?php foreach ($coordinationMoves as $move): ?>
+            <form method="post" action="/urgent-cases/<?= e(rawurlencode($case->reference)) ?>/coordination"
+                  class="stack">
+                <?= \App\Security\Csrf::field() ?>
+                <input type="hidden" name="coordination" value="<?= e($move->value) ?>">
+                <div class="field">
+                    <label for="coordination_note_<?= e($move->value) ?>">
+                        Note for &ldquo;<?= e($move->label()) ?>&rdquo; (optional)
+                    </label>
+                    <textarea id="coordination_note_<?= e($move->value) ?>"
+                              name="coordination_note" rows="2" maxlength="2000"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button class="button button-secondary" type="submit">
+                        Mark as <?= e($move->label()) ?>
+                    </button>
+                </div>
+            </form>
+        <?php endforeach; ?>
     <?php endif; ?>
 
     <h2 class="section-title">Clinical decision</h2>

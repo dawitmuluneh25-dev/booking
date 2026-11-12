@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Controllers\UrgentController;
+use App\Domain\AdvanceUrgentCoordination;
 use App\Domain\AcknowledgeUrgentCase;
 use App\Domain\Actor;
 use App\Domain\CloseUrgentCase;
@@ -104,6 +105,7 @@ final class UrgentBoardPageTest extends TestCase
             new EscalateUrgentCase($this->cases),
             new CloseUrgentCase($this->cases),
             new RecordUrgentDecision($this->cases, new Validator(), new InlineTransaction()),
+            new AdvanceUrgentCoordination($this->cases),
             'Africa/Addis_Ababa',
         );
     }

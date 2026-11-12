@@ -68,6 +68,7 @@ final class UrgentCaseRepositoryTest extends TestCase
                     'urgent_escalations',
                     'urgent_events',
                     'urgent_decisions',
+                    'urgent_coordination_history',
                 ];
 
                 foreach ($tables as $table) {
@@ -257,6 +258,47 @@ final class UrgentCaseRepositoryTest extends TestCase
         self::assertSame(UrgentStatus::Received, $this->repository()->findById($case->id)?->urgency);
     }
 
+    public function testACoordinationMoveIsRecordedWithItsActorAndAppearsOnceOnTheTimeline(): void
+    {
+        $case = $this->contacted();
+
+        $moved = $this->repository()->transitionCoordination(
+            $case,
+            UrgentCoordination::Coordinating,
+            new Actor($this->actorUserId, Role::Coordinator),
+            'The surgical registrar has agreed to take the case this afternoon.',
+            self::NOW,
+        );
+
+        self::assertSame(UrgentCoordination::Coordinating, $moved->coordination);
+        self::assertSame($case->version + 1, $moved->version);
+
+        // Reloaded from MySQL, not from the returned object.
+        self::assertSame(UrgentCoordination::Coordinating, $this->repository()->findById($case->id)?->coordination);
+
+        $coordination = array_values(array_filter(
+            $this->repository()->timeline($case->id),
+            static fn (UrgentTimelineEntry $entry): bool => $entry->kind === UrgentTimelineEntry::COORDINATION,
+        ));
+
+        self::assertCount(1, $coordination);
+        self::assertSame('contacting → coordinating', $coordination[0]->label);
+        self::assertNotSame('', $coordination[0]->actorName);
+    }
+
+    public function testAStaleCaseCannotMoveTheCoordinationAxis(): void
+    {
+        $case = $this->contacted();
+        $actor = new Actor($this->actorUserId, Role::Coordinator);
+
+        $this->repository()->transitionCoordination($case, UrgentCoordination::Coordinating, $actor, null, self::NOW);
+
+        // The object still thinks it is `acknowledged`; the row is `coordinating`.
+        $this->expectException(UrgentTransitionException::class);
+
+        $this->repository()->transitionCoordination($case, UrgentCoordination::Coordinating, $actor, null, self::NOW);
+    }
+
     public function testADecisionIsStoredWithItsChoiceAndItsResultingState(): void
     {
         $case = $this->create();
@@ -389,6 +431,31 @@ final class UrgentCaseRepositoryTest extends TestCase
 
         self::assertCount(2, $ours);
         self::assertSame($newer->id, $ours[0]->id, 'A case nobody has claimed was not listed first.');
+    }
+
+    /**
+     * A case somebody has claimed and then tried to call.
+     *
+     * `Acknowledged` does not transition straight to `Coordinating`: contact comes
+     * first, so a case cannot report the receiving team engaged with no attempt
+     * behind it.
+     */
+    private function contacted(): UrgentCase
+    {
+        $actor = new Actor($this->actorUserId, Role::Coordinator);
+        $acknowledged = $this->repository()->acknowledge($this->create(), $actor, 'telephone', null, self::NOW);
+
+        return $this->repository()->recordContactAttempt($acknowledged, new UrgentContactAttempt(
+            caseId: $acknowledged->id,
+            attemptedByUserId: $this->actorUserId,
+            contactRole: 'referring_clinician',
+            contactName: 'Dr Yonas Girma',
+            contactPhone: '+251911222000',
+            channel: 'telephone',
+            outcome: 'connected',
+            notes: 'The referring clinician confirmed the child is stable for transfer.',
+            attemptedAtUtc: self::NOW,
+        ));
     }
 
     public function testAClosedCaseIsNotOnTheBoard(): void

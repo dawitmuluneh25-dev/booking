@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Actor;
+use App\Domain\Role;
 use App\Domain\UrgentCase;
 use App\Domain\UrgentCaseRepository;
 use App\Domain\UrgentCaseNotFoundException;
@@ -50,6 +51,9 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
 
     /** @var list<array{id: int, case_id: int, type: UrgentDecisionType, rationale: string, user_id: int, at: string, resulting: ?string, supersedes: ?int}> */
     private array $decisions = [];
+
+    /** @var list<array{case_id: int, from: UrgentCoordination, to: UrgentCoordination, user_id: int, role: Role, reason: ?string, at: string}> */
+    private array $coordinationHistory = [];
 
     /** @param array<int, string> $userNames userId => name, the stand-in for the users join */
     public function __construct(private readonly array $userNames = [])
@@ -164,6 +168,18 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
             }
         }
 
+        foreach ($this->coordinationHistory as $row) {
+            if ($row['case_id'] === $caseId) {
+                $entries[] = $this->entry(
+                    UrgentTimelineEntry::COORDINATION,
+                    $row['at'],
+                    $row['user_id'],
+                    $row['from']->value . ' → ' . $row['to']->value,
+                    $row['reason'],
+                );
+            }
+        }
+
         foreach ($this->decisions as $row) {
             if ($row['case_id'] === $caseId) {
                 $entries[] = $this->entry(
@@ -192,6 +208,49 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
             => [$left->occurredAtUtc, $left->kind] <=> [$right->occurredAtUtc, $right->kind]);
 
         return $entries;
+    }
+
+    public function transitionCoordination(
+        UrgentCase $case,
+        UrgentCoordination $target,
+        Actor $actor,
+        ?string $reason,
+        string $occurredAtUtc,
+    ): UrgentCase {
+        $current = $this->caseOrFail($case->id);
+
+        if (!$current->coordination->canTransitionTo($target)) {
+            throw new UrgentTransitionException(
+                $current->coordination->value,
+                $target->value,
+                'That move is not open from where this case is.',
+                'coordination',
+            );
+        }
+
+        if (!in_array($actor->role, $current->coordination->allowedActors($target), true)) {
+            throw new UrgentTransitionException(
+                $current->coordination->value,
+                $target->value,
+                sprintf('The %s role may not perform this transition.', $actor->role->value),
+                'coordination',
+            );
+        }
+
+        $this->coordinationHistory[] = [
+            'case_id' => $current->id,
+            'from' => $current->coordination,
+            'to' => $target,
+            'user_id' => $actor->userId,
+            'role' => $actor->role,
+            'reason' => $reason,
+            'at' => $occurredAtUtc,
+        ];
+
+        $moved = $current->withCoordination($target, $current->version + 1);
+        $this->cases[$current->id] = $moved;
+
+        return $moved;
     }
 
     public function recordUrgentDecision(UrgentDecision $decision): UrgentDecision
