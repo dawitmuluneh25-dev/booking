@@ -10,6 +10,7 @@ use App\Domain\UrgentCase;
 use App\Domain\UrgentCaseRepository;
 use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
+use App\Domain\UrgentDecision;
 use App\Domain\UrgentStatus;
 use App\Domain\UrgentTimelineEntry;
 use App\Domain\UrgentTransitionException;
@@ -179,6 +180,13 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
                FROM urgent_status_history hist
                JOIN users user ON user.id = hist.actor_user_id
               WHERE hist.urgent_case_id = :status_case
+             UNION ALL
+              SELECT 'decision', dsc.decided_at, user.name,
+                     dsc.decision_type,
+                     dsc.rationale
+                FROM urgent_decisions dsc
+                JOIN users user ON user.id = dsc.decided_by_user_id
+               WHERE dsc.urgent_case_id = :decision_case
               ORDER BY occurred_at ASC, kind ASC"
         );
         $statement->execute([
@@ -187,6 +195,7 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
             'escalation_case' => $caseId,
             'event_case' => $caseId,
             'status_case' => $caseId,
+            'decision_case' => $caseId,
         ]);
 
         $entries = [];
@@ -487,6 +496,104 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
                 return $case->withCoordination($target, $case->version + 1);
             },
         );
+    }
+
+    public function recordUrgentDecision(UrgentDecision $decision): UrgentDecision
+    {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO urgent_decisions
+                (urgent_case_id, decision_type, rationale, resulting_status,
+                 decided_by_user_id, decided_at, supersedes_decision_id)
+             VALUES
+                (:case_id, :decision_type, :rationale, :resulting_status,
+                 :decided_by, :decided_at, :supersedes)'
+        );
+        $statement->execute([
+            'case_id' => $decision->urgentCaseId,
+            'decision_type' => $decision->type->value,
+            'rationale' => $decision->rationale,
+            'resulting_status' => $decision->resultingStatus,
+            'decided_by' => $decision->decidedByUserId,
+            'decided_at' => $decision->decidedAtUtc,
+            'supersedes' => $decision->supersedesId,
+        ]);
+
+        return new UrgentDecision(
+            id: (int) $this->pdo->lastInsertId(),
+            urgentCaseId: $decision->urgentCaseId,
+            type: $decision->type,
+            rationale: $decision->rationale,
+            decidedByUserId: $decision->decidedByUserId,
+            decidedAtUtc: $decision->decidedAtUtc,
+            resultingStatus: $decision->resultingStatus,
+            supersedesId: $decision->supersedesId,
+        );
+    }
+
+    public function currentUrgentDecision(int $caseId): ?UrgentDecision
+    {
+        // The current decision is the one nothing supersedes. Asking the unique
+        // key rather than ordering by `decided_at` means two decisions recorded in
+        // the same second cannot both claim to be current.
+        $statement = $this->pdo->prepare(
+            'SELECT d.* FROM urgent_decisions d
+              WHERE d.urgent_case_id = :case_id
+                AND NOT EXISTS (
+                    SELECT 1 FROM urgent_decisions s WHERE s.supersedes_decision_id = d.id
+                )
+              ORDER BY d.id DESC
+              LIMIT 1'
+        );
+        $statement->execute(['case_id' => $caseId]);
+
+        /** @var array<string, mixed>|false $row */
+        $row = $statement->fetch();
+
+        return $row === false ? null : UrgentDecision::fromRow($row);
+    }
+
+    /** @return list<array{decision: UrgentDecision, decidedBy: string, superseded: bool}> */
+    public function urgentDecisionHistory(int $caseId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT d.*, u.name AS decided_by_name
+               FROM urgent_decisions d
+               JOIN users u ON u.id = d.decided_by_user_id
+              WHERE d.urgent_case_id = :case_id
+              ORDER BY d.decided_at ASC, d.id ASC'
+        );
+        $statement->execute(['case_id' => $caseId]);
+
+        $history = [];
+        $superseded = [];
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        foreach ($rows as $row) {
+            $supersedes = is_array($row) ? ($row['supersedes_decision_id'] ?? null) : null;
+
+            if (is_numeric($supersedes)) {
+                $superseded[(int) $supersedes] = true;
+            }
+        }
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $decision = UrgentDecision::fromRow($row);
+            $name = $row['decided_by_name'] ?? '';
+
+            $history[] = [
+                'decision' => $decision,
+                'decidedBy' => is_scalar($name) ? (string) $name : '',
+                'superseded' => isset($superseded[$decision->id]),
+            ];
+        }
+
+        return $history;
     }
 
     /**

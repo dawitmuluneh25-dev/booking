@@ -42,6 +42,7 @@ use App\Domain\CompleteProcedureSession;
 use App\Domain\EscalateUrgentCase;
 use App\Domain\RecordPatientArrival;
 use App\Domain\RecordUrgentContactAttempt;
+use App\Domain\RecordUrgentDecision;
 use App\Domain\PhysicianProfileRepository;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\ScheduleWorkspace;
@@ -171,6 +172,8 @@ final class Application
     private ?AcknowledgeUrgentCase $acknowledgeUrgent = null;
 
     private ?CloseUrgentCase $closeUrgent = null;
+
+    private ?RecordUrgentDecision $recordUrgentDecision = null;
 
     private ?Kernel $kernel = null;
 
@@ -496,6 +499,15 @@ final class Application
     public function closeUrgentCase(): CloseUrgentCase
     {
         return $this->closeUrgent ??= new CloseUrgentCase($this->urgentCases());
+    }
+
+    public function recordUrgentDecision(): RecordUrgentDecision
+    {
+        return $this->recordUrgentDecision ??= new RecordUrgentDecision(
+            $this->urgentCases(),
+            new Validator(),
+            $this->transaction(),
+        );
     }
 
     public function idempotency(): IdempotencyStore

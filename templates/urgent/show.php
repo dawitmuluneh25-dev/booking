@@ -15,10 +15,20 @@
  * @var bool                   $mayAcknowledge
  * @var bool                   $mayEscalate
  * @var bool                   $mayClose
+ * @var list<\App\Domain\UrgentDecisionType> $decisionChoices
+ * @var list<array{decision: \App\Domain\UrgentDecision, decidedBy: string, decidedAt: string, superseded: bool}> $decisions
  * @var \App\Domain\User       $currentUser
  */
 $error = static fn (string $field): ?string => $errors[$field] ?? null;
 $errorId = static fn (string $field): string => $field . '-error';
+
+// The error wiring every required field repeats. Written once so a field cannot be
+// marked invalid without the message being associated with it.
+$attr = static function (string $field) use ($errors): string {
+    return isset($errors[$field])
+        ? 'aria-describedby="' . e($field . '-error') . '" aria-invalid="true"'
+        : '';
+};
 
 $acknowledged = $case->coordination !== \App\Domain\UrgentCoordination::Unacknowledged;
 $resolved = $case->coordination === \App\Domain\UrgentCoordination::Resolved;
@@ -209,6 +219,93 @@ $closed = $case->urgency === \App\Domain\UrgentStatus::Closed;
             </div>
             <div class="form-actions">
                 <button class="button" type="submit">Record attempt</button>
+            </div>
+        </form>
+    <?php endif; ?>
+
+    <h2 class="section-title">Clinical decision</h2>
+    <?php if ($decisions !== []): ?>
+        <div class="table-wrap">
+            <table>
+                <caption class="visually-hidden">Decisions recorded on this case</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Decision</th>
+                        <th scope="col">Moved the case to</th>
+                        <th scope="col">Rationale</th>
+                        <th scope="col">Decided by</th>
+                        <th scope="col">Decided</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($decisions as $row): ?>
+                        <tr<?= $row['superseded'] ? ' class="is-superseded"' : '' ?>>
+                            <th scope="row">
+                                <?= e($row['decision']->type->label()) ?>
+                                <?php if ($row['superseded']): ?>
+                                    <span class="badge badge-superseded">Superseded</span>
+                                <?php endif; ?>
+                            </th>
+                            <td><?= e($row['decision']->resultingStatusLabel() ?? '— no state released —') ?></td>
+                            <td><?= nl2br(e($row['decision']->rationale)) ?></td>
+                            <td><?= e($row['decidedBy']) ?></td>
+                            <td><?= e($row['decidedAt']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($closed): ?>
+        <p class="muted">The case is closed, so there is no decision left to record.</p>
+    <?php elseif (!$currentUser->can(\App\Domain\Permission::UrgentCoordinate)): ?>
+        <p class="muted">
+            You can see this case but not decide it. A coordination decision is recorded by a
+            clinician or the procedure coordinator, against their own name.
+        </p>
+    <?php elseif ($decisionChoices === []): ?>
+        <p class="muted">
+            No decision fits this case at &ldquo;<?= e($case->urgency->label()) ?>&rdquo;. A case is
+            reviewed, then accepted, then completed or transferred.
+        </p>
+    <?php else: ?>
+        <p class="muted">
+            The decision is recorded against your name and cannot be edited afterwards; a change of
+            mind is a new decision, and the one it replaces stays visible. <strong>Only the choices
+            that can move this case are offered</strong> — a transfer, for example, is meaningless
+            before the case has been accepted.
+        </p>
+        <form method="post" action="/urgent-cases/<?= e(rawurlencode($case->reference)) ?>/decision" class="stack">
+            <?= \App\Security\Csrf::field() ?>
+            <div class="field">
+                <label for="decision_type">Decision</label>
+                <select id="decision_type" name="decision_type" required
+                        <?= $attr('decision_type') ?>>
+                    <option value="">— Choose —</option>
+                    <?php foreach ($decisionChoices as $choice): ?>
+                        <option value="<?= e($choice->value) ?>"><?= e($choice->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="muted">
+                    &ldquo;Defer pending review&rdquo; and &ldquo;other&rdquo; release no state: the
+                    case stays where it is, and the record says a decision was taken rather than
+                    invented to fit a status.
+                </p>
+                <?php if ($error('decision_type') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('decision_type')) ?>"><?= e((string) $error('decision_type')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="rationale">Rationale</label>
+                <textarea id="rationale" name="rationale" rows="4" minlength="10" maxlength="4000"
+                          required <?= $attr('rationale') ?>></textarea>
+                <?php if ($error('rationale') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('rationale')) ?>"><?= e((string) $error('rationale')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="form-actions">
+                <button class="button" type="submit">Record decision</button>
             </div>
         </form>
     <?php endif; ?>

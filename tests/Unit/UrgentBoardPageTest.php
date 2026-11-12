@@ -13,6 +13,7 @@ use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RegisterUrgentCase;
 use App\Domain\Role;
 use App\Domain\UrgentCase;
+use App\Domain\RecordUrgentDecision;
 use App\Domain\UrgentCoordination;
 use App\Domain\UrgentStatus;
 use App\Http\HttpException;
@@ -26,6 +27,7 @@ use App\Security\Session;
 use App\Support\View;
 use App\Validation\Validator;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\InlineTransaction;
 use Tests\Support\InMemoryUrgentCaseRepository;
 use Tests\Support\InMemoryUserRepository;
 
@@ -101,6 +103,7 @@ final class UrgentBoardPageTest extends TestCase
             new RecordUrgentContactAttempt($this->cases),
             new EscalateUrgentCase($this->cases),
             new CloseUrgentCase($this->cases),
+            new RecordUrgentDecision($this->cases, new Validator(), new InlineTransaction()),
             'Africa/Addis_Ababa',
         );
     }

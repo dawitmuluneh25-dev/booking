@@ -132,8 +132,9 @@ before production and none has been executed.
 | Requirement | Status | Evidence / notes |
 |---|---|---|
 | Consent as a documented dialogue | Not started | No record; A-12 approved the particulars, not a form |
-| Urgent registration, acknowledgement, contact attempts, escalation, closure | Implemented for the coordination axis | `/urgent-cases` board, `/urgent-cases/new` intake, acknowledge, contact log, escalate and close, with a five-table timeline; `CloseUrgentCase` added; `closed_at` and the coordination events named by `UrgentStatus::occurredEventType()` are now written; `urgent.acknowledge` split from `urgent.coordinate` so reception can claim a case without being able to close it; `CloseUrgentCaseTest`, `UrgentBoardPageTest`, `UrgentCaseRepositoryTest` |
-| A clinical decision on an urgent case (`INT-016`) | Not started | The clinical status moves (`under clinical review`, `accepted for coordination`, `redirected`, `declined`, `completed`, `transferred`) have no command and no screen, and `coordinating`/`resolved` have no writer. BL-D3. Until then a case can be registered, claimed, contacted, escalated and closed — but not accepted, and closure from `accepted_for_coordination` is refused by `UrgentStatus`, which is correct and unreachable |
+| Urgent registration, acknowledgement, contact attempts, escalation, closure | Implemented for the coordination axis | `/urgent-cases` board, `/urgent-cases/new` intake, acknowledge, contact log, escalate and close, with a six-table timeline; `CloseUrgentCase` added; `closed_at` and the coordination events named by `UrgentStatus::occurredEventType()` are now written; `urgent.acknowledge` split from `urgent.coordinate` so reception can claim a case without being able to close it; `CloseUrgentCaseTest`, `UrgentBoardPageTest`, `UrgentCaseRepositoryTest` |
+| A clinical decision on an urgent case (`INT-016`) | Implemented | `urgent_decisions` (migration 0027) carries the six controlled choices with a rationale, a decision-maker and a time; `RecordUrgentDecision` writes the decision and the move it releases in one transaction, and refuses a choice that cannot move the case from where it is; the panel offers only the choices the actor's role can record, asked of `UrgentStatus::allowedActors()`; a second decision supersedes the first without erasing it; `RecordUrgentDecisionTest` |
+| The coordination axis completing (`coordinating`, `resolved`) | Not started | Neither state has a writer, so a closed case still reads "Acknowledged" on the board. Naming the moment coordination becomes `resolved` is a workflow statement the package does not make, so it stays open rather than being inferred from closure |
 | Acknowledgement cannot be produced by a notification path | Implemented | Acknowledgement writes an actor and a channel; the outbox has no path to it |
 | Audit of clinical and operational actions | Partial | `audit_events` covers identity, documents and roles; checklist, milestone and urgent-board actions have nothing to audit yet |
 | Translation governance | Not started | A-19 approved the requirement; no translated content exists |
@@ -237,6 +238,11 @@ constraint on BL-D2 rather than a fork in the road:
 - Do not let a recorded urgent case read as acknowledged, accepted or booked. The confirmation says
   it is none of those (§10.5), the board says so again, and the status vocabulary keeps the clinical
   and coordination axes separate so neither can imply the other.
+- Do not record a coordination decision by moving the status and calling that the record. The decision
+  exists so that "the case is accepted" is not the only evidence that somebody accepted it; a move
+  with no decision row behind it is exactly the state `INT-016` forbids.
+- Do not let a deferral be expressed as an acceptance or a refusal. Two of the six approved choices
+  release no state, and that is the point of them.
 - Do not treat this traceability record, or a passing test suite, as clinical or operational
   acceptance.
 
@@ -244,13 +250,12 @@ constraint on BL-D2 rather than a fork in the road:
 
 ## 6. Next slices, in dependency order
 
-1. The urgent coordination decision (§10.2 `INT-016`) and the clinical move surface — `under
-   clinical review`, `accepted for coordination`, `redirected`, `declined`, `completed`,
-   `transferred` — plus the coordination states `coordinating` and `resolved` (BL-D3). BL-D1 made
-   the case registrable, claimable, contactable, escalatable and closable; it deliberately did not
-   make it acceptable, because acceptance without a recorded decision would invent the decision.
-   Until BL-D3 exists a coordinator can close a case that nothing could have accepted, and the
-   refusal is the correct behaviour rather than a bug.
+1. The coordination axis finishing — `coordinating` and `resolved` (the remainder of BL-D3). The
+   decision record now releases the clinical states: a case can be reviewed, accepted, redirected,
+   declined, completed and transferred through `RecordUrgentDecision`, and closure from an accepted
+   case is reachable. What is left is that neither coordination state has a writer, so a case reads
+   "Acknowledged" even after it is closed. Naming the moment coordination is resolved is a workflow
+   statement the package does not make, which is why it was not inferred from closure.
 2. Readiness checklists, which begin by adding `TECH`, `NUR` and `LAB` with their permissions
    (BL-D2, see §4.4), then BL-C3 and BL-C7.
 3. Reassignment of an assigned category without a new decision (§4.3, BL-C4), which is the other

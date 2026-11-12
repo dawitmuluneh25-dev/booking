@@ -24,6 +24,20 @@ interface UrgentCaseRepository
     public function findByReference(string $reference): ?UrgentCase;
 
     /**
+     * Append the decision and return it with its assigned id.
+     *
+     * Append-only: there is no update and no delete. A change of mind is another
+     * row whose `supersedes_decision_id` points at the one it replaces.
+     */
+    public function recordUrgentDecision(UrgentDecision $decision): UrgentDecision;
+
+    /** The decision that nothing supersedes, or null when none was recorded. */
+    public function currentUrgentDecision(int $caseId): ?UrgentDecision;
+
+    /** @return list<array{decision: UrgentDecision, decidedBy: string, superseded: bool}> */
+    public function urgentDecisionHistory(int $caseId): array;
+
+    /**
      * The board: cases that still need somebody, most urgent first.
      *
      * Ordering is `unacknowledged` before everything else and then oldest first,

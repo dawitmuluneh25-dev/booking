@@ -13,6 +13,8 @@ use App\Domain\Role;
 use App\Domain\UrgentCase;
 use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
+use App\Domain\UrgentDecision;
+use App\Domain\UrgentDecisionType;
 use App\Domain\UrgentStatus;
 use App\Domain\UrgentTimelineEntry;
 use App\Domain\UrgentTransitionException;
@@ -65,6 +67,7 @@ final class UrgentCaseRepositoryTest extends TestCase
                     'urgent_contact_attempts',
                     'urgent_escalations',
                     'urgent_events',
+                    'urgent_decisions',
                 ];
 
                 foreach ($tables as $table) {
@@ -252,6 +255,108 @@ final class UrgentCaseRepositoryTest extends TestCase
         // otherwise be read back as an enum case that does not exist.
         self::assertTrue($refused, 'The column accepted an elective status.');
         self::assertSame(UrgentStatus::Received, $this->repository()->findById($case->id)?->urgency);
+    }
+
+    public function testADecisionIsStoredWithItsChoiceAndItsResultingState(): void
+    {
+        $case = $this->create();
+
+        $stored = $this->repository()->recordUrgentDecision(new UrgentDecision(
+            id: 0,
+            urgentCaseId: $case->id,
+            type: UrgentDecisionType::ProceedToResourceCoordination,
+            rationale: 'Reducible on ultrasound with no ischaemia; the surgical team is on site.',
+            decidedByUserId: $this->actorUserId,
+            decidedAtUtc: self::NOW,
+            resultingStatus: UrgentStatus::AcceptedForCoordination->value,
+        ));
+
+        self::assertGreaterThan(0, $stored->id);
+
+        $current = $this->repository()->currentUrgentDecision($case->id);
+
+        self::assertNotNull($current);
+        self::assertSame(UrgentDecisionType::ProceedToResourceCoordination, $current->type);
+        self::assertSame('accepted_for_coordination', $current->resultingStatus);
+        self::assertSame($this->actorUserId, $current->decidedByUserId);
+    }
+
+    public function testASupersededDecisionIsKeptAndTheLaterOneIsCurrent(): void
+    {
+        $case = $this->create();
+
+        $first = $this->repository()->recordUrgentDecision(new UrgentDecision(
+            id: 0,
+            urgentCaseId: $case->id,
+            type: UrgentDecisionType::DeferPendingReview,
+            rationale: 'Waiting for the repeat film before committing to a technique.',
+            decidedByUserId: $this->actorUserId,
+            decidedAtUtc: self::NOW,
+        ));
+
+        $this->repository()->recordUrgentDecision(new UrgentDecision(
+            id: 0,
+            urgentCaseId: $case->id,
+            type: UrgentDecisionType::DeclineIrReduction,
+            rationale: 'The repeat film shows spontaneous reduction, so no intervention is needed.',
+            decidedByUserId: $this->actorUserId,
+            decidedAtUtc: self::NOW,
+            resultingStatus: UrgentStatus::Declined->value,
+            supersedesId: $first->id,
+        ));
+
+        $history = $this->repository()->urgentDecisionHistory($case->id);
+
+        self::assertCount(2, $history);
+        self::assertTrue($history[0]['superseded']);
+        self::assertFalse($history[1]['superseded']);
+        self::assertSame(UrgentDecisionType::DeclineIrReduction, $history[1]['decision']->type);
+
+        // The superseded row is still there: nothing rewrites a decision.
+        self::assertSame(
+            UrgentDecisionType::DeclineIrReduction,
+            $this->repository()->currentUrgentDecision($case->id)?->type,
+        );
+    }
+
+    public function testTheSchemaRefusesADecisionWithoutAUsableRationale(): void
+    {
+        $case = $this->create();
+
+        $this->expectException(PDOException::class);
+
+        $statement = $this->pdo()->prepare(
+            'INSERT INTO urgent_decisions
+                (urgent_case_id, decision_type, rationale, decided_by_user_id, decided_at)
+             VALUES (:case_id, :type, :rationale, :decided_by, :decided_at)'
+        );
+        $statement->execute([
+            'case_id' => $case->id,
+            'type' => 'defer_pending_review',
+            'rationale' => 'wait',
+            'decided_by' => $this->actorUserId,
+            'decided_at' => self::NOW,
+        ]);
+    }
+
+    public function testTheSchemaRefusesAChoiceOutsideTheApprovedVocabulary(): void
+    {
+        $case = $this->create();
+
+        $this->expectException(PDOException::class);
+
+        $statement = $this->pdo()->prepare(
+            'INSERT INTO urgent_decisions
+                (urgent_case_id, decision_type, rationale, decided_by_user_id, decided_at)
+             VALUES (:case_id, :type, :rationale, :decided_by, :decided_at)'
+        );
+        $statement->execute([
+            'case_id' => $case->id,
+            'type' => 'approve',
+            'rationale' => 'A decision type borrowed from the elective vocabulary.',
+            'decided_by' => $this->actorUserId,
+            'decided_at' => self::NOW,
+        ]);
     }
 
     public function testACaseIsFoundByItsReferenceAndNotByAnotherOne(): void

@@ -26,6 +26,7 @@ final class UrgentTimelineEntry
     public const ESCALATION = 'escalation';
     public const EVENT = 'event';
     public const STATUS = 'status';
+    public const DECISION = 'decision';
 
     public function __construct(
         public readonly string $kind,
@@ -50,6 +51,9 @@ final class UrgentTimelineEntry
             self::ESCALATION => 'Escalated — ' . $this->label,
             self::EVENT => 'Coordination — ' . $this->label,
             self::STATUS => 'Status ' . $this->label,
+            // The stored decision type is a slug; the reader gets the label.
+            self::DECISION => 'Decision — '
+                . (UrgentDecisionType::tryFrom($this->label)?->label() ?? $this->label),
             default => $this->label,
         };
     }

@@ -389,6 +389,7 @@ return static function (Application $app): void {
         $app->recordUrgentContactAttempt(),
         $app->escalateUrgentCase(),
         $app->closeUrgentCase(),
+        $app->recordUrgentDecision(),
         $app->config()->timezone(),
     );
 
@@ -436,6 +437,11 @@ return static function (Application $app): void {
     $router->post(
         '/urgent-cases/{reference}/close',
         static fn (Request $request, array $params) => $urgent->close($request, $params),
+        RouteAccess::permission(Permission::UrgentCoordinate),
+    );
+    $router->post(
+        '/urgent-cases/{reference}/decision',
+        static fn (Request $request, array $params) => $urgent->decide($request, $params),
         RouteAccess::permission(Permission::UrgentCoordinate),
     );
 

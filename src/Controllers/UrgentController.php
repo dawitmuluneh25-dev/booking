@@ -11,11 +11,14 @@ use App\Domain\CloseUrgentCase;
 use App\Domain\EscalateUrgentCase;
 use App\Domain\Permission;
 use App\Domain\RecordUrgentContactAttempt;
+use App\Domain\RecordUrgentDecision;
 use App\Domain\RegisterUrgentCase;
 use App\Domain\UrgentCase;
 use App\Domain\UrgentCaseNotFoundException;
 use App\Domain\UrgentCaseRepository;
 use App\Domain\UrgentCoordination;
+use App\Domain\UrgentDecision;
+use App\Domain\UrgentDecisionType;
 use App\Domain\UrgentStatus;
 use App\Domain\UrgentTransitionException;
 use App\Domain\ValidationException;
@@ -69,6 +72,8 @@ final class UrgentController
         'level' => '1',
         'reason' => '',
         'resolution_note' => '',
+        'decision_type' => '',
+        'rationale' => '',
     ];
 
     public function __construct(
@@ -80,6 +85,7 @@ final class UrgentController
         private readonly RecordUrgentContactAttempt $recordContact,
         private readonly EscalateUrgentCase $escalate,
         private readonly CloseUrgentCase $close,
+        private readonly RecordUrgentDecision $decideCase,
         private readonly string $timezone,
     ) {
     }
@@ -262,6 +268,33 @@ final class UrgentController
         return Response::redirect('/urgent-cases');
     }
 
+    /** @param array<string, string> $params */
+    public function decide(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::UrgentCoordinate);
+
+        if (!Csrf::validate($request->input(Csrf::FIELD))) {
+            throw new HttpException(419);
+        }
+
+        $case = $this->find((string) ($params['reference'] ?? ''));
+
+        try {
+            $this->decideCase->execute($this->actor(), $case->id, [
+                'decision_type' => (string) $request->input('decision_type', ''),
+                'rationale' => (string) $request->input('rationale', ''),
+            ]);
+        } catch (ValidationException $exception) {
+            return $this->detail($case, $exception->errors, null, 422);
+        } catch (UrgentTransitionException $exception) {
+            return $this->detail($case, [], $exception->getMessage(), 409);
+        }
+
+        Session::flash('notice', 'Decision recorded on ' . $case->reference . '.');
+
+        return Response::redirect('/urgent-cases/' . rawurlencode($case->reference));
+    }
+
     private function find(string $reference): UrgentCase
     {
         $case = $this->cases->findByReference($reference);
@@ -278,6 +311,23 @@ final class UrgentController
         $user = $this->gate->authenticate();
 
         return new Actor($user->id, $user->role);
+    }
+
+    /** @return list<array{decision: UrgentDecision, decidedBy: string, decidedAt: string, superseded: bool}> */
+    private function decisionsFor(UrgentCase $case): array
+    {
+        $rows = [];
+
+        foreach ($this->cases->urgentDecisionHistory($case->id) as $entry) {
+            $rows[] = [
+                'decision' => $entry['decision'],
+                'decidedBy' => $entry['decidedBy'],
+                'decidedAt' => $this->localTime($entry['decision']->decidedAtUtc),
+                'superseded' => $entry['superseded'],
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -328,6 +378,26 @@ final class UrgentController
             'mayClose' => in_array($user->role, $case->urgency->allowedActors(UrgentStatus::Closed), true)
                 && $case->urgency->canTransitionTo(UrgentStatus::Closed),
             'mayEscalate' => in_array($user->role, $case->coordination->escalationActors(), true),
+            // Only the choices that can legally move this case are offered, so the
+            // form cannot suggest a decision the command would refuse.
+            'decisionChoices' => array_values(array_filter(
+                UrgentDecisionType::cases(),
+                static function (UrgentDecisionType $type) use ($case, $user): bool {
+                    if (!$type->canBeRecordedFrom($case->urgency)) {
+                        return false;
+                    }
+
+                    $target = $type->resultingStatus();
+
+                    // A coordinator may coordinate a case without deciding it, so
+                    // the form offers only what their role can actually record —
+                    // asked of the same table the refusal comes from.
+                    return $target === null
+                        ? in_array($user->role, $type->releasingRoles(), true)
+                        : in_array($user->role, $case->urgency->allowedActors($target), true);
+                },
+            )),
+            'decisions' => $this->decisionsFor($case),
             'currentUser' => $user,
         ]), $status);
     }

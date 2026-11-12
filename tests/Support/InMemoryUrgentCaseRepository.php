@@ -10,6 +10,8 @@ use App\Domain\UrgentCaseRepository;
 use App\Domain\UrgentCaseNotFoundException;
 use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
+use App\Domain\UrgentDecision;
+use App\Domain\UrgentDecisionType;
 use App\Domain\UrgentStatus;
 use App\Domain\UrgentTimelineEntry;
 use App\Domain\UrgentTransitionException;
@@ -45,6 +47,9 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
 
     /** @var array<int, string> */
     private array $closedAt = [];
+
+    /** @var list<array{id: int, case_id: int, type: UrgentDecisionType, rationale: string, user_id: int, at: string, resulting: ?string, supersedes: ?int}> */
+    private array $decisions = [];
 
     /** @param array<int, string> $userNames userId => name, the stand-in for the users join */
     public function __construct(private readonly array $userNames = [])
@@ -159,6 +164,18 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
             }
         }
 
+        foreach ($this->decisions as $row) {
+            if ($row['case_id'] === $caseId) {
+                $entries[] = $this->entry(
+                    UrgentTimelineEntry::DECISION,
+                    $row['at'],
+                    $row['user_id'],
+                    $row['type']->value,
+                    $row['rationale'],
+                );
+            }
+        }
+
         foreach ($this->events as $row) {
             if ($row['case_id'] === $caseId) {
                 $entries[] = $this->entry(
@@ -175,6 +192,99 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
             => [$left->occurredAtUtc, $left->kind] <=> [$right->occurredAtUtc, $right->kind]);
 
         return $entries;
+    }
+
+    public function recordUrgentDecision(UrgentDecision $decision): UrgentDecision
+    {
+        $id = count($this->decisions) + 1;
+
+        $this->decisions[] = [
+            'id' => $id,
+            'case_id' => $decision->urgentCaseId,
+            'type' => $decision->type,
+            'rationale' => $decision->rationale,
+            'user_id' => $decision->decidedByUserId,
+            'at' => $decision->decidedAtUtc,
+            'resulting' => $decision->resultingStatus,
+            'supersedes' => $decision->supersedesId,
+        ];
+
+        return new UrgentDecision(
+            id: $id,
+            urgentCaseId: $decision->urgentCaseId,
+            type: $decision->type,
+            rationale: $decision->rationale,
+            decidedByUserId: $decision->decidedByUserId,
+            decidedAtUtc: $decision->decidedAtUtc,
+            resultingStatus: $decision->resultingStatus,
+            supersedesId: $decision->supersedesId,
+        );
+    }
+
+    public function currentUrgentDecision(int $caseId): ?UrgentDecision
+    {
+        $superseded = [];
+
+        foreach ($this->decisions as $row) {
+            if ($row['case_id'] === $caseId && $row['supersedes'] !== null) {
+                $superseded[$row['supersedes']] = true;
+            }
+        }
+
+        $current = null;
+
+        foreach ($this->decisions as $row) {
+            if ($row['case_id'] !== $caseId || isset($superseded[$row['id']])) {
+                continue;
+            }
+
+            $current = $row;
+        }
+
+        return $current === null ? null : $this->decisionFromRow($current);
+    }
+
+    /** @return list<array{decision: UrgentDecision, decidedBy: string, superseded: bool}> */
+    public function urgentDecisionHistory(int $caseId): array
+    {
+        $superseded = [];
+
+        foreach ($this->decisions as $row) {
+            if ($row['case_id'] === $caseId && $row['supersedes'] !== null) {
+                $superseded[$row['supersedes']] = true;
+            }
+        }
+
+        $history = [];
+
+        foreach ($this->decisions as $row) {
+            if ($row['case_id'] !== $caseId) {
+                continue;
+            }
+
+            $history[] = [
+                'decision' => $this->decisionFromRow($row),
+                'decidedBy' => $this->userNames[$row['user_id']] ?? 'Unknown user',
+                'superseded' => isset($superseded[$row['id']]),
+            ];
+        }
+
+        return $history;
+    }
+
+    /** @param array{id: int, case_id: int, type: UrgentDecisionType, rationale: string, user_id: int, at: string, resulting: ?string, supersedes: ?int} $row */
+    private function decisionFromRow(array $row): UrgentDecision
+    {
+        return new UrgentDecision(
+            id: $row['id'],
+            urgentCaseId: $row['case_id'],
+            type: $row['type'],
+            rationale: $row['rationale'],
+            decidedByUserId: $row['user_id'],
+            decidedAtUtc: $row['at'],
+            resultingStatus: $row['resulting'],
+            supersedesId: $row['supersedes'],
+        );
     }
 
     public function transitionUrgency(
