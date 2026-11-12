@@ -136,6 +136,15 @@ final class AuditTrailRepositoryTest extends TestCase
         self::assertSame(0, $trail->count(new AuditQuery(actor: 'nobody-by-that-name')));
     }
 
+    /**
+     * The bounds are applied in UTC, and a range that ends before the row was
+     * written excludes it.
+     *
+     * Every query here is scoped to this test's own actor. The development database
+     * is shared with a running application, so each staff sign-in writes a real
+     * `auth.login_succeeded` row; asserting on the table's absolute size made the
+     * suite fail whenever anybody used the app, which says nothing about the bounds.
+     */
     public function testTheDateRangeUsesUtcBounds(): void
     {
         [$adminId, $targetId] = $this->seedAccounts();
@@ -146,9 +155,13 @@ final class AuditTrailRepositoryTest extends TestCase
         $tomorrow = gmdate('Y-m-d H:i:s', time() + 86400);
         $nextWeek = gmdate('Y-m-d H:i:s', time() + 7 * 86400);
 
-        self::assertCount(1, $trail->search(new AuditQuery(fromUtc: $yesterday, toUtc: $tomorrow)));
-        self::assertCount(0, $trail->search(new AuditQuery(fromUtc: $nextWeek)));
-        self::assertCount(0, $trail->search(new AuditQuery(toUtc: $yesterday)));
+        self::assertCount(1, $trail->search(new AuditQuery(
+            actor: self::ADMIN_EMAIL,
+            fromUtc: $yesterday,
+            toUtc: $tomorrow,
+        )));
+        self::assertCount(0, $trail->search(new AuditQuery(actor: self::ADMIN_EMAIL, fromUtc: $nextWeek)));
+        self::assertCount(0, $trail->search(new AuditQuery(actor: self::ADMIN_EMAIL, toUtc: $yesterday)));
     }
 
     public function testTheStoredRowsCarryNoPatientIdentifiers(): void
