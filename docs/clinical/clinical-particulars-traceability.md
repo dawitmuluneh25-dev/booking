@@ -125,7 +125,7 @@ before production and none has been executed.
 | Approved service pages | Not started | BL-A1, BL-A3; no `/services` route |
 | Urgent pathway notice with real numbers | Not started | BL-A6; the page must fail closed if numbers are absent |
 | Privacy, booking policy, contact and referral guidance | Not started | BL-A7 |
-| Content carries a named approver and review date | Not started | Belongs to the content model the pages will use |
+| Content carries a named approver and review date | Approver named, model not built | **Dawit Muluneh, approved 2026-11-13**, recorded as the approver for all published clinical copy. The content model that stores the name and date beside each page does not exist yet, so nothing is published and nothing claims approval — see §4.5 |
 
 ### 3.10 Consent, governance and urgent coordination (§18, §20, §10)
 
@@ -223,6 +223,29 @@ constraint on BL-D2 rather than a fork in the road:
   and do nothing, which `Role::permissions()` explicitly argues against.
 - Until then, no checklist item may be assigned to a role that does not exist, and the checklist is
   not partially built on a mapping that would let a receptionist complete a nursing check.
+
+### 4.5 Two governance inputs answered on 13 November 2026
+
+**Status: recorded, one of them still without a place to live.**
+
+**Approval of published clinical copy.** Dawit Muluneh is the named approver, with an approval date of
+2026-11-13, for the clinical content the package supplies (§17.1–§17.4 service pages, §11.2–§11.3
+confirmation and upload wording, §10.5 urgent wording, and the policy pages). Read as one approver for
+the whole set rather than one per page; if that is wrong, the correction is a per-page name and date,
+which is exactly what the content model has to store.
+
+What this does **not** do is make anything publishable. §17.5 requires the approver and review date to
+appear *with the page*, and there is no content model yet — so the name is now a known input and not an
+implemented fact. The first slice that builds public pages (BL-A3) must carry the approver and date
+from a stored record, not from a template constant, so that changing the approver is a data change and
+a page cannot be published with an empty one.
+
+**Laboratory destinations for specimens (§19.1).** Destinations are serialised pathology laboratories:
+`Pathology Lab 1`, `Pathology Lab 2`, and so on. The count is deliberately unspecified — laboratories
+exist as they exist, and inventing a number would be inventing an operational fact. The consequence for
+BL-C7 is a shape rather than content: the destination is a **reference to a configured lab row** with a
+serial and a label, never a free-text string, because §19.1 requires a specimen record to say where it
+went in a form that can be counted and audited.
 
 ---
 
