@@ -59,6 +59,7 @@ final class MigrationIntegrityTest extends TestCase
     private const REFERRAL_TABLES = [
         'clinical_decisions',
         'document_access_events',
+        'procedure_consents',
         'referral_documents',
         'referral_status_history',
         'referral_tracking_tokens',

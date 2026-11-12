@@ -40,7 +40,7 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        self::assertSame(67, count($manifest));
+        self::assertSame(69, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);

@@ -11,6 +11,8 @@ use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
 use App\Domain\Procedure;
 use App\Domain\ReassignClinicalPriority;
+use App\Domain\RecordProcedureConsent;
+use App\Domain\WithdrawConsent;
 use App\Domain\Referral;
 use App\Domain\ReferralStatus;
 use App\Domain\Role;
@@ -27,6 +29,7 @@ use App\Security\Gate;
 use App\Security\PasswordHasher;
 use App\Support\View;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\InMemoryConsentRepository;
 use Tests\Support\InlineTransaction;
 use Tests\Support\InMemoryIdempotencyStore;
 use Tests\Support\InMemoryPhysicianProfileRepository;
@@ -48,6 +51,8 @@ final class ReferralPageTest extends TestCase
 
     private InMemoryReferralRepository $referrals;
 
+    private InMemoryConsentRepository $consents;
+
     protected function setUp(): void
     {
         $_SESSION = [];
@@ -65,6 +70,8 @@ final class ReferralPageTest extends TestCase
         $this->referrals = new InMemoryReferralRepository();
         $this->referrals->create($this->referralEntity(), new Actor(7, Role::Staff), self::NOW);
 
+        $this->consents = new InMemoryConsentRepository();
+
         $this->controller = new ReferralController(
             new View(dirname(__DIR__, 2) . '/templates'),
             new Gate($auth),
@@ -80,6 +87,14 @@ final class ReferralPageTest extends TestCase
             $procedures,
             new ApproveForScheduling($this->referrals),
             new ReassignClinicalPriority($this->referrals, new Validator(), new InlineTransaction()),
+            $this->consents,
+            new RecordProcedureConsent(
+                $this->consents,
+                $this->referrals,
+                new Validator(),
+                new InlineTransaction(),
+            ),
+            new WithdrawConsent($this->consents, new Validator()),
             'Africa/Addis_Ababa',
         );
     }
@@ -439,6 +454,26 @@ final class ReferralPageTest extends TestCase
             'referring_facility' => 'Black Lion Hospital',
             'referring_physician_phone' => '+251911000002',
         ];
+    }
+
+    /**
+     * Consent is stated as absent, not implied, and reception is not offered a form
+     * it may not submit (§18.1, §18.2).
+     */
+    public function testTheReferralPageSaysNoConsentIsRecordedAndOffersReceptionNoForm(): void
+    {
+        $body = $this->body($this->controller->show(
+            Request::create('GET', '/referrals/RF-2026-0001'),
+            ['reference' => 'RF-2026-0001'],
+        ));
+
+        self::assertStringContainsString('Consent', $body);
+        self::assertStringContainsString('No consent discussion is recorded yet', $body);
+        self::assertStringContainsString('the system never records consent on its own', mb_strtolower($body));
+
+        // The clerk holds no clinical permission, so neither write is offered.
+        self::assertStringNotContainsString('Record consent', $body);
+        self::assertStringNotContainsString('Withdraw consent', $body);
     }
 
     private function body(Response $response): string

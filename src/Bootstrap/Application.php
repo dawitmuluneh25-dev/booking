@@ -47,7 +47,10 @@ use App\Domain\RecordPatientArrival;
 use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RecordUrgentDecision;
 use App\Domain\PhysicianProfileRepository;
+use App\Domain\ConsentRepository;
 use App\Domain\RecordClinicalDecision;
+use App\Domain\RecordProcedureConsent;
+use App\Domain\WithdrawConsent;
 use App\Domain\ScheduleWorkspace;
 use App\Domain\ScheduleRepository;
 use App\Domain\ScheduleBoard;
@@ -85,6 +88,7 @@ use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoDocumentRepository;
 use App\Repositories\PdoReferralRetentionRepository;
 use App\Repositories\PdoTrackingTokenRepository;
+use App\Repositories\PdoConsentRepository;
 use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoPatientRelationshipRepository;
@@ -135,6 +139,12 @@ final class Application
     private ?ApproveForScheduling $approveForScheduling = null;
 
     private ?ReassignClinicalPriority $reassignPriority = null;
+
+    private ?ConsentRepository $consents = null;
+
+    private ?RecordProcedureConsent $recordConsent = null;
+
+    private ?WithdrawConsent $withdrawConsent = null;
 
     private ?UrgentCaseRepository $urgentCases = null;
 
@@ -356,6 +366,31 @@ final class Application
             new Validator(),
             $this->transaction(),
         );
+    }
+
+    /**
+     * Consent records live beside the referral rather than inside it: a referral
+     * reaching a terminal state must not take the record of what a patient agreed
+     * with it (§18.1).
+     */
+    public function consents(): ConsentRepository
+    {
+        return $this->consents ??= new PdoConsentRepository($this->pdo());
+    }
+
+    public function recordProcedureConsent(): RecordProcedureConsent
+    {
+        return $this->recordConsent ??= new RecordProcedureConsent(
+            $this->consents(),
+            $this->referrals(),
+            new Validator(),
+            $this->transaction(),
+        );
+    }
+
+    public function withdrawConsent(): WithdrawConsent
+    {
+        return $this->withdrawConsent ??= new WithdrawConsent($this->consents(), new Validator());
     }
 
     public function urgentCases(): UrgentCaseRepository

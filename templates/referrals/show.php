@@ -8,6 +8,10 @@
  * @var string|null                $notice
  * @var array<string, string>      $errors
  * @var \App\Domain\User           $currentUser
+ * @var \App\Domain\ProcedureConsent|null $consent
+ * @var list<array{consent: \App\Domain\ProcedureConsent, recordedBy: string}> $consentHistory
+ * @var list<\App\Domain\ConsentParticipant> $consentParticipants
+ * @var list<\App\Domain\ConsentOutcome>     $consentOutcomes
  */
 $reassignable = in_array(
     $referral->status,
@@ -17,6 +21,20 @@ $reassignable = in_array(
 $mayReassign = $currentUser->can(\App\Domain\Permission::ClinicalApprove)
     && $referral->clinicalPriority !== null
     && $reassignable;
+
+// Consent is recorded after the clinical decision and before the procedure. The
+// command refuses anything earlier; the template asks the same question so the form
+// is never offered where submitting it would fail.
+$consentable = in_array(
+    $referral->status,
+    [
+        \App\Domain\ReferralStatus::ClinicallyApproved,
+        \App\Domain\ReferralStatus::ApprovedForScheduling,
+        \App\Domain\ReferralStatus::ConvertedToAppointment,
+    ],
+    true,
+);
+$mayRecordConsent = $currentUser->can(\App\Domain\Permission::ClinicalApprove) && $consentable;
 ?>
 <section class="panel">
     <div class="panel-head">
@@ -311,5 +329,276 @@ $mayReassign = $currentUser->can(\App\Domain\Permission::ClinicalApprove)
             now at &ldquo;<?= e($referral->status->label()) ?>&rdquo;, so a change would be a scheduling
             decision rather than a queue ordering one.
         </p>
+    <?php endif; ?>
+</section>
+
+<section class="panel" id="consent">
+    <h2 class="section-title">Consent</h2>
+    <p class="muted">
+        Consent is a discussion that is recorded, not a box that is ticked. What was said, which
+        information was used, in which language, and on whose authority are all part of the record,
+        because the answer to &ldquo;was this patient properly consented?&rdquo; has to be reconstructible
+        years later. The system never records consent on its own, and it offers no emergency override:
+        a patient who cannot take part is recorded as such and remains a person&rsquo;s problem to solve.
+    </p>
+
+    <?php if ($consent === null): ?>
+        <p><strong>No consent discussion is recorded yet.</strong> A recorded agreement is required
+            before the procedure, and nothing here implies one exists.</p>
+    <?php else: ?>
+        <div class="table-wrap">
+            <table>
+                <caption class="visually-hidden">The consent record that currently stands</caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">Outcome</th>
+                        <td><strong><?= e($consent->standingLabel()) ?></strong></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Discussed with</th>
+                        <td><?= e($consent->participantName) ?>
+                            (<?= e($consent->participant->label()) ?>)</td>
+                    </tr>
+                    <?php if ($consent->participant->needsVerifiedAuthority()): ?>
+                        <tr>
+                            <th scope="row">Representative authority</th>
+                            <td>
+                                <?php if ($consent->authorityVerified): ?>
+                                    Verified at <?= e($consent->authorityVerifiedAtUtc ?? '') ?>
+                                <?php else: ?>
+                                    <strong>Not verified</strong> — no agreement can be recorded on this
+                                    authority, and none has been
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                    <tr>
+                        <th scope="row">Capacity</th>
+                        <td>
+                            <?= $consent->capacityAssessed ? 'Assessed' : 'Not recorded as assessed' ?>
+                            <?php if ($consent->capacityNote !== null): ?>
+                                — <?= e($consent->capacityNote) ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Information used</th>
+                        <td>Version <?= e($consent->informationVersion) ?>,
+                            language <?= e($consent->informationLanguage) ?></td>
+                    </tr>
+                    <?php if ($consent->interpreterInvolved): ?>
+                        <tr>
+                            <th scope="row">Interpreter</th>
+                            <td><?= e((string) $consent->interpreterLanguage) ?></td>
+                        </tr>
+                    <?php endif; ?>
+                    <tr>
+                        <th scope="row">What was discussed</th>
+                        <td><?= nl2br(e($consent->discussionRecord)) ?></td>
+                    </tr>
+                    <?php if ($consent->questionsRecorded !== null): ?>
+                        <tr>
+                            <th scope="row">Questions and answers</th>
+                            <td><?= nl2br(e($consent->questionsRecorded)) ?></td>
+                        </tr>
+                    <?php endif; ?>
+                    <tr>
+                        <th scope="row">Attestation</th>
+                        <td><?= e($consent->attestationReference) ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Recorded</th>
+                        <td><?= e($consent->consentedAtUtc) ?> by user #<?= e((string) $consent->recordedByUserId) ?></td>
+                    </tr>
+                    <?php if ($consent->isWithdrawn()): ?>
+                        <tr>
+                            <th scope="row">Withdrawn</th>
+                            <td><?= e((string) $consent->withdrawnAtUtc) ?> —
+                                <?= e((string) $consent->withdrawalReason) ?></td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($consentHistory !== []): ?>
+        <h3>Consent history</h3>
+        <p class="muted">
+            Nothing here is edited. A later discussion supersedes an earlier one, and a withdrawal
+            leaves what was agreed readable.
+        </p>
+        <div class="table-wrap">
+            <table>
+                <caption class="visually-hidden">Every consent discussion recorded on this referral</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Recorded</th>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">Discussed with</th>
+                        <th scope="col">By</th>
+                        <th scope="col">Superseded</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($consentHistory as $row): ?>
+                        <?php $entry = $row['consent']; ?>
+                        <tr>
+                            <th scope="row"><?= e($entry->consentedAtUtc) ?></th>
+                            <td><?= e($entry->standingLabel()) ?></td>
+                            <td><?= e($entry->participantName) ?></td>
+                            <td><?= e($row['recordedBy']) ?></td>
+                            <td><?= $entry->id !== $consent->id ? 'Yes' : 'No — this is current' ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($mayRecordConsent): ?>
+        <h3><?= $consent === null ? 'Record the discussion' : 'Record a new discussion' ?></h3>
+        <p class="muted">
+            Recording again does not overwrite the earlier record: it supersedes it, and both stay
+            readable.
+        </p>
+        <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/consent" class="stack">
+            <?= \App\Security\Csrf::field() ?>
+            <div class="field">
+                <label for="participant_relationship">Who took part</label>
+                <select id="participant_relationship" name="participant_relationship" required>
+                    <option value="">— Choose —</option>
+                    <?php foreach ($consentParticipants as $participant): ?>
+                        <option value="<?= e($participant->value) ?>"><?= e($participant->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="field">
+                <label for="participant_name">Name of the person taking part</label>
+                <input id="participant_name" name="participant_name" maxlength="120" required
+                    value="<?= e($referral->patientName) ?>">
+            </div>
+            <div class="field">
+                <label>
+                    <input type="checkbox" name="authority_verified" value="1">
+                    I have verified this person&rsquo;s authority to decide for the patient
+                </label>
+                <p class="muted">
+                    Required before an agreement can be recorded on anyone else&rsquo;s behalf. A
+                    relationship is not an authority: an accompanying adult may be neither a parent nor
+                    a guardian.
+                </p>
+            </div>
+            <div class="field">
+                <label for="outcome">Outcome</label>
+                <select id="outcome" name="outcome" required>
+                    <option value="">— Choose —</option>
+                    <?php foreach ($consentOutcomes as $outcome): ?>
+                        <option value="<?= e($outcome->value) ?>"><?= e($outcome->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="field">
+                <label for="information_version">Version of the patient information used</label>
+                <input id="information_version" name="information_version" maxlength="60" required>
+            </div>
+            <div class="field">
+                <label for="information_language">Language it was given in</label>
+                <input id="information_language" name="information_language" maxlength="16" required>
+            </div>
+            <div class="field">
+                <label>
+                    <input type="checkbox" name="interpreter_involved" value="1">
+                    An interpreter was involved
+                </label>
+            </div>
+            <div class="field">
+                <label for="interpreter_language">Interpreter language</label>
+                <input id="interpreter_language" name="interpreter_language" maxlength="16">
+            </div>
+            <div class="field">
+                <label for="target_site">Site or lesion discussed</label>
+                <input id="target_site" name="target_site" maxlength="120"
+                    value="<?= e((string) ($referral->targetSite ?? '')) ?>">
+            </div>
+            <div class="field">
+                <label for="discussion_record">What was discussed</label>
+                <textarea id="discussion_record" name="discussion_record" rows="5"
+                    minlength="30" maxlength="8000" required
+                    <?= isset($errors['discussion_record'])
+                        ? 'aria-describedby="discussion_record-error" aria-invalid="true"'
+                        : 'aria-describedby="discussion_record-note"' ?>></textarea>
+                <p class="muted" id="discussion_record-note">
+                    Benefits, material risks and alternatives, in your own words — this is the record of
+                    the discussion, not a summary of the leaflet.
+                </p>
+                <?php if (isset($errors['discussion_record'])): ?>
+                    <p class="field-error" id="discussion_record-error"><?= e($errors['discussion_record']) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="questions_recorded">Questions raised, and the answers given</label>
+                <textarea id="questions_recorded" name="questions_recorded" rows="3" maxlength="4000"></textarea>
+            </div>
+            <div class="field">
+                <label>
+                    <input type="checkbox" name="capacity_assessed" value="1">
+                    Capacity was assessed
+                </label>
+            </div>
+            <div class="field">
+                <label for="capacity_note">Capacity assessment note</label>
+                <input id="capacity_note" name="capacity_note" maxlength="500">
+            </div>
+            <div class="field">
+                <label for="attestation_reference">Signature or attestation reference</label>
+                <input id="attestation_reference" name="attestation_reference" maxlength="200" required>
+                <p class="muted">
+                    Where the signed form is held, or how the agreement was attested. An agreement with
+                    nothing behind it is not a record.
+                </p>
+            </div>
+            <?php if (isset($errors['authority_verified'])): ?>
+                <p class="field-error"><?= e($errors['authority_verified']) ?></p>
+            <?php endif; ?>
+            <?php if (isset($errors['consent'])): ?>
+                <p class="field-error"><?= e($errors['consent']) ?></p>
+            <?php endif; ?>
+            <div class="form-actions">
+                <button class="button" type="submit">Record consent</button>
+            </div>
+        </form>
+    <?php elseif (!$consentable): ?>
+        <p class="muted">
+            Consent is recorded after the clinical decision. This referral is
+            &ldquo;<?= e($referral->status->label()) ?>&rdquo;, so there is nothing to consent to yet.
+        </p>
+    <?php endif; ?>
+
+    <?php if ($consent !== null && $consent->isStandingAgreement() && $mayRecordConsent): ?>
+        <h3>Withdraw the agreement</h3>
+        <p class="muted">
+            Withdrawal does not delete anything: it records when, by whom and why, and leaves the
+            discussion readable. The procedure then needs a clinical decision, not another tick.
+        </p>
+        <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/consent/withdraw"
+              class="stack">
+            <?= \App\Security\Csrf::field() ?>
+            <input type="hidden" name="consent_id" value="<?= e((string) $consent->id) ?>">
+            <div class="field">
+                <label for="withdrawal_reason">Why the agreement no longer stands</label>
+                <textarea id="withdrawal_reason" name="withdrawal_reason" rows="3"
+                    minlength="10" maxlength="500" required
+                    <?= isset($errors['withdrawal_reason'])
+                        ? 'aria-describedby="withdrawal_reason-error" aria-invalid="true"'
+                        : '' ?>></textarea>
+                <?php if (isset($errors['withdrawal_reason'])): ?>
+                    <p class="field-error" id="withdrawal_reason-error"><?= e($errors['withdrawal_reason']) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="form-actions">
+                <button class="button button-secondary" type="submit">Withdraw consent</button>
+            </div>
+        </form>
     <?php endif; ?>
 </section>

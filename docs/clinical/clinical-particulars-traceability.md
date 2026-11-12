@@ -131,7 +131,7 @@ before production and none has been executed.
 
 | Requirement | Status | Evidence / notes |
 |---|---|---|
-| Consent as a documented dialogue | Not started | No record; A-12 approved the particulars, not a form |
+| Consent as a documented dialogue | Implemented for the record, not for the policy | `procedure_consents` (migration 0030) stores what was discussed, the practitioner's account of benefits, risks and alternatives, questions and answers, the information version and language, interpreter involvement, capacity, the attestation reference and the responsible practitioner — §18.1's list in full. `RecordProcedureConsent` refuses anything before the clinical decision, refuses an agreement on somebody else's behalf without verified authority (§18.2), and offers no emergency override (§18.3): an inability to take part is recorded as such. `WithdrawConsent` records the withdrawal rather than deleting the agreement. The record is append-only and supersedes rather than edits. What is **not** decided, and is deliberately absent, is who holds parental responsibility or when an emergency exception applies — that is local legal and institutional policy (§18.2, §18.3, LP-007 onwards), so the system stores a verdict a person reached and never computes one. `RecordProcedureConsentTest`, `ConsentRepositoryTest` |
 | Urgent registration, acknowledgement, contact attempts, escalation, closure | Implemented for the coordination axis | `/urgent-cases` board, `/urgent-cases/new` intake, acknowledge, contact log, escalate and close, with a six-table timeline; `CloseUrgentCase` added; `closed_at` and the coordination events named by `UrgentStatus::occurredEventType()` are now written; `urgent.acknowledge` split from `urgent.coordinate` so reception can claim a case without being able to close it; `CloseUrgentCaseTest`, `UrgentBoardPageTest`, `UrgentCaseRepositoryTest` |
 | A clinical decision on an urgent case (`INT-016`) | Implemented | `urgent_decisions` (migration 0027) carries the six controlled choices with a rationale, a decision-maker and a time; `RecordUrgentDecision` writes the decision and the move it releases in one transaction, and refuses a choice that cannot move the case from where it is; the panel offers only the choices the actor's role can record, asked of `UrgentStatus::allowedActors()`; a second decision supersedes the first without erasing it; `RecordUrgentDecisionTest` |
 | The coordination axis completing (`coordinating`, `resolved`) | Implemented | `AdvanceUrgentCoordination` with `urgent_coordination_history` (migration 0029); the two states are explicit acts by a coordinator or radiologist, never inferred — a contact attempt is `contacting`, not `coordinating`, and closing a case does not resolve the coordination, because an Administrator may close but is not named for `Resolved`. `AdvanceUrgentCoordinationTest` |
@@ -276,6 +276,13 @@ went in a form that can be counted and audited.
   with no decision row behind it is exactly the state `INT-016` forbids.
 - Do not let a deferral be expressed as an acceptance or a refusal. Two of the six approved choices
   release no state, and that is the point of them.
+- Do not add an emergency consent override, flag or "bypass" path. §18.3 requires the circumstances, the
+  authorising person and the review route to be defined by the Clinical Lead and Legal/Governance first;
+  until then the honest record is that consent could not be obtained, with a reason, routed to a person.
+  A boolean here would be the generic bypass the section forbids.
+- Do not let an agreement be recorded for a representative whose authority has not been verified, and do
+  not infer the relationship from who submitted the form (§18.2). The schema refuses it, and the reason
+  is that an accompanying adult is not automatically a legal guardian.
 - Do not treat this traceability record, or a passing test suite, as clinical or operational
   acceptance.
 
@@ -292,7 +299,8 @@ went in a form that can be counted and audited.
 3. Credential and privilege verification, so that clinical approval stops resting on a role name
    (AC-009, LP-003, BL-C6).
 4. Public service, urgent and policy pages against the approved copy (BL-A1, BL-A3, BL-A6, BL-A7).
-5. Consent, specimen and follow-up records (BL-C5, BL-C7).
+5. Specimen, follow-up and outcome records (BL-C7), now that the laboratory destination scheme is
+   answered: a specimen names a configured lab row, and receipt is separate from dispatch.
 6. Section 24 scenario execution (BL-F5), which needs the screens above and a staging environment.
 
 

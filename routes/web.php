@@ -299,6 +299,9 @@ return static function (Application $app): void {
         $app->procedures(),
         $app->approveForScheduling(),
         $app->reassignClinicalPriority(),
+        $app->consents(),
+        $app->recordProcedureConsent(),
+        $app->withdrawConsent(),
         $app->config()->timezone(),
     );
 
@@ -356,6 +359,19 @@ return static function (Application $app): void {
     $router->post(
         '/referrals/{reference}/priority',
         static fn (Request $request, array $params) => $referrals()->reassignPriority($request, $params),
+        RouteAccess::permission(Permission::ClinicalApprove),
+    );
+
+    // Consent is recorded by a clinician after the decision and before the
+    // procedure (§18.1); the command refuses anything earlier.
+    $router->post(
+        '/referrals/{reference}/consent',
+        static fn (Request $request, array $params) => $referrals()->recordConsent($request, $params),
+        RouteAccess::permission(Permission::ClinicalApprove),
+    );
+    $router->post(
+        '/referrals/{reference}/consent/withdraw',
+        static fn (Request $request, array $params) => $referrals()->withdrawConsent($request, $params),
         RouteAccess::permission(Permission::ClinicalApprove),
     );
 

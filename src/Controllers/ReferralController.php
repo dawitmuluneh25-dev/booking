@@ -9,6 +9,13 @@ use App\Domain\ApproveForScheduling;
 use App\Domain\AuthorisationException;
 use App\Domain\ClinicalDecisionRecord;
 use App\Domain\ClinicalPriorityChange;
+use App\Domain\ConsentNotFoundException;
+use App\Domain\ConsentNotPermittedException;
+use App\Domain\ConsentOutcome;
+use App\Domain\ConsentParticipant;
+use App\Domain\ConsentRepository;
+use App\Domain\RecordProcedureConsent;
+use App\Domain\WithdrawConsent;
 use App\Domain\Permission;
 use App\Domain\ReassignClinicalPriority;
 use App\Domain\Priority;
@@ -91,6 +98,9 @@ final class ReferralController
         private readonly ProcedureRepository $procedures,
         private readonly ApproveForScheduling $release,
         private readonly ReassignClinicalPriority $reassign,
+        private readonly ConsentRepository $consents,
+        private readonly RecordProcedureConsent $recordConsentCommand,
+        private readonly WithdrawConsent $withdrawConsentCommand,
         private readonly string $timezone,
     ) {
     }
@@ -179,6 +189,10 @@ final class ReferralController
             'decision' => $this->standingDecision($referral),
             'priorityChanges' => $this->priorityChanges($referral),
             'priorities' => Priority::cases(),
+            'consent' => $this->consents->current($referral->id),
+            'consentHistory' => $this->consents->history($referral->id),
+            'consentParticipants' => ConsentParticipant::cases(),
+            'consentOutcomes' => ConsentOutcome::cases(),
             'notice' => $notice,
             'errors' => $errors,
             'currentUser' => $this->gate->authenticate(),
@@ -210,6 +224,75 @@ final class ReferralController
         }
 
         Session::flash('notice', 'Clinical priority changed on ' . $referral->reference . '.');
+
+        return Response::redirect('/referrals/' . rawurlencode($referral->reference));
+    }
+
+    /**
+     * Record a consent discussion (§18.1).
+     *
+     * The route carries `clinical.approve` and the command repeats the check: a
+     * consent record is a clinician's attestation, and a misconfigured route must
+     * not be able to produce one on reception's behalf.
+     *
+     * @param array<string, string> $params
+     */
+    public function recordConsent(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::ClinicalApprove);
+        $this->assertCsrf($request);
+
+        $referral = $this->referrals->findByReference((string) ($params['reference'] ?? ''));
+
+        if ($referral === null) {
+            throw new HttpException(404);
+        }
+
+        try {
+            $this->recordConsentCommand->execute($this->actor(), $referral->id, $request->all());
+        } catch (ValidationException $exception) {
+            return $this->detail($referral, $exception->errors, null, 422);
+        } catch (ConsentNotPermittedException $exception) {
+            return $this->detail($referral, ['consent' => $exception->getMessage()], null, 422);
+        }
+
+        Session::flash('notice', 'Consent recorded for ' . $referral->reference . '.');
+
+        return Response::redirect('/referrals/' . rawurlencode($referral->reference));
+    }
+
+    /**
+     * Record that an agreement no longer stands.
+     *
+     * The form carries the record it withdraws, so two open tabs cannot withdraw
+     * the wrong one silently.
+     *
+     * @param array<string, string> $params
+     */
+    public function withdrawConsent(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::ClinicalApprove);
+        $this->assertCsrf($request);
+
+        $referral = $this->referrals->findByReference((string) ($params['reference'] ?? ''));
+
+        if ($referral === null) {
+            throw new HttpException(404);
+        }
+
+        try {
+            $this->withdrawConsentCommand->execute(
+                $this->actor(),
+                (int) $request->input('consent_id', '0'),
+                (string) $request->input('withdrawal_reason', ''),
+            );
+        } catch (ValidationException $exception) {
+            return $this->detail($referral, $exception->errors, null, 422);
+        } catch (ConsentNotPermittedException | ConsentNotFoundException $exception) {
+            return $this->detail($referral, ['consent' => $exception->getMessage()], null, 422);
+        }
+
+        Session::flash('notice', 'Consent withdrawn on ' . $referral->reference . '.');
 
         return Response::redirect('/referrals/' . rawurlencode($referral->reference));
     }
