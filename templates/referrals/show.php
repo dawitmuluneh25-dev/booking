@@ -3,10 +3,20 @@
  * @var \App\Domain\Referral       $referral
  * @var \App\Domain\Procedure|null $procedure
  * @var array{type: string, rationale: string, reviewer: string, decidedAt: string, technique: ?string, modality: ?string, sedation: ?string, minutes: ?int}|null $decision
+ * @var list<array{change: \App\Domain\ClinicalPriorityChange, changedBy: string, changedAt: string}> $priorityChanges
+ * @var list<\App\Domain\Priority> $priorities
  * @var string|null                $notice
  * @var array<string, string>      $errors
  * @var \App\Domain\User           $currentUser
  */
+$reassignable = in_array(
+    $referral->status,
+    [\App\Domain\ReferralStatus::ClinicallyApproved, \App\Domain\ReferralStatus::ApprovedForScheduling],
+    true,
+);
+$mayReassign = $currentUser->can(\App\Domain\Permission::ClinicalApprove)
+    && $referral->clinicalPriority !== null
+    && $reassignable;
 ?>
 <section class="panel">
     <div class="panel-head">
@@ -187,6 +197,13 @@
                                     this case does not wait in the ordinary queue.
                                 </span>
                             <?php endif; ?>
+                            <?php if ($priorityChanges !== []): ?>
+                                <span class="muted block">
+                                    Changed <?= e((string) count($priorityChanges)) ?>
+                                    time<?= count($priorityChanges) === 1 ? '' : 's' ?> since it was
+                                    assigned — see below.
+                                </span>
+                            <?php endif; ?>
                         </td>
                     </tr>
                 <?php endif; ?>
@@ -210,4 +227,89 @@
             </tbody>
         </table>
     </div>
+
+    <?php if ($priorityChanges !== []): ?>
+        <h2 class="section-title">Priority history</h2>
+        <p class="muted">
+            A change of priority is recorded with both categories and the reason. Nothing here is
+            edited: the earlier category stays visible, because a referral that was routine last week
+            and is expedited today is a fact somebody may later need to account for.
+        </p>
+        <div class="table-wrap">
+            <table>
+                <caption class="visually-hidden">Recorded changes of clinical priority</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">From</th>
+                        <th scope="col">To</th>
+                        <th scope="col">Reason</th>
+                        <th scope="col">Changed by</th>
+                        <th scope="col">Changed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($priorityChanges as $row): ?>
+                        <tr>
+                            <th scope="row"><?= e($row['change']->fromLabel() ?? '—') ?></th>
+                            <td><?= e($row['change']->toLabel()) ?></td>
+                            <td><?= nl2br(e($row['change']->reason)) ?></td>
+                            <td><?= e($row['changedBy']) ?></td>
+                            <td><?= e($row['changedAt']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($mayReassign): ?>
+        <h2 class="section-title">Change the clinical priority</h2>
+        <p class="muted">
+            This referral is already in the elective queue at
+            &ldquo;<?= e((string) $referral->clinicalPriorityLabel()) ?>&rdquo;. Changing the category
+            reorders its work; it does not book anything, and it is recorded against your name with
+            the reason. <strong>Urgent direct coordination is not offered</strong> — it says the queue
+            is the wrong route, so it is a redirect rather than a change of position.
+        </p>
+        <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/priority" class="stack">
+            <?= \App\Security\Csrf::field() ?>
+            <div class="field">
+                <label for="clinical_priority">New priority</label>
+                <select id="clinical_priority" name="clinical_priority" required
+                    <?= isset($errors['clinical_priority'])
+                        ? 'aria-describedby="clinical_priority-error" aria-invalid="true"'
+                        : '' ?>>
+                    <option value="">— Choose —</option>
+                    <?php foreach ($priorities as $priority): ?>
+                        <?php if ($priority->leavesTheOrdinaryQueue()) {
+                            continue;
+                        } ?>
+                        <option value="<?= e($priority->value) ?>"><?= e($priority->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if (isset($errors['clinical_priority'])): ?>
+                    <p class="field-error" id="clinical_priority-error"><?= e($errors['clinical_priority']) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="reason">Why the category is changing</label>
+                <textarea id="reason" name="reason" rows="3" minlength="10" maxlength="4000" required
+                    <?= isset($errors['reason'])
+                        ? 'aria-describedby="reason-error" aria-invalid="true"'
+                        : '' ?>></textarea>
+                <?php if (isset($errors['reason'])): ?>
+                    <p class="field-error" id="reason-error"><?= e($errors['reason']) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="form-actions">
+                <button class="button" type="submit">Change priority</button>
+            </div>
+        </form>
+    <?php elseif ($referral->clinicalPriority !== null && !$reassignable): ?>
+        <p class="muted">
+            The clinical priority can be changed while the referral is approved for scheduling. It is
+            now at &ldquo;<?= e($referral->status->label()) ?>&rdquo;, so a change would be a scheduling
+            decision rather than a queue ordering one.
+        </p>
+    <?php endif; ?>
 </section>

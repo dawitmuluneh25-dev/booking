@@ -11,6 +11,7 @@ use App\Database\PdoTransaction;
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
+use App\Domain\ClinicalPriorityChange;
 use App\Domain\NotificationChannel;
 use App\Domain\NotificationTemplate;
 use App\Domain\OutboundMessage;
@@ -79,6 +80,7 @@ final class ReferralRepositoryTest extends TestCase
                     'DELETE FROM clinical_decisions WHERE referral_id = ' . $id
                     . ' ORDER BY supersedes_decision_id IS NULL, id DESC'
                 );
+                $this->pdo->exec('DELETE FROM referral_priority_changes WHERE referral_id = ' . $id);
                 $this->pdo->exec('DELETE FROM referral_status_history WHERE referral_id = ' . $id);
                 $this->pdo->exec('DELETE FROM referrals WHERE id = ' . $id);
             }
@@ -252,6 +254,51 @@ final class ReferralRepositoryTest extends TestCase
         $this->expectException(ReferralNotFoundException::class);
 
         $this->repository()->assignClinicalPriority(999999, 'routine');
+    }
+
+    public function testAPriorityChangeKeepsBothValuesAndIsReadBackOldestFirst(): void
+    {
+        $referral = $this->moveToClinicalReview();
+        $this->repository()->assignClinicalPriority($referral->id, 'routine');
+
+        $this->repository()->recordPriorityChange(new ClinicalPriorityChange(
+            id: 0,
+            referralId: $referral->id,
+            fromPriority: 'routine',
+            toPriority: 'expedited',
+            reason: 'The repeat film shows progression, so this should not wait for the routine list.',
+            changedByUserId: $this->actorUserId,
+            changedAtUtc: self::NOW,
+        ));
+
+        $history = $this->repository()->priorityChangeHistory($referral->id);
+
+        self::assertCount(1, $history);
+        self::assertSame('routine', $history[0]['change']->fromPriority);
+        self::assertSame('expedited', $history[0]['change']->toPriority);
+        self::assertSame($this->actorUserId, $history[0]['change']->changedByUserId);
+        self::assertNotSame('', $history[0]['changedBy']);
+    }
+
+    public function testTheSchemaRefusesAChangeThatIsNotAChange(): void
+    {
+        $referral = $this->moveToClinicalReview();
+
+        $this->expectException(PDOException::class);
+
+        $statement = $this->pdo()->prepare(
+            'INSERT INTO referral_priority_changes
+                (referral_id, from_priority, to_priority, reason, changed_by_user_id, changed_at)
+             VALUES (:referral_id, :from_priority, :to_priority, :reason, :changed_by, :changed_at)'
+        );
+        $statement->execute([
+            'referral_id' => $referral->id,
+            'from_priority' => 'routine',
+            'to_priority' => 'routine',
+            'reason' => 'Re-stating the same category as though it had moved.',
+            'changed_by' => $this->actorUserId,
+            'changed_at' => self::NOW,
+        ]);
     }
 
     public function testADecisionCanBeSupersededOnceAndNotTwice(): void

@@ -40,7 +40,7 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        self::assertSame(64, count($manifest));
+        self::assertSame(65, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);
@@ -96,6 +96,10 @@ final class RouteAccessManifestTest extends TestCase
         self::assertSame('schedule.manage', $guarded['GET /schedule/{reference}/move'] ?? null);
         self::assertSame('bookings.manage', $guarded['POST /schedule/{reference}/cancel'] ?? null);
         self::assertSame('referral.triage', $guarded['POST /referrals/{reference}/status-link'] ?? null);
+
+        // Changing a priority is a clinical act on a referral that has already left
+        // clinical review, so it is not `referral.triage` and not `/decision`.
+        self::assertSame('clinical.approve', $guarded['POST /referrals/{reference}/priority'] ?? null);
 
         // The urgent board: claiming a case is open to whoever is at the desk;
         // escalating and closing it is not.

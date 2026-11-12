@@ -8,7 +8,9 @@ use App\Domain\Actor;
 use App\Domain\ApproveForScheduling;
 use App\Domain\AuthorisationException;
 use App\Domain\ClinicalDecisionRecord;
+use App\Domain\ClinicalPriorityChange;
 use App\Domain\Permission;
+use App\Domain\ReassignClinicalPriority;
 use App\Domain\Priority;
 use App\Domain\Procedure;
 use App\Domain\ProcedureRepository;
@@ -88,6 +90,7 @@ final class ReferralController
         private readonly ReferralRepository $referrals,
         private readonly ProcedureRepository $procedures,
         private readonly ApproveForScheduling $release,
+        private readonly ReassignClinicalPriority $reassign,
         private readonly string $timezone,
     ) {
     }
@@ -174,10 +177,77 @@ final class ReferralController
             'referral' => $referral,
             'procedure' => $this->procedures->find($referral->procedureCode),
             'decision' => $this->standingDecision($referral),
+            'priorityChanges' => $this->priorityChanges($referral),
+            'priorities' => Priority::cases(),
             'notice' => $notice,
             'errors' => $errors,
             'currentUser' => $this->gate->authenticate(),
         ]), $status);
+    }
+
+    /** @param array<string, string> $params */
+    public function reassignPriority(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::ClinicalApprove);
+
+        if (!Csrf::validate($request->input(Csrf::FIELD))) {
+            throw new HttpException(419);
+        }
+
+        $referral = $this->referrals->findByReference((string) ($params['reference'] ?? ''));
+
+        if ($referral === null) {
+            throw new HttpException(404);
+        }
+
+        try {
+            $this->reassign->execute($this->actor(), $referral->id, [
+                'clinical_priority' => (string) $request->input('clinical_priority', ''),
+                'reason' => (string) $request->input('reason', ''),
+            ]);
+        } catch (ValidationException $exception) {
+            return $this->detail($referral, $exception->errors, null, 422);
+        }
+
+        Session::flash('notice', 'Clinical priority changed on ' . $referral->reference . '.');
+
+        return Response::redirect('/referrals/' . rawurlencode($referral->reference));
+    }
+
+    private function actor(): Actor
+    {
+        return new Actor($this->gate->authenticate()->id, $this->gate->authenticate()->role);
+    }
+
+    private function localTime(string $utc): string
+    {
+        $at = \DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $utc, new \DateTimeZone('UTC'));
+
+        if ($at === false) {
+            return $utc;
+        }
+
+        return $at->setTimezone(new \DateTimeZone($this->timezone))->format('D j M Y, H:i');
+    }
+
+    /**
+     * The recorded changes of clinical priority, in the clinic's time.
+     *
+     * @return list<array{change: ClinicalPriorityChange, changedBy: string, changedAt: string}>
+     */
+    private function priorityChanges(Referral $referral): array
+    {
+        $rows = [];
+
+        foreach ($this->referrals->priorityChangeHistory($referral->id) as $entry) {
+            $rows[] = [
+                'change' => $entry['change'],
+                'changedBy' => $entry['changedBy'],
+                'changedAt' => $this->localTime($entry['change']->changedAtUtc),
+            ];
+        }
+
+        return $rows;
     }
 
     /**

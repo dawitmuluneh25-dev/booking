@@ -90,7 +90,7 @@ before production and none has been executed.
 | Routine / expedited / urgent direct coordination | Implemented | `Priority`; `PriorityTest` |
 | Submitters may request routine or expedited only | Implemented | `SubmitElectiveReferral` validates against `Priority::requestableValues()`; `SaveReferralDraft` refuses an unrequestable value rather than letting the CHECK become a 500 |
 | Urgent direct coordination leaves the ordinary queue | Implemented as a guard | An approval cannot carry it: approval is what releases a referral into the elective queue, and the category exists to say that queue is the wrong route. It is recorded with a redirect instead (`Priority::leavesTheOrdinaryQueue`, `assignableOnApproval`) |
-| Changing an assigned category without a new decision | Not started | §13.1 names "assign/change" as one action. This release assigns on the decision; a standalone reassignment on an already-approved referral is a separate command with its own audit event, and is not built |
+| Changing an assigned category | Implemented | `ReassignClinicalPriority` with `referral_priority_changes` (migration 0028) keeping both values, the reason, the actor and the time; available only while the referral is `clinically_approved` or `approved_for_scheduling`, refused once an appointment exists, refused same-to-same, and refused for "urgent direct coordination" because leaving the queue is a redirect rather than a change of position; `ReassignClinicalPriorityTest` |
 | Escalation levels and acknowledgement intervals | Implemented as a person's judgement, no policy | Escalating records a level, a reason and an actor, and the board states "Escalation policy: not configured" and names LP-020. No interval, ladder or after-hours route exists, and elapsed time carries no "overdue" label (`UrgentBoardPageTest`) |
 
 ### 3.6 Readiness checklists (§14, A-09)
@@ -178,19 +178,29 @@ several of them (`MED-*`, `IMG-*`, `CONS-*`) need columns, validation and a visi
 they can be stored at all. The reason this has not been started is that doing it half-way would put
 clinical questions on a form without the review framework that consumes them.
 
-### 4.3 Clinical priority: assigned on the decision, reassignment not yet built
+### 4.3 Clinical priority: assigned on the decision, and changeable afterwards
 
-**Status: closed for assignment.** `RecordClinicalDecision` now assigns the category, with the rule
-that the category must fit the outcome: an approval states routine or expedited, a redirect may state
-urgent direct coordination, and the outcomes that release nothing store nothing. The value is written
-to the decision row and to the referral in one unit of work, so neither can exist without the other.
+**Status: closed.** Both halves of §13.1's "assign/change" exist.
 
-What remains open is the other half of §13.1's "assign/change": escalating or downgrading a referral
-that has already been approved. That cannot go through this command, because a referral in
-`clinically_approved` or `approved_for_scheduling` is no longer in clinical review, and it should not
-be a status transition. It needs its own command, its own rationale requirement ("record if changed
-from a previously assigned category") and its own audit event. It is not built, and no screen claims
-it exists.
+`RecordClinicalDecision` assigns the category, with the rule that it must fit the outcome: an approval
+states routine or expedited, a redirect may state urgent direct coordination, and the outcomes that
+release nothing store nothing. The value is written to the decision row and to the referral in one
+unit of work, so neither can exist without the other.
+
+`ReassignClinicalPriority` changes it afterwards, which could not go through the decision command
+because a referral in `clinically_approved` is no longer in clinical review. It requires a rationale,
+writes `referral_priority_changes` with both categories, and is refused in four situations that each
+matter more than the change would:
+
+| Refused | Why |
+|---|---|
+| The referral has no category | Assignment belongs to the decision; a category with no decision behind it is what AC-010 forbids |
+| Same category | The table is a record of moves, not of restatements |
+| `urgent_direct_coordination` | It says the queue is the wrong route, so acquiring it means leaving the queue — a redirect, not a change of position |
+| An appointment already exists | Escalating a booked case is a scheduling decision, and this command cannot rebook. Saying "expedited" would promise an effect nothing delivers |
+
+The last one is the boundary of the slice rather than an oversight: reordering a booked list is BL-C3's
+territory, and it needs the resource engine, not a column.
 
 ### 4.4 The checklist role gap and the checklist gap are the same gap
 
@@ -258,10 +268,10 @@ constraint on BL-D2 rather than a fork in the road:
    statement the package does not make, which is why it was not inferred from closure.
 2. Readiness checklists, which begin by adding `TECH`, `NUR` and `LAB` with their permissions
    (BL-D2, see §4.4), then BL-C3 and BL-C7.
-3. Reassignment of an assigned category without a new decision (§4.3, BL-C4), which is the other
-   half of §13.1's "assign/change".
-4. Credential and privilege verification, so that clinical approval stops resting on a role name
+3. Credential and privilege verification, so that clinical approval stops resting on a role name
    (AC-009, LP-003, BL-C6).
-5. Public service, urgent and policy pages against the approved copy (BL-A1, BL-A3, BL-A6, BL-A7).
-6. Consent, specimen and follow-up records (BL-C5, BL-C7).
-7. Section 24 scenario execution (BL-F5), which needs the screens above and a staging environment.
+4. Public service, urgent and policy pages against the approved copy (BL-A1, BL-A3, BL-A6, BL-A7).
+5. Consent, specimen and follow-up records (BL-C5, BL-C7).
+6. Section 24 scenario execution (BL-F5), which needs the screens above and a staging environment.
+
+

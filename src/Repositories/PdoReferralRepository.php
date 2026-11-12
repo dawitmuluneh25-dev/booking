@@ -7,6 +7,7 @@ namespace App\Repositories;
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionRecord;
+use App\Domain\ClinicalPriorityChange;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
 use App\Domain\ReferralNotFoundException;
@@ -329,6 +330,66 @@ final class PdoReferralRepository implements ReferralRepository
                 throw new ReferralNotFoundException('#' . $referralId);
             }
         }
+    }
+
+    public function recordPriorityChange(ClinicalPriorityChange $change): ClinicalPriorityChange
+    {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO referral_priority_changes
+                (referral_id, from_priority, to_priority, reason, changed_by_user_id, changed_at)
+             VALUES (:referral_id, :from_priority, :to_priority, :reason, :changed_by, :changed_at)'
+        );
+        $statement->execute([
+            'referral_id' => $change->referralId,
+            'from_priority' => $change->fromPriority,
+            'to_priority' => $change->toPriority,
+            'reason' => $change->reason,
+            'changed_by' => $change->changedByUserId,
+            'changed_at' => $change->changedAtUtc,
+        ]);
+
+        return new ClinicalPriorityChange(
+            id: (int) $this->pdo->lastInsertId(),
+            referralId: $change->referralId,
+            fromPriority: $change->fromPriority,
+            toPriority: $change->toPriority,
+            reason: $change->reason,
+            changedByUserId: $change->changedByUserId,
+            changedAtUtc: $change->changedAtUtc,
+        );
+    }
+
+    /** @return list<array{change: ClinicalPriorityChange, changedBy: string}> */
+    public function priorityChangeHistory(int $referralId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT p.*, u.name AS changed_by_name
+               FROM referral_priority_changes p
+               JOIN users u ON u.id = p.changed_by_user_id
+              WHERE p.referral_id = :referral_id
+              ORDER BY p.changed_at ASC, p.id ASC'
+        );
+        $statement->execute(['referral_id' => $referralId]);
+
+        $history = [];
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $name = $row['changed_by_name'] ?? '';
+
+            $history[] = [
+                'change' => ClinicalPriorityChange::fromRow($row),
+                'changedBy' => is_scalar($name) ? (string) $name : '',
+            ];
+        }
+
+        return $history;
     }
 
     /** @return list<Referral> */

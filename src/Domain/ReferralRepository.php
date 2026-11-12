@@ -126,4 +126,20 @@ interface ReferralRepository
      * a programming error rather than a user error.
      */
     public function assignClinicalPriority(int $referralId, string $priority): void;
+
+    /**
+     * Append a change of clinical priority, with both values.
+     *
+     * Append-only, like `clinical_decisions`: a later change is another row, and the
+     * earlier category is never rewritten. `assignClinicalPriority()` holds only
+     * what stands now, which is why the pair is stored separately.
+     */
+    public function recordPriorityChange(ClinicalPriorityChange $change): ClinicalPriorityChange;
+
+    /**
+     * Every recorded change of priority, oldest first.
+     *
+     * @return list<array{change: ClinicalPriorityChange, changedBy: string}>
+     */
+    public function priorityChangeHistory(int $referralId): array;
 }

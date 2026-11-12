@@ -298,6 +298,7 @@ return static function (Application $app): void {
         $app->referrals(),
         $app->procedures(),
         $app->approveForScheduling(),
+        $app->reassignClinicalPriority(),
         $app->config()->timezone(),
     );
 
@@ -348,6 +349,14 @@ return static function (Application $app): void {
         '/referrals/{reference}/release',
         static fn (Request $request, array $params) => $referrals()->release($request, $params),
         RouteAccess::permission(Permission::ScheduleManage),
+    );
+
+    // Changing an assigned clinical priority is a clinical act on a referral that
+    // has already left clinical review, which is why it is not `/decision`.
+    $router->post(
+        '/referrals/{reference}/priority',
+        static fn (Request $request, array $params) => $referrals()->reassignPriority($request, $params),
+        RouteAccess::permission(Permission::ClinicalApprove),
     );
 
     $router->get(

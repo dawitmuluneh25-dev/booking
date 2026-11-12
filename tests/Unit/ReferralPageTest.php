@@ -10,6 +10,7 @@ use App\Domain\ApproveForScheduling;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
 use App\Domain\Procedure;
+use App\Domain\ReassignClinicalPriority;
 use App\Domain\Referral;
 use App\Domain\ReferralStatus;
 use App\Domain\Role;
@@ -26,6 +27,7 @@ use App\Security\Gate;
 use App\Security\PasswordHasher;
 use App\Support\View;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\InlineTransaction;
 use Tests\Support\InMemoryIdempotencyStore;
 use Tests\Support\InMemoryPhysicianProfileRepository;
 use Tests\Support\InMemoryProcedureRepository;
@@ -77,6 +79,7 @@ final class ReferralPageTest extends TestCase
             $this->referrals,
             $procedures,
             new ApproveForScheduling($this->referrals),
+            new ReassignClinicalPriority($this->referrals, new Validator(), new InlineTransaction()),
             'Africa/Addis_Ababa',
         );
     }

@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionRecord;
+use App\Domain\ClinicalPriorityChange;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
 use App\Domain\ReferralNotFoundException;
@@ -32,6 +33,9 @@ final class InMemoryReferralRepository implements ReferralRepository
 
     /** @var list<ClinicalDecision> */
     private array $decisions = [];
+
+    /** @var list<ClinicalPriorityChange> */
+    private array $priorityChanges = [];
 
     private int $nextId = 1;
 
@@ -276,6 +280,46 @@ final class InMemoryReferralRepository implements ReferralRepository
         }
 
         return null;
+    }
+
+    public function recordPriorityChange(ClinicalPriorityChange $change): ClinicalPriorityChange
+    {
+        if (!isset($this->referrals[$change->referralId])) {
+            throw new ReferralNotFoundException('#' . $change->referralId);
+        }
+
+        $stored = new ClinicalPriorityChange(
+            id: count($this->priorityChanges) + 1,
+            referralId: $change->referralId,
+            fromPriority: $change->fromPriority,
+            toPriority: $change->toPriority,
+            reason: $change->reason,
+            changedByUserId: $change->changedByUserId,
+            changedAtUtc: $change->changedAtUtc,
+        );
+
+        $this->priorityChanges[] = $stored;
+
+        return $stored;
+    }
+
+    /** @return list<array{change: ClinicalPriorityChange, changedBy: string}> */
+    public function priorityChangeHistory(int $referralId): array
+    {
+        $history = [];
+
+        foreach ($this->priorityChanges as $change) {
+            if ($change->referralId !== $referralId) {
+                continue;
+            }
+
+            $history[] = [
+                'change' => $change,
+                'changedBy' => $this->reviewerNames[$change->changedByUserId] ?? 'Unknown user',
+            ];
+        }
+
+        return $history;
     }
 
     private function isSuperseded(int $decisionId): bool

@@ -33,6 +33,7 @@ use App\Domain\ReferralAccessResolver;
 use App\Domain\ReferralRetentionRepository;
 use App\Domain\ReferralRetentionService;
 use App\Domain\ReferralTrackingLink;
+use App\Domain\ReassignClinicalPriority;
 use App\Domain\ReviewQuarantinedDocument;
 use App\Domain\DocumentAccessService;
 use App\Domain\TrackingTokenRepository;
@@ -130,6 +131,8 @@ final class Application
     private ?TriageReferral $triageReferral = null;
 
     private ?ApproveForScheduling $approveForScheduling = null;
+
+    private ?ReassignClinicalPriority $reassignPriority = null;
 
     private ?UrgentCaseRepository $urgentCases = null;
 
@@ -338,6 +341,15 @@ final class Application
     public function approveForScheduling(): ApproveForScheduling
     {
         return $this->approveForScheduling ??= new ApproveForScheduling($this->referrals());
+    }
+
+    public function reassignClinicalPriority(): ReassignClinicalPriority
+    {
+        return $this->reassignPriority ??= new ReassignClinicalPriority(
+            $this->referrals(),
+            new Validator(),
+            $this->transaction(),
+        );
     }
 
     public function urgentCases(): UrgentCaseRepository
