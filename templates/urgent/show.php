@@ -13,8 +13,11 @@
  * @var string|null            $notice
  * @var array<string, string>  $values
  * @var bool                   $mayAcknowledge
+ * @var bool                   $mayContact
  * @var bool                   $mayEscalate
  * @var bool                   $mayClose
+ * @var bool                   $canOpenReview
+ * @var bool                   $closed
  * @var list<\App\Domain\UrgentCoordination> $coordinationMoves
  * @var list<\App\Domain\UrgentDecisionType> $decisionChoices
  * @var list<array{decision: \App\Domain\UrgentDecision, decidedBy: string, decidedAt: string, superseded: bool}> $decisions
@@ -171,7 +174,7 @@ $closed = $case->urgency === \App\Domain\UrgentStatus::Closed;
         </form>
     <?php endif; ?>
 
-    <?php if ($mayAcknowledge && $acknowledged && !$resolved && !$closed): ?>
+    <?php if ($mayContact && $acknowledged && !$closed): ?>
         <h2 class="section-title">Record a contact attempt</h2>
         <p class="muted">
             Record every attempt, including the ones that failed. A telephone attempt needs the
@@ -263,6 +266,20 @@ $closed = $case->urgency === \App\Domain\UrgentStatus::Closed;
     <?php endif; ?>
 
     <h2 class="section-title">Clinical decision</h2>
+    <?php if ($canOpenReview): ?>
+        <form method="post" action="/urgent-cases/<?= e(rawurlencode($case->reference)) ?>/review"
+              class="stack">
+            <?= \App\Security\Csrf::field() ?>
+            <p class="muted">
+                This case has been received and nobody has taken it into clinical review. Opening
+                the review records that a clinician has picked it up; it does not decide anything.
+            </p>
+            <div class="form-actions">
+                <button class="button" type="submit">Take into clinical review</button>
+            </div>
+        </form>
+    <?php endif; ?>
+
     <?php if ($decisions !== []): ?>
         <div class="table-wrap">
             <table>
@@ -431,3 +448,5 @@ $closed = $case->urgency === \App\Domain\UrgentStatus::Closed;
         </div>
     <?php endif; ?>
 </section>
+
+

@@ -13,6 +13,7 @@ use App\Domain\EscalateUrgentCase;
 use App\Domain\Permission;
 use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RecordUrgentDecision;
+use App\Domain\OpenUrgentReview;
 use App\Domain\RegisterUrgentCase;
 use App\Domain\Role;
 use App\Domain\UrgentCase;
@@ -89,6 +90,7 @@ final class UrgentController
         private readonly CloseUrgentCase $close,
         private readonly RecordUrgentDecision $decideCase,
         private readonly AdvanceUrgentCoordination $advanceCoordination,
+        private readonly OpenUrgentReview $openReviewCase,
         private readonly string $timezone,
     ) {
     }
@@ -272,6 +274,28 @@ final class UrgentController
     }
 
     /** @param array<string, string> $params */
+    public function openReview(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::ClinicalReview);
+
+        if (!Csrf::validate($request->input(Csrf::FIELD))) {
+            throw new HttpException(419);
+        }
+
+        $case = $this->find((string) ($params['reference'] ?? ''));
+
+        try {
+            $this->openReviewCase->execute($this->actor(), $case->id);
+        } catch (UrgentTransitionException $exception) {
+            return $this->detail($case, [], $exception->getMessage(), 409);
+        }
+
+        Session::flash('notice', 'Review opened on ' . $case->reference . '.');
+
+        return Response::redirect('/urgent-cases/' . rawurlencode($case->reference));
+    }
+
+    /** @param array<string, string> $params */
     public function coordinate(Request $request, array $params): Response
     {
         $this->gate->authorize(Permission::UrgentCoordinate);
@@ -341,6 +365,27 @@ final class UrgentController
         $user = $this->gate->authenticate();
 
         return new Actor($user->id, $user->role);
+    }
+
+    /**
+     * Whether this actor can record a contact attempt on this case.
+     *
+     * The roles come from the transition that creates the state — `Acknowledged`
+     * admits `Contacting` — because the aggregate only answers `allowedActors()` for
+     * a reachable target, and a case already in `contacting` has no edge left to ask
+     * about. A repeat attempt is allowed and does not move the state: WF-06 wants
+     * every call recorded, including the ones that reached nobody.
+     */
+    private function mayRecordContact(UrgentCase $case, Role $role): bool
+    {
+        $roles = UrgentCoordination::Acknowledged->allowedActors(UrgentCoordination::Contacting);
+
+        if (!in_array($role, $roles, true) || $case->coordination->isTerminal()) {
+            return false;
+        }
+
+        return $case->coordination === UrgentCoordination::Contacting
+            || $case->coordination->canTransitionTo(UrgentCoordination::Contacting);
     }
 
     /**
@@ -435,6 +480,14 @@ final class UrgentController
             'mayClose' => in_array($user->role, $case->urgency->allowedActors(UrgentStatus::Closed), true)
                 && $case->urgency->canTransitionTo(UrgentStatus::Closed),
             'mayEscalate' => in_array($user->role, $case->coordination->escalationActors(), true),
+            // The first clinical step, offered only while the case is untouched and
+            // only to a role the transition table names for it.
+            'canOpenReview' => $user->can(Permission::ClinicalReview)
+                && in_array($user->role, $case->urgency->allowedActors(UrgentStatus::UnderClinicalReview), true),
+            // Contact attempts are their own act, not a consequence of acknowledging.
+            // Asking `mayAcknowledge` for this hid the form precisely once the case
+            // had been acknowledged, which is when a call is most likely to be made.
+            'mayContact' => $this->mayRecordContact($case, $user->role),
             // Only the coordination moves this actor may actually make are offered.
             'coordinationMoves' => $this->coordinationMoves($case, $user->role),
             // Only the choices that can legally move this case are offered, so the

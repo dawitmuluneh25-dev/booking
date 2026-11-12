@@ -14,6 +14,7 @@ use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RegisterUrgentCase;
 use App\Domain\Role;
 use App\Domain\UrgentCase;
+use App\Domain\OpenUrgentReview;
 use App\Domain\RecordUrgentDecision;
 use App\Domain\UrgentCoordination;
 use App\Domain\UrgentStatus;
@@ -106,6 +107,7 @@ final class UrgentBoardPageTest extends TestCase
             new CloseUrgentCase($this->cases),
             new RecordUrgentDecision($this->cases, new Validator(), new InlineTransaction()),
             new AdvanceUrgentCoordination($this->cases),
+            new OpenUrgentReview($this->cases),
             'Africa/Addis_Ababa',
         );
     }
@@ -251,6 +253,43 @@ final class UrgentBoardPageTest extends TestCase
      * may acknowledge. Reception holds the first and appears in the second, so the
      * form is shown — but a patient does not, and the domain refuses them.
      */
+    /**
+     * The regression a render check found: the contact form was gated on
+     * `mayAcknowledge`, which is false as soon as a case is acknowledged — so the one
+     * moment a call is most likely to be made was the one moment the form vanished.
+     */
+    public function testTheContactFormAppearsOnlyOnceTheCaseIsAcknowledged(): void
+    {
+        $case = $this->registerCase('Bereket Tesfaye', self::NOW);
+
+        $before = $this->body($this->controller->show(
+            Request::create('GET', '/urgent-cases/' . $case->reference),
+            ['reference' => $case->reference],
+        ));
+        self::assertStringNotContainsString(
+            '/contact"',
+            $before,
+            'A case nobody has claimed should not offer a contact log first.',
+        );
+
+        $this->cases->acknowledge(
+            $case,
+            new Actor($this->coordinatorId, Role::Coordinator),
+            'telephone',
+            null,
+            self::NOW,
+        );
+
+        $after = $this->body($this->controller->show(
+            Request::create('GET', '/urgent-cases/' . $case->reference),
+            ['reference' => $case->reference],
+        ));
+
+        self::assertStringContainsString('/contact"', $after);
+        // And the acknowledgement form is gone, because it has been used.
+        self::assertStringNotContainsString('/acknowledge"', $after);
+    }
+
     public function testAStaffMemberMayAcknowledgeButNotEscalate(): void
     {
         $case = $this->registerCase('Bereket Tesfaye', self::NOW);

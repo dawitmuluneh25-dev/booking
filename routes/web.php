@@ -400,6 +400,7 @@ return static function (Application $app): void {
         $app->closeUrgentCase(),
         $app->recordUrgentDecision(),
         $app->advanceUrgentCoordination(),
+        $app->openUrgentReview(),
         $app->config()->timezone(),
     );
 
@@ -456,6 +457,13 @@ return static function (Application $app): void {
     );
     // The operational axis: whether the receiving team is engaged, and whether
     // anything is left to coordinate. Neither is inferred from closure.
+    // The first clinical step: a radiologist picking the case up. Without it a new
+    // case could never reach a state where a decision is recordable.
+    $router->post(
+        '/urgent-cases/{reference}/review',
+        static fn (Request $request, array $params) => $urgent->openReview($request, $params),
+        RouteAccess::permission(Permission::ClinicalReview),
+    );
     $router->post(
         '/urgent-cases/{reference}/coordination',
         static fn (Request $request, array $params) => $urgent->coordinate($request, $params),

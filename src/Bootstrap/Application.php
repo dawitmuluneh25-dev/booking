@@ -13,6 +13,7 @@ use App\Domain\AuditRepository;
 use App\Domain\AuditTrail;
 use App\Domain\BookingService;
 use App\Domain\ClinicCalendar;
+use App\Domain\OpenUrgentReview;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\IdempotencyStore;
@@ -180,6 +181,8 @@ final class Application
     private ?RecordUrgentDecision $recordUrgentDecision = null;
 
     private ?AdvanceUrgentCoordination $advanceCoordination = null;
+
+    private ?OpenUrgentReview $openReview = null;
 
     private ?Kernel $kernel = null;
 
@@ -514,6 +517,11 @@ final class Application
     public function closeUrgentCase(): CloseUrgentCase
     {
         return $this->closeUrgent ??= new CloseUrgentCase($this->urgentCases());
+    }
+
+    public function openUrgentReview(): OpenUrgentReview
+    {
+        return $this->openReview ??= new OpenUrgentReview($this->urgentCases());
     }
 
     public function advanceUrgentCoordination(): AdvanceUrgentCoordination

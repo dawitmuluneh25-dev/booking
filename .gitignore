@@ -36,3 +36,4 @@ Thumbs.db
 # Backups
 /var/backups/*
 !/var/backups/.gitkeep
+outputs/
