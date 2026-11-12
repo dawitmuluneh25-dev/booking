@@ -35,6 +35,9 @@
             <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::ClinicalReview)): ?>
                 <a href="/review">Review</a>
             <?php endif; ?>
+            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::UrgentAcknowledge)): ?>
+                <a href="/urgent-cases">Urgent</a>
+            <?php endif; ?>
             <?php if (($currentUser ?? null) !== null): ?>
                 <a href="/bookings/new">New booking</a>
                 <a href="/bookings">Upcoming</a>

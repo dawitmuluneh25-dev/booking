@@ -19,6 +19,15 @@ enum Permission: string
     case ClinicalReview = 'clinical.review';
     case ClinicalApprove = 'clinical.approve';
     case ProcedureCoordinate = 'procedure.coordinate';
+
+    /**
+     * Urgent coordination splits along the same line the aggregate already draws
+     * (WF-05): acknowledging a case says "I have seen this", and every role on the
+     * board may say it; coordinating a case — escalating it, closing it — is
+     * narrower. One permission would have forced a receptionist to hold the power
+     * to close a child's case in order to open the screen that shows it.
+     */
+    case UrgentAcknowledge = 'urgent.acknowledge';
     case UrgentCoordinate = 'urgent.coordinate';
     case ScheduleManage = 'schedule.manage';
 

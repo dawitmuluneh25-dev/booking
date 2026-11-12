@@ -14,6 +14,7 @@ use App\Domain\UrgentCase;
 use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
 use App\Domain\UrgentStatus;
+use App\Domain\UrgentTimelineEntry;
 use App\Domain\UrgentTransitionException;
 use App\Repositories\PdoUrgentCaseRepository;
 use PDO;
@@ -251,6 +252,138 @@ final class UrgentCaseRepositoryTest extends TestCase
         // otherwise be read back as an enum case that does not exist.
         self::assertTrue($refused, 'The column accepted an elective status.');
         self::assertSame(UrgentStatus::Received, $this->repository()->findById($case->id)?->urgency);
+    }
+
+    public function testACaseIsFoundByItsReferenceAndNotByAnotherOne(): void
+    {
+        $case = $this->create();
+
+        self::assertSame($case->id, $this->repository()->findByReference($case->reference)?->id);
+        self::assertNull($this->repository()->findByReference('UR-000000-NOSUCH'));
+    }
+
+    public function testTheBoardPutsAnUnclaimedCaseAboveAnOlderClaimedOne(): void
+    {
+        $older = $this->create();
+        $newer = $this->create();
+
+        $acknowledged = $this->repository()->acknowledge(
+            $older,
+            new Actor($this->actorUserId, Role::Staff),
+            'application',
+            null,
+            self::NOW,
+        );
+        self::assertSame(UrgentCoordination::Acknowledged, $acknowledged->coordination);
+
+        $open = $this->repository()->openCases(50);
+        $ours = array_values(array_filter(
+            $open,
+            static fn (UrgentCase $case): bool => in_array($case->id, [$older->id, $newer->id], true),
+        ));
+
+        self::assertCount(2, $ours);
+        self::assertSame($newer->id, $ours[0]->id, 'A case nobody has claimed was not listed first.');
+    }
+
+    public function testAClosedCaseIsNotOnTheBoard(): void
+    {
+        $case = $this->create();
+
+        $this->repository()->transitionUrgency(
+            $case,
+            UrgentStatus::Closed,
+            new Actor($this->actorUserId, Role::Coordinator),
+            'Closed after the receiving team confirmed transfer.',
+            self::NOW,
+        );
+
+        $ids = array_map(
+            static fn (UrgentCase $open): int => $open->id,
+            $this->repository()->openCases(200),
+        );
+
+        self::assertNotContains($case->id, $ids);
+    }
+
+    /**
+     * `closed_at` is written by the same statement as the status, so the row cannot
+     * read closed while claiming not to know when.
+     */
+    public function testClosingWritesTheClosedTimeWithTheStatus(): void
+    {
+        $case = $this->create();
+
+        $this->repository()->transitionUrgency(
+            $case,
+            UrgentStatus::Closed,
+            new Actor($this->actorUserId, Role::Coordinator),
+            'Reduced; child admitted for observation.',
+            self::NOW,
+        );
+
+        $statement = $this->pdo()->prepare('SELECT closed_at FROM urgent_cases WHERE id = :id');
+        $statement->execute(['id' => $case->id]);
+
+        self::assertSame(self::NOW, (string) $statement->fetchColumn());
+    }
+
+    /**
+     * §10.3 asks for a coordination record at each step; `occurredEventType()` names
+     * which moves produce one. Until this slice nothing wrote them, so the timeline
+     * had no events to show.
+     */
+    public function testAClinicalMoveWritesItsCoordinationEvent(): void
+    {
+        $case = $this->create();
+
+        $this->repository()->transitionUrgency(
+            $case,
+            UrgentStatus::UnderClinicalReview,
+            new Actor($this->actorUserId, Role::Radiologist),
+            null,
+            self::NOW,
+        );
+
+        $statement = $this->pdo()->prepare(
+            'SELECT event_type, event_note FROM urgent_events WHERE urgent_case_id = :id'
+        );
+        $statement->execute(['id' => $case->id]);
+        $row = $statement->fetch();
+        self::assertIsArray($row);
+        $eventType = is_scalar($row['event_type'] ?? null) ? (string) $row['event_type'] : '';
+        $eventNote = is_scalar($row['event_note'] ?? null) ? (string) $row['event_note'] : '';
+
+        self::assertSame('clinical_review', $eventType);
+        self::assertNotSame('', $eventNote);
+    }
+
+    public function testTheTimelineMergesTheStatusTrailAndTheAcknowledgementOldestFirst(): void
+    {
+        $case = $this->create();
+
+        $case = $this->repository()->acknowledge(
+            $case,
+            new Actor($this->actorUserId, Role::Staff),
+            'telephone',
+            'Spoke to the referring registrar.',
+            '2026-11-08 13:05:00',
+        );
+
+        $entries = $this->repository()->timeline($case->id);
+
+        self::assertNotEmpty($entries);
+        // The case arrived at 13:00 and was acknowledged at 13:05, so the arrival
+        // comes first even though it lives in a different table.
+        self::assertSame(
+            [UrgentTimelineEntry::STATUS, UrgentTimelineEntry::ACKNOWLEDGEMENT],
+            [$entries[0]->kind, $entries[1]->kind],
+            'The timeline was not ordered oldest first.',
+        );
+        self::assertContains('Acknowledged — telephone', array_map(
+            static fn (UrgentTimelineEntry $entry): string => $entry->description(),
+            $entries,
+        ));
     }
 
     private function create(): UrgentCase

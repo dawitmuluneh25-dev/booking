@@ -25,6 +25,7 @@ use App\Controllers\HomeController;
 use App\Controllers\PasswordResetController;
 use App\Controllers\ReferralController;
 use App\Controllers\ReviewController;
+use App\Controllers\UrgentController;
 use App\Domain\Permission;
 use App\Http\Request;
 use App\Http\RouteAccess;
@@ -379,6 +380,65 @@ return static function (Application $app): void {
         static fn (Request $request, array $params) => $review->decide($request, $params),
         RouteAccess::permission(Permission::ClinicalApprove),
     );
+    $urgent = new UrgentController(
+        $app->view(),
+        $app->gate(),
+        $app->urgentCases(),
+        $app->registerUrgentCase(),
+        $app->acknowledgeUrgentCase(),
+        $app->recordUrgentContactAttempt(),
+        $app->escalateUrgentCase(),
+        $app->closeUrgentCase(),
+        $app->config()->timezone(),
+    );
+
+    // `/urgent` is reserved for the public urgent-pathway notice (BL-A6): that page
+    // has to work without a session, because it is the one a parent reaches at 3am.
+    // The board behind these routes is the staff surface, so it lives elsewhere.
+    $router->get(
+        '/urgent-cases',
+        static fn (Request $request) => $urgent->index($request),
+        RouteAccess::permission(Permission::UrgentAcknowledge),
+    );
+    $router->get(
+        '/urgent-cases/new',
+        static fn (Request $request) => $urgent->create($request),
+        RouteAccess::permission(Permission::ReferralSubmit),
+    );
+    $router->post(
+        '/urgent-cases',
+        static fn (Request $request) => $urgent->store($request),
+        RouteAccess::permission(Permission::ReferralSubmit),
+    );
+    $router->get(
+        '/urgent-cases/{reference}',
+        static fn (Request $request, array $params) => $urgent->show($request, $params),
+        RouteAccess::permission(Permission::UrgentAcknowledge),
+    );
+    // Acknowledgement is the one act WF-05 wants available to whoever is at the
+    // desk, so it carries the weaker permission; the domain still refuses a role
+    // that the coordination table does not name.
+    $router->post(
+        '/urgent-cases/{reference}/acknowledge',
+        static fn (Request $request, array $params) => $urgent->acknowledge($request, $params),
+        RouteAccess::permission(Permission::UrgentAcknowledge),
+    );
+    $router->post(
+        '/urgent-cases/{reference}/contact',
+        static fn (Request $request, array $params) => $urgent->contact($request, $params),
+        RouteAccess::permission(Permission::UrgentAcknowledge),
+    );
+    $router->post(
+        '/urgent-cases/{reference}/escalate',
+        static fn (Request $request, array $params) => $urgent->escalate($request, $params),
+        RouteAccess::permission(Permission::UrgentCoordinate),
+    );
+    $router->post(
+        '/urgent-cases/{reference}/close',
+        static fn (Request $request, array $params) => $urgent->close($request, $params),
+        RouteAccess::permission(Permission::UrgentCoordinate),
+    );
+
     $documents = new DocumentController(
         $app->view(),
         $app->gate(),

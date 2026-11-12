@@ -40,7 +40,7 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        self::assertSame(55, count($manifest));
+        self::assertSame(63, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);
@@ -96,6 +96,37 @@ final class RouteAccessManifestTest extends TestCase
         self::assertSame('schedule.manage', $guarded['GET /schedule/{reference}/move'] ?? null);
         self::assertSame('bookings.manage', $guarded['POST /schedule/{reference}/cancel'] ?? null);
         self::assertSame('referral.triage', $guarded['POST /referrals/{reference}/status-link'] ?? null);
+
+        // The urgent board: claiming a case is open to whoever is at the desk;
+        // escalating and closing it is not.
+        self::assertSame('urgent.acknowledge', $guarded['GET /urgent-cases'] ?? null);
+        self::assertSame('urgent.acknowledge', $guarded['GET /urgent-cases/{reference}'] ?? null);
+        self::assertSame('urgent.acknowledge', $guarded['POST /urgent-cases/{reference}/acknowledge'] ?? null);
+        self::assertSame('urgent.acknowledge', $guarded['POST /urgent-cases/{reference}/contact'] ?? null);
+        self::assertSame('urgent.coordinate', $guarded['POST /urgent-cases/{reference}/escalate'] ?? null);
+        self::assertSame('urgent.coordinate', $guarded['POST /urgent-cases/{reference}/close'] ?? null);
+        // Intake follows who may submit a referral into the service (§10.3 step 1).
+        self::assertSame('referral.submit', $guarded['GET /urgent-cases/new'] ?? null);
+        self::assertSame('referral.submit', $guarded['POST /urgent-cases'] ?? null);
+    }
+
+    /**
+     * `/urgent` is the public urgent-pathway notice (BL-A6) and must stay free of
+     * the case board, which carries patient data: the two paths are different
+     * audiences and must not be able to drift into one another by a rename.
+     */
+    public function testTheUrgentBoardIsNotThePublicUrgentPathway(): void
+    {
+        foreach ($this->manifest() as $route) {
+            self::assertNotSame('/urgent', $route['pattern']);
+
+            if (str_starts_with($route['pattern'], '/urgent-cases')) {
+                self::assertFalse(
+                    $route['access']->isPublic,
+                    $route['method'] . ' ' . $route['pattern'] . ' exposes urgent cases without a session.',
+                );
+            }
+        }
     }
 
     public function testNoGuardedRouteReliesOnAuthenticationAloneExceptLogout(): void

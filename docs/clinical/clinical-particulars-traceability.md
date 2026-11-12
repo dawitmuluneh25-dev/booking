@@ -91,7 +91,7 @@ before production and none has been executed.
 | Submitters may request routine or expedited only | Implemented | `SubmitElectiveReferral` validates against `Priority::requestableValues()`; `SaveReferralDraft` refuses an unrequestable value rather than letting the CHECK become a 500 |
 | Urgent direct coordination leaves the ordinary queue | Implemented as a guard | An approval cannot carry it: approval is what releases a referral into the elective queue, and the category exists to say that queue is the wrong route. It is recorded with a redirect instead (`Priority::leavesTheOrdinaryQueue`, `assignableOnApproval`) |
 | Changing an assigned category without a new decision | Not started | §13.1 names "assign/change" as one action. This release assigns on the decision; a standalone reassignment on an already-approved referral is a separate command with its own audit event, and is not built |
-| Escalation levels and acknowledgement intervals | Not started, deliberately | No interval has been approved (LP-020). Escalation has no default, by design |
+| Escalation levels and acknowledgement intervals | Implemented as a person's judgement, no policy | Escalating records a level, a reason and an actor, and the board states "Escalation policy: not configured" and names LP-020. No interval, ladder or after-hours route exists, and elapsed time carries no "overdue" label (`UrgentBoardPageTest`) |
 
 ### 3.6 Readiness checklists (§14, A-09)
 
@@ -132,7 +132,8 @@ before production and none has been executed.
 | Requirement | Status | Evidence / notes |
 |---|---|---|
 | Consent as a documented dialogue | Not started | No record; A-12 approved the particulars, not a form |
-| Urgent registration, acknowledgement, contact attempts, escalation | Partial | `RegisterUrgentCase`, `AcknowledgeUrgentCase`, `RecordUrgentContactAttempt`, `EscalateUrgentCase` exist and are tested at the domain level; no routes, and `CloseUrgentCase` does not exist |
+| Urgent registration, acknowledgement, contact attempts, escalation, closure | Implemented for the coordination axis | `/urgent-cases` board, `/urgent-cases/new` intake, acknowledge, contact log, escalate and close, with a five-table timeline; `CloseUrgentCase` added; `closed_at` and the coordination events named by `UrgentStatus::occurredEventType()` are now written; `urgent.acknowledge` split from `urgent.coordinate` so reception can claim a case without being able to close it; `CloseUrgentCaseTest`, `UrgentBoardPageTest`, `UrgentCaseRepositoryTest` |
+| A clinical decision on an urgent case (`INT-016`) | Not started | The clinical status moves (`under clinical review`, `accepted for coordination`, `redirected`, `declined`, `completed`, `transferred`) have no command and no screen, and `coordinating`/`resolved` have no writer. BL-D3. Until then a case can be registered, claimed, contacted, escalated and closed — but not accepted, and closure from `accepted_for_coordination` is refused by `UrgentStatus`, which is correct and unreachable |
 | Acknowledgement cannot be produced by a notification path | Implemented | Acknowledgement writes an actor and a channel; the outbox has no path to it |
 | Audit of clinical and operational actions | Partial | `audit_events` covers identity, documents and roles; checklist, milestone and urgent-board actions have nothing to audit yet |
 | Translation governance | Not started | A-19 approved the requirement; no translated content exists |
@@ -233,6 +234,9 @@ constraint on BL-D2 rather than a fork in the road:
   requirement and an audit event.
 - Do not describe role-based clinical approval as privilege-verified approval. AC-009 and LP-003
   require a credential record this release does not have.
+- Do not let a recorded urgent case read as acknowledged, accepted or booked. The confirmation says
+  it is none of those (§10.5), the board says so again, and the status vocabulary keeps the clinical
+  and coordination axes separate so neither can imply the other.
 - Do not treat this traceability record, or a passing test suite, as clinical or operational
   acceptance.
 
@@ -240,13 +244,19 @@ constraint on BL-D2 rather than a fork in the road:
 
 ## 6. Next slices, in dependency order
 
-1. Urgent board routes and `CloseUrgentCase`, with the escalation panel reading "no policy
-   configured" until LP-020 is answered (BL-D1). The domain objects exist; what is missing is the
-   screen and the closing command, and the intake path for a case that is not an elective referral.
+1. The urgent coordination decision (§10.2 `INT-016`) and the clinical move surface — `under
+   clinical review`, `accepted for coordination`, `redirected`, `declined`, `completed`,
+   `transferred` — plus the coordination states `coordinating` and `resolved` (BL-D3). BL-D1 made
+   the case registrable, claimable, contactable, escalatable and closable; it deliberately did not
+   make it acceptable, because acceptance without a recorded decision would invent the decision.
+   Until BL-D3 exists a coordinator can close a case that nothing could have accepted, and the
+   refusal is the correct behaviour rather than a bug.
 2. Readiness checklists, which begin by adding `TECH`, `NUR` and `LAB` with their permissions
-   (BL-D2, see §4.4), then BL-C3.
-3. Reassignment of an assigned category without a new decision (§4.3), which the urgent board will
-   want once a case can move between queues.
-4. Public service, urgent and policy pages against the approved copy (BL-A1, BL-A3, BL-A6, BL-A7).
-5. Consent, specimen and follow-up records with the procedure-day timeline (BL-C3).
-6. Section 24 scenario execution, which needs the screens above and a staging environment.
+   (BL-D2, see §4.4), then BL-C3 and BL-C7.
+3. Reassignment of an assigned category without a new decision (§4.3, BL-C4), which is the other
+   half of §13.1's "assign/change".
+4. Credential and privilege verification, so that clinical approval stops resting on a role name
+   (AC-009, LP-003, BL-C6).
+5. Public service, urgent and policy pages against the approved copy (BL-A1, BL-A3, BL-A6, BL-A7).
+6. Consent, specimen and follow-up records (BL-C5, BL-C7).
+7. Section 24 scenario execution (BL-F5), which needs the screens above and a staging environment.

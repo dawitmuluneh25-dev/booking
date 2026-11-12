@@ -11,6 +11,7 @@ use App\Domain\UrgentCaseRepository;
 use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
 use App\Domain\UrgentStatus;
+use App\Domain\UrgentTimelineEntry;
 use App\Domain\UrgentTransitionException;
 use PDO;
 
@@ -100,6 +101,112 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
         return $row === false ? null : UrgentCase::fromRow($row);
     }
 
+    public function findByReference(string $reference): ?UrgentCase
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT ' . self::COLUMNS . ' FROM urgent_cases WHERE reference = :reference LIMIT 1'
+        );
+        $statement->execute(['reference' => $reference]);
+
+        /** @var array<string, mixed>|false $row */
+        $row = $statement->fetch();
+
+        return $row === false ? null : UrgentCase::fromRow($row);
+    }
+
+    public function openCases(int $limit = 50): array
+    {
+        // The boolean expression sorts unacknowledged to the top without a second
+        // column or a CASE the optimiser has to reason about, and received_at keeps
+        // the oldest at the front of each group.
+        $statement = $this->pdo->prepare(
+            'SELECT ' . self::COLUMNS . ' FROM urgent_cases
+              WHERE urgency_status <> :closed
+              ORDER BY (coordination_status = :unacknowledged) DESC, received_at ASC, id ASC
+              LIMIT ' . max(1, min($limit, 200))
+        );
+        $statement->execute([
+            'closed' => UrgentStatus::Closed->value,
+            'unacknowledged' => UrgentCoordination::Unacknowledged->value,
+        ]);
+
+        $cases = [];
+
+        while (($row = $statement->fetch()) !== false) {
+            /** @var array<string, mixed> $row */
+            $cases[] = UrgentCase::fromRow($row);
+        }
+
+        return $cases;
+    }
+
+    public function timeline(int $caseId): array
+    {
+        // Five tables share one shape here: when it happened, who did it, the short
+        // substance and the free text. The label is composed from columns rather
+        // than joined prose so the wording can be read and changed in PHP.
+        $statement = $this->pdo->prepare(
+            "SELECT 'acknowledgement' AS kind, ack.acknowledged_at AS occurred_at,
+                    user.name AS actor_name, ack.acknowledgement_channel AS label, ack.note AS detail
+               FROM urgent_acknowledgements ack
+               JOIN users user ON user.id = ack.acknowledged_by_user_id
+              WHERE ack.urgent_case_id = :ack_case
+             UNION ALL
+             SELECT 'contact', con.attempted_at, user.name,
+                    CONCAT(con.contact_role, ' · ', con.channel, ' · ', con.outcome,
+                           COALESCE(CONCAT(' · ', con.contact_phone), '')),
+                    con.notes
+               FROM urgent_contact_attempts con
+               JOIN users user ON user.id = con.attempted_by_user_id
+              WHERE con.urgent_case_id = :contact_case
+             UNION ALL
+             SELECT 'escalation', esc.escalated_at, user.name,
+                    CONCAT('level ', esc.escalation_level), esc.reason
+               FROM urgent_escalations esc
+               JOIN users user ON user.id = esc.escalated_by_user_id
+              WHERE esc.urgent_case_id = :escalation_case
+             UNION ALL
+             SELECT 'event', evt.event_at, user.name,
+                    CONCAT(evt.event_type, COALESCE(CONCAT(' · ', evt.hospital_or_team), '')),
+                    evt.event_note
+               FROM urgent_events evt
+               JOIN users user ON user.id = evt.event_by_user_id
+              WHERE evt.urgent_case_id = :event_case
+             UNION ALL
+             SELECT 'status', hist.occurred_at, user.name,
+                    CONCAT(COALESCE(hist.from_status, 'new'), ' → ', hist.to_status),
+                    hist.reason
+               FROM urgent_status_history hist
+               JOIN users user ON user.id = hist.actor_user_id
+              WHERE hist.urgent_case_id = :status_case
+              ORDER BY occurred_at ASC, kind ASC"
+        );
+        $statement->execute([
+            'ack_case' => $caseId,
+            'contact_case' => $caseId,
+            'escalation_case' => $caseId,
+            'event_case' => $caseId,
+            'status_case' => $caseId,
+        ]);
+
+        $entries = [];
+
+        while (($row = $statement->fetch()) !== false) {
+            /** @var array<string, mixed> $row */
+            $entries[] = new UrgentTimelineEntry(
+                kind: is_scalar($row['kind'] ?? null) ? (string) $row['kind'] : '',
+                occurredAtUtc: is_scalar($row['occurred_at'] ?? null) ? (string) $row['occurred_at'] : '',
+                actorName: is_scalar($row['actor_name'] ?? null) ? (string) $row['actor_name'] : 'Unknown user',
+                label: is_scalar($row['label'] ?? null) ? (string) $row['label'] : '',
+                detail: is_scalar($row['detail'] ?? null) && (string) $row['detail'] !== ''
+                    ? (string) $row['detail']
+                    : null,
+            );
+        }
+
+        return $entries;
+    }
+
     public function transitionUrgency(
         UrgentCase $case,
         UrgentStatus $target,
@@ -121,18 +228,31 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
 
         return $this->transaction->run(
             function () use ($case, $target, $actor, $reason, $occurredAtUtc): UrgentCase {
+                // `closed_at` is written by the same statement as the status, so a
+                // row cannot read `closed` while claiming not to know when. It is
+                // the only column on this table that only one transition sets.
+                $closing = $target === UrgentStatus::Closed;
+
                 $update = $this->pdo->prepare(
                     'UPDATE urgent_cases
-                        SET urgency_status = :target, version = version + 1, updated_at = :updated_at
-                      WHERE id = :id AND version = :version AND urgency_status = :expected'
+                        SET urgency_status = :target, version = version + 1, updated_at = :updated_at'
+                    . ($closing ? ', closed_at = :closed_at' : '') .
+                    ' WHERE id = :id AND version = :version AND urgency_status = :expected'
                 );
-                $update->execute([
+
+                $parameters = [
                     'target' => $target->value,
                     'updated_at' => $occurredAtUtc,
                     'id' => $case->id,
                     'version' => $case->version,
                     'expected' => $case->urgency->value,
-                ]);
+                ];
+
+                if ($closing) {
+                    $parameters['closed_at'] = $occurredAtUtc;
+                }
+
+                $update->execute($parameters);
 
                 if ($update->rowCount() !== 1) {
                     throw new UrgentTransitionException(
@@ -143,6 +263,7 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
                 }
 
                 $this->appendHistory($case->id, $case->urgency, $target, $actor, $reason, $occurredAtUtc);
+                $this->appendCoordinationEvent($case->id, $target, $actor, $reason, $occurredAtUtc);
 
                 return $case->withUrgency($target, $case->version + 1);
             },
@@ -366,6 +487,47 @@ final class PdoUrgentCaseRepository implements UrgentCaseRepository
                 return $case->withCoordination($target, $case->version + 1);
             },
         );
+    }
+
+    /**
+     * Record the coordination event a clinical move implies.
+     *
+     * `UrgentStatus::occurredEventType()` names the events the workflow documents
+     * require at a move — the review happened, a transfer was arranged, an outcome
+     * was recorded — and until now nothing wrote them, so the timeline §10.3 asks
+     * for had no rows. The status trail says the case moved; this says what
+     * coordination happened when it did.
+     *
+     * A move with no event type writes nothing: an administrative state change is
+     * not a coordination act and inventing a row for it would pad the timeline.
+     */
+    private function appendCoordinationEvent(
+        int $caseId,
+        UrgentStatus $target,
+        Actor $actor,
+        ?string $reason,
+        string $occurredAtUtc,
+    ): void {
+        $eventType = $target->occurredEventType();
+
+        if ($eventType === null) {
+            return;
+        }
+
+        $statement = $this->pdo->prepare(
+            'INSERT INTO urgent_events
+                (urgent_case_id, event_type, event_by_user_id, hospital_or_team, event_note, event_at)
+             VALUES (:case_id, :event_type, :user_id, NULL, :note, :event_at)'
+        );
+        $statement->execute([
+            'case_id' => $caseId,
+            'event_type' => $eventType,
+            'user_id' => $actor->userId,
+            // `event_note` is NOT NULL: the reason where there is one, otherwise the
+            // status label, which is a true statement about the move and not a guess.
+            'note' => $reason !== null && trim($reason) !== '' ? $reason : $target->label(),
+            'event_at' => $occurredAtUtc,
+        ]);
     }
 
     private function appendHistory(

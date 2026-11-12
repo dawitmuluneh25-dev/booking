@@ -11,29 +11,45 @@ use App\Domain\UrgentCaseNotFoundException;
 use App\Domain\UrgentContactAttempt;
 use App\Domain\UrgentCoordination;
 use App\Domain\UrgentStatus;
+use App\Domain\UrgentTimelineEntry;
 use App\Domain\UrgentTransitionException;
 use RuntimeException;
 
 /**
  * Urgent store with the same refusals as the MySQL adapter: version-guarded
- * transitions, role checks, required reasons, and no second acknowledgement.
+ * transitions, role checks, required reasons, no second acknowledgement, and a
+ * coordination event only where the status model names one.
+ *
+ * `$userNames` mirrors the join the MySQL adapter does against `users`, because the
+ * timeline names the person who acted and a role is not a name.
  */
 final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
 {
     /** @var array<int, UrgentCase> */
     private array $cases = [];
 
-    /** @var list<array{case_id: int, from: ?string, to: string, actor_role: string, reason: ?string}> */
+    /** @var list<array{case_id: int, from: ?string, to: string, actor_user_id: int, actor_role: string, reason: ?string, at: string}> */
     private array $history = [];
 
-    /** @var list<array{case_id: int, user_id: int, channel: string, note: ?string}> */
+    /** @var list<array{case_id: int, user_id: int, channel: string, note: ?string, at: string}> */
     private array $acknowledgements = [];
 
-    /** @var list<array{case_id: int, user_id: int, contact_role: string, channel: string, outcome: string, phone: ?string}> */
+    /** @var list<array{case_id: int, user_id: int, contact_role: string, channel: string, outcome: string, phone: ?string, notes: ?string, at: string}> */
     private array $contacts = [];
 
-    /** @var list<array{case_id: int, level: int, reason: string, assignee: ?int}> */
+    /** @var list<array{case_id: int, user_id: int, level: int, reason: string, assignee: ?int, at: string}> */
     private array $escalations = [];
+
+    /** @var list<array{case_id: int, event_type: string, user_id: int, note: string, at: string}> */
+    private array $events = [];
+
+    /** @var array<int, string> */
+    private array $closedAt = [];
+
+    /** @param array<int, string> $userNames userId => name, the stand-in for the users join */
+    public function __construct(private readonly array $userNames = [])
+    {
+    }
 
     public function create(UrgentCase $case, Actor $actor, string $occurredAtUtc): UrgentCase
     {
@@ -44,8 +60,10 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
             'case_id' => $stored->id,
             'from' => null,
             'to' => $stored->urgency->value,
+            'actor_user_id' => $actor->userId,
             'actor_role' => $actor->role->value,
             'reason' => null,
+            'at' => $occurredAtUtc,
         ];
 
         return $stored;
@@ -54,6 +72,109 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
     public function findById(int $id): ?UrgentCase
     {
         return $this->cases[$id] ?? null;
+    }
+
+    public function findByReference(string $reference): ?UrgentCase
+    {
+        foreach ($this->cases as $case) {
+            if ($case->reference === $reference) {
+                return $case;
+            }
+        }
+
+        return null;
+    }
+
+    public function openCases(int $limit = 50): array
+    {
+        $open = array_values(array_filter(
+            $this->cases,
+            static fn (UrgentCase $case): bool => $case->urgency !== UrgentStatus::Closed,
+        ));
+
+        usort($open, static function (UrgentCase $left, UrgentCase $right): int {
+            $leftAcknowledged = $left->coordination === UrgentCoordination::Unacknowledged ? 0 : 1;
+            $rightAcknowledged = $right->coordination === UrgentCoordination::Unacknowledged ? 0 : 1;
+
+            return $leftAcknowledged <=> $rightAcknowledged
+                ?: $left->receivedAtUtc <=> $right->receivedAtUtc
+                ?: $left->id <=> $right->id;
+        });
+
+        return array_slice($open, 0, max(1, $limit));
+    }
+
+    public function timeline(int $caseId): array
+    {
+        $entries = [];
+
+        foreach ($this->history as $row) {
+            if ($row['case_id'] !== $caseId) {
+                continue;
+            }
+
+            $entries[] = $this->entry(
+                UrgentTimelineEntry::STATUS,
+                $row['at'],
+                $row['actor_user_id'],
+                ($row['from'] ?? 'new') . ' → ' . $row['to'],
+                $row['reason'],
+            );
+        }
+
+        foreach ($this->acknowledgements as $row) {
+            if ($row['case_id'] === $caseId) {
+                $entries[] = $this->entry(
+                    UrgentTimelineEntry::ACKNOWLEDGEMENT,
+                    $row['at'],
+                    $row['user_id'],
+                    $row['channel'],
+                    $row['note'],
+                );
+            }
+        }
+
+        foreach ($this->contacts as $row) {
+            if ($row['case_id'] === $caseId) {
+                $entries[] = $this->entry(
+                    UrgentTimelineEntry::CONTACT,
+                    $row['at'],
+                    $row['user_id'],
+                    $row['contact_role'] . ' · ' . $row['channel'] . ' · ' . $row['outcome']
+                        . ($row['phone'] === null ? '' : ' · ' . $row['phone']),
+                    $row['notes'],
+                );
+            }
+        }
+
+        foreach ($this->escalations as $row) {
+            if ($row['case_id'] === $caseId) {
+                $entries[] = $this->entry(
+                    UrgentTimelineEntry::ESCALATION,
+                    $row['at'],
+                    $row['user_id'],
+                    'level ' . $row['level'],
+                    $row['reason'],
+                );
+            }
+        }
+
+        foreach ($this->events as $row) {
+            if ($row['case_id'] === $caseId) {
+                $entries[] = $this->entry(
+                    UrgentTimelineEntry::EVENT,
+                    $row['at'],
+                    $row['user_id'],
+                    $row['event_type'],
+                    $row['note'],
+                );
+            }
+        }
+
+        usort($entries, static fn (UrgentTimelineEntry $left, UrgentTimelineEntry $right): int
+            => [$left->occurredAtUtc, $left->kind] <=> [$right->occurredAtUtc, $right->kind]);
+
+        return $entries;
     }
 
     public function transitionUrgency(
@@ -92,9 +213,27 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
             'case_id' => $moved->id,
             'from' => $stored->urgency->value,
             'to' => $target->value,
+            'actor_user_id' => $actor->userId,
             'actor_role' => $actor->role->value,
             'reason' => $reason,
+            'at' => $occurredAtUtc,
         ];
+
+        $eventType = $target->occurredEventType();
+
+        if ($eventType !== null) {
+            $this->events[] = [
+                'case_id' => $moved->id,
+                'event_type' => $eventType,
+                'user_id' => $actor->userId,
+                'note' => $reason !== null && trim($reason) !== '' ? $reason : $target->label(),
+                'at' => $occurredAtUtc,
+            ];
+        }
+
+        if ($target === UrgentStatus::Closed) {
+            $this->closedAt[$moved->id] = $occurredAtUtc;
+        }
 
         return $moved;
     }
@@ -140,6 +279,7 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
             'user_id' => $actor->userId,
             'channel' => $channel,
             'note' => $note,
+            'at' => $occurredAtUtc,
         ];
 
         $moved = $stored->withCoordination(UrgentCoordination::Acknowledged, $stored->version + 1);
@@ -176,6 +316,8 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
             'channel' => $attempt->channel,
             'outcome' => $attempt->outcome,
             'phone' => $attempt->contactPhone,
+            'notes' => $attempt->notes,
+            'at' => $attempt->attemptedAtUtc,
         ];
 
         if (!$moves) {
@@ -223,9 +365,11 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
 
         $this->escalations[] = [
             'case_id' => $stored->id,
+            'user_id' => $actor->userId,
             'level' => $level,
             'reason' => $reason,
             'assignee' => $assignToUserId,
+            'at' => $occurredAtUtc,
         ];
 
         if (!$moves) {
@@ -238,60 +382,54 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
         return $moved;
     }
 
-    /** @return list<array{case_id: int, level: int, reason: string, assignee: ?int}> */
+    /** @return list<array{case_id: int, user_id: int, level: int, reason: string, assignee: ?int, at: string}> */
     public function escalationsFor(int $caseId): array
     {
-        $rows = [];
-
-        foreach ($this->escalations as $row) {
-            if ($row['case_id'] === $caseId) {
-                $rows[] = $row;
-            }
-        }
-
-        return $rows;
+        return array_values(array_filter(
+            $this->escalations,
+            static fn (array $row): bool => $row['case_id'] === $caseId,
+        ));
     }
 
-    /** @return list<array{case_id: int, user_id: int, contact_role: string, channel: string, outcome: string, phone: ?string}> */
+    /** @return list<array{case_id: int, user_id: int, contact_role: string, channel: string, outcome: string, phone: ?string, notes: ?string, at: string}> */
     public function contactsFor(int $caseId): array
     {
-        $rows = [];
-
-        foreach ($this->contacts as $row) {
-            if ($row['case_id'] === $caseId) {
-                $rows[] = $row;
-            }
-        }
-
-        return $rows;
+        return array_values(array_filter(
+            $this->contacts,
+            static fn (array $row): bool => $row['case_id'] === $caseId,
+        ));
     }
 
-    /** @return list<array{case_id: int, from: ?string, to: string, actor_role: string, reason: ?string}> */
+    /** @return list<array{case_id: int, from: ?string, to: string, actor_user_id: int, actor_role: string, reason: ?string, at: string}> */
     public function historyFor(int $caseId): array
     {
-        $rows = [];
-
-        foreach ($this->history as $row) {
-            if ($row['case_id'] === $caseId) {
-                $rows[] = $row;
-            }
-        }
-
-        return $rows;
+        return array_values(array_filter(
+            $this->history,
+            static fn (array $row): bool => $row['case_id'] === $caseId,
+        ));
     }
 
-    /** @return list<array{case_id: int, user_id: int, channel: string, note: ?string}> */
+    /** @return list<array{case_id: int, user_id: int, channel: string, note: ?string, at: string}> */
     public function acknowledgementsFor(int $caseId): array
     {
-        $rows = [];
+        return array_values(array_filter(
+            $this->acknowledgements,
+            static fn (array $row): bool => $row['case_id'] === $caseId,
+        ));
+    }
 
-        foreach ($this->acknowledgements as $row) {
-            if ($row['case_id'] === $caseId) {
-                $rows[] = $row;
-            }
-        }
+    /** @return list<array{case_id: int, event_type: string, user_id: int, note: string, at: string}> */
+    public function eventsFor(int $caseId): array
+    {
+        return array_values(array_filter(
+            $this->events,
+            static fn (array $row): bool => $row['case_id'] === $caseId,
+        ));
+    }
 
-        return $rows;
+    public function closedAtFor(int $caseId): ?string
+    {
+        return $this->closedAt[$caseId] ?? null;
     }
 
     public function count(): int
@@ -308,5 +446,16 @@ final class InMemoryUrgentCaseRepository implements UrgentCaseRepository
         }
 
         return $case;
+    }
+
+    private function entry(string $kind, string $at, int $userId, string $label, ?string $detail): UrgentTimelineEntry
+    {
+        return new UrgentTimelineEntry(
+            kind: $kind,
+            occurredAtUtc: $at,
+            actorName: $this->userNames[$userId] ?? 'Unknown user',
+            label: $label,
+            detail: $detail === '' ? null : $detail,
+        );
     }
 }

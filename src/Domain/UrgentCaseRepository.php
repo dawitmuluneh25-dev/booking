@@ -21,6 +21,28 @@ interface UrgentCaseRepository
 
     public function findById(int $id): ?UrgentCase;
 
+    public function findByReference(string $reference): ?UrgentCase;
+
+    /**
+     * The board: cases that still need somebody, most urgent first.
+     *
+     * Ordering is `unacknowledged` before everything else and then oldest first,
+     * because the two facts that matter are "nobody has picked this up" and "it has
+     * been sitting for longer". Closed cases are not on it.
+     *
+     * @return list<UrgentCase>
+     */
+    public function openCases(int $limit = 50): array;
+
+    /**
+     * Everything that happened to one case, oldest first, across the five history
+     * tables. Read-only and derived: it is a view of records that are each written
+     * by their own command.
+     *
+     * @return list<UrgentTimelineEntry>
+     */
+    public function timeline(int $caseId): array;
+
     public function transitionUrgency(
         UrgentCase $case,
         UrgentStatus $target,

@@ -67,6 +67,40 @@ final class RoleTest extends TestCase
         self::assertFalse($role->isClinical());
     }
 
+    /**
+     * WF-05 wants whoever is at the desk to be able to claim an urgent case, and no
+     * more than that. The two permissions split along the line the aggregate already
+     * draws between acknowledgement and coordination.
+     */
+    public function testAcknowledgementAndCoordinationAreSeparateUrgentPermissions(): void
+    {
+        self::assertTrue(Role::Staff->can(Permission::UrgentAcknowledge));
+        self::assertFalse(Role::Staff->can(Permission::UrgentCoordinate));
+
+        self::assertTrue(Role::Coordinator->can(Permission::UrgentAcknowledge));
+        self::assertTrue(Role::Coordinator->can(Permission::UrgentCoordinate));
+
+        self::assertTrue(Role::Radiologist->can(Permission::UrgentCoordinate));
+
+        // A referrer registers a case; they do not work the board.
+        self::assertFalse(Role::Physician->can(Permission::UrgentAcknowledge));
+        self::assertFalse(Role::Physician->can(Permission::UrgentCoordinate));
+    }
+
+    /**
+     * `UrgentStatus::allowedActors(Closed)` names the administrator, so closure is
+     * reachable for them. It grants no clinical decision: accepting or declining a
+     * child's case stays with the radiologist.
+     */
+    public function testAnAdministratorMayCoordinateUrgentCasesWithoutClinicalAuthority(): void
+    {
+        self::assertTrue(Role::Admin->can(Permission::UrgentAcknowledge));
+        self::assertTrue(Role::Admin->can(Permission::UrgentCoordinate));
+
+        self::assertFalse(Role::Admin->can(Permission::ClinicalApprove));
+        self::assertFalse(Role::Admin->isClinical());
+    }
+
     public function testAPatientIsARecordAndHoldsNothing(): void
     {
         // ADR-016: the role exists so a referral and a guardian relationship have

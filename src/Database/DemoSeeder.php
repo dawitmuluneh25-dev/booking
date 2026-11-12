@@ -486,6 +486,10 @@ final class DemoSeeder
     {
         $this->app->recordClinicalDecision()->execute($radiologist, $referral->id, [
             'decision_type' => 'approved',
+            // Demo data, not a clinical claim: an approval must state a category (§13.1,
+            // §12.4), and seeding nothing would leave the demo queue inconsistent with
+            // the rule the rest of the product enforces.
+            'clinical_priority' => 'routine',
             'rationale' => 'Appropriate for image-guided sampling. The request documents the '
                 . 'indication and the target, and the patient is fit for a day-case procedure.',
             'approved_technique' => 'Ultrasound-guided core biopsy',

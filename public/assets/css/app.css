@@ -99,6 +99,8 @@ a { color: var(--accent); }
 a:hover { color: var(--accent-hover); }
 
 .muted { color: var(--text-muted); }
+.block { display: block; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
 .lede { font-size: 1.05rem; color: var(--text-muted); max-width: 44rem; }
 .eyebrow {
     text-transform: uppercase;
@@ -362,6 +364,15 @@ a:focus-visible {
     background: var(--success-bg);
     border-color: var(--success-border);
     color: var(--success-text);
+}
+
+/* A standing condition the reader must know before acting, such as "no
+   acknowledgement has been recorded". Distinct from an error: nothing failed. */
+.alert-warning {
+    background: var(--surface-alt);
+    border-color: var(--accent);
+    border-left-width: 4px;
+    color: var(--text);
 }
 
 /* Tables */

@@ -42,6 +42,7 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-017](#adr-017) | Yegara for human mail, Brevo for transactional email | **Accepted**, activation gated | Product owner | 2026-11-11 | — |
 | [ADR-018](#adr-018) | The clinical particulars are approved; production is not | **Accepted**, implementation in progress | Clinical Lead (A-01–A-11), clinical teams and laboratory leads (A-12–A-15), Operations and Legal/Data Protection (A-16–A-19) | 2026-11-12 | — |
 | [ADR-019](#adr-019) | Two identifiers per service: the catalogue code stays, the approved code is recorded beside it | Implemented | Architecture, on the approved catalogue in HR-IR-CLIN-R1-001 §3.1 | 2026-11-12 | — |
+| [ADR-020](#adr-020) | Claiming an urgent case and closing one are different permissions | Implemented | Architecture, against the two-axis urgent aggregate (WF-05) | 2026-11-12 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -511,6 +512,49 @@ unique key. Neither replaces the other, and neither is derived from the label.
 **Status.** Implemented (migration 0026). The catalogue it describes was approved under A-01; the
 choice of *how* to reconcile the two vocabularies is an engineering decision and is recorded here so
 it is not re-litigated. **Owner.** Architecture. **Date.** 2026-11-12. **Supersedes.** —.
+
+---
+
+## ADR-020
+
+**Claiming an urgent case and closing one are different permissions**
+
+**Context.** The urgent aggregate already separates two axes: `urgency_status` is the clinical
+question, `coordination_status` is whether anybody has reached the family or the receiving team
+(WF-05). `UrgentCoordination::allowedActors()` encodes that separation — every internal role may
+acknowledge, because acknowledgement says "I have seen this" rather than "I have decided this",
+while escalation is limited to the coordinator and the radiologist.
+
+The role model had one urgent permission, `urgent.coordinate`, held by the coordinator and the
+radiologist only. Gating a board on it would have made the surface unreachable to reception,
+which is the role most likely to be at the desk when a case arrives — and reception is exactly
+the role WF-05 wants able to record the claim. The alternatives were to grant reception the power
+to close a child's case in order to let them open the screen, or to gate the routes on nothing
+and let the domain refuse afterwards, which would have made every refusal a 500.
+
+**Decision.** Urgent coordination has two permissions. `urgent.acknowledge` covers seeing the
+board, opening a case, acknowledging it and recording a contact attempt; `urgent.coordinate`
+covers escalating and closing. The split follows the axis the domain already draws, not a new
+distinction invented for the screen.
+
+**Consequences.**
+
+- Reception holds the first and not the second, which is what the transition tables already said
+  about them. The board is reachable at 03:00 and the authority to end a case is not.
+- The escalation and closure routes still carry the stronger permission, and the domain still
+  refuses a role the transition table does not name. The permission opens the door; the table
+  decides who may walk through it. A radiologist reaching closure gets a refusal, because
+  `UrgentStatus::allowedActors(Closed)` names the coordinator and the administrator, not them.
+- `Role::Admin` gains both, because the status model lets an administrator close a case. It
+  gains no clinical capability, which `RoleTest` continues to assert.
+- Intake stays on `referral.submit`, so the coordinate role cannot register a case it was told
+  about by telephone. That is a deliberate consequence of keeping submission and coordination
+  separate, and whether it should change belongs to the role-matrix approval (C-4), not to this
+  decision.
+
+**Status.** Implemented. **Owner.** Architecture, on the authorisation model approved under
+A-10 and the two-axis aggregate in the database specification. **Date.** 2026-11-12.
+**Supersedes.** —.
 
 ---
 

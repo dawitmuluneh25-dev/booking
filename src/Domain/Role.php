@@ -48,6 +48,11 @@ enum Role: string
                 Permission::SystemMaintain,
                 Permission::ReferralTriage,
                 Permission::ScheduleManage,
+                // An administrator may acknowledge an urgent case and close one
+                // (UrgentStatus::allowedActors(Closed) names Admin), but not accept,
+                // decline or redirect it: coordination is not clinical authority.
+                Permission::UrgentAcknowledge,
+                Permission::UrgentCoordinate,
                 Permission::DocumentUpload,
                 Permission::DocumentReadMetadata,
                 Permission::DocumentDownload,
@@ -58,6 +63,10 @@ enum Role: string
                 Permission::ReferralSubmit,
                 Permission::ReferralTriage,
                 Permission::ScheduleManage,
+                // Acknowledgement only. Reception is the role most likely to be at
+                // the desk when a case arrives, and WF-05 wants the claim recorded;
+                // closing or escalating it stays with the coordinator.
+                Permission::UrgentAcknowledge,
                 Permission::DocumentUpload,
                 Permission::DocumentReadMetadata,
                 Permission::DocumentDownload,
@@ -66,6 +75,7 @@ enum Role: string
                 Permission::ClinicalReview,
                 Permission::ClinicalApprove,
                 Permission::ProcedureCoordinate,
+                Permission::UrgentAcknowledge,
                 Permission::UrgentCoordinate,
                 Permission::ScheduleManage,
                 Permission::DocumentUpload,
@@ -81,6 +91,7 @@ enum Role: string
             self::Coordinator => [
                 Permission::BookingsManage,
                 Permission::ProcedureCoordinate,
+                Permission::UrgentAcknowledge,
                 Permission::UrgentCoordinate,
                 Permission::ScheduleManage,
                 Permission::DocumentUpload,

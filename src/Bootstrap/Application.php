@@ -22,6 +22,7 @@ use App\Domain\ApproveForScheduling;
 use App\Domain\BookAppointment;
 use App\Domain\CancelAppointment;
 use App\Domain\ChangeUserRole;
+use App\Domain\CloseUrgentCase;
 use App\Domain\CreateUserAccount;
 use App\Domain\DocumentRepository;
 use App\Domain\DocumentStorage;
@@ -168,6 +169,8 @@ final class Application
     private ?RegisterUrgentCase $registerUrgent = null;
 
     private ?AcknowledgeUrgentCase $acknowledgeUrgent = null;
+
+    private ?CloseUrgentCase $closeUrgent = null;
 
     private ?Kernel $kernel = null;
 
@@ -488,6 +491,11 @@ final class Application
     public function escalateUrgentCase(): EscalateUrgentCase
     {
         return $this->escalateUrgent ??= new EscalateUrgentCase($this->urgentCases());
+    }
+
+    public function closeUrgentCase(): CloseUrgentCase
+    {
+        return $this->closeUrgent ??= new CloseUrgentCase($this->urgentCases());
     }
 
     public function idempotency(): IdempotencyStore
