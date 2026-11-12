@@ -151,17 +151,72 @@ a:hover { color: var(--accent-hover); }
     box-shadow: 0 5px 0 var(--accent-contrast);
 }
 
-.site-nav {
+/* The links and the account actions travel together so the narrow header can be
+   one row with a disclosure button instead of three stacked rows. At 320px the
+   links total 290px for a radiologist and 345px for an administrator inside a
+   280px box, so they have to be behind a control rather than merely wrapped. */
+.header-nav-panel {
     display: flex;
-    /* The links total 290px for a radiologist and 345px for an administrator. At
-       320px the bar has 280px, and without wrapping the overflow escapes the nav
-       box and widens the whole document — measured at 390px and 466px, which is
-       what made every page scroll sideways on a phone. The tables were never the
-       cause: `.table-wrap` contains its own scrolling. */
-    flex-wrap: wrap;
-    gap: 0.35rem 1.25rem;
+    align-items: center;
+    gap: 1.5rem;
     margin-left: auto;
 }
+
+.site-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.25rem;
+}
+
+/* Hidden until a script says otherwise: without one the wrapped bar above is
+   the fallback, and a button that opens nothing would be worse than no button. */
+.nav-toggle {
+    display: none;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.75rem;
+    padding: 0.4rem 0.7rem;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.nav-toggle:hover {
+    border-color: var(--accent);
+}
+
+.nav-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.nav-toggle-bars,
+.nav-toggle-bars::before,
+.nav-toggle-bars::after {
+    display: block;
+    width: 1rem;
+    height: 2px;
+    background: currentColor;
+}
+
+.nav-toggle-bars {
+    position: relative;
+}
+
+.nav-toggle-bars::before,
+.nav-toggle-bars::after {
+    content: "";
+    position: absolute;
+    left: 0;
+}
+
+.nav-toggle-bars::before { top: -5px; }
+
+.nav-toggle-bars::after { top: 5px; }
 
 .site-nav a {
     color: var(--text-muted);
@@ -717,7 +772,33 @@ tr.is-superseded td {
 
 @media (max-width: 40rem) {
     .header-inner { gap: 0.75rem; }
-    .site-nav { width: 100%; margin-left: 0; }
+    .site-nav { width: 100%; }
+    .header-nav-panel { width: 100%; margin-left: 0; }
+    /* A visitor with no links has nothing to wrap onto a second row, so the
+       sign-in link keeps its place beside the brand. */
+    .header-nav-panel--inline { width: auto; margin-left: auto; }
+
+    /* Collapsed only when the script is present: `nav-collapsible` is added by
+       app.js once it has wired the button, so a page whose script failed keeps
+       the visible link bar instead of a closed panel with no way to open it. */
+    html.nav-collapsible .nav-toggle { display: inline-flex; margin-left: auto; }
+    html.nav-collapsible .header-nav-panel {
+        display: none;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--border);
+    }
+    html.nav-collapsible .header-nav-panel.is-open { display: flex; }
+    html.nav-collapsible .site-nav {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.1rem;
+        padding: 0.15rem 0;
+    }
+    html.nav-collapsible .site-nav a { padding: 0.5rem 0; }
+    html.nav-collapsible .header-account { padding-bottom: 0.35rem; }
     .panel { padding: 1.1rem; }
     .actions { flex-direction: column; align-items: stretch; }
     .actions .link { margin-left: 0; text-align: center; }

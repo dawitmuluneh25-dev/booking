@@ -4,6 +4,30 @@
  * @var string $content
  * @var string $appName
  */
+$navItems = [];
+$signedIn = ($currentUser ?? null) !== null;
+
+if ($signedIn) {
+    if ($currentUser->can(\App\Domain\Permission::ReferralTriage)) {
+        $navItems[] = ['href' => '/referrals', 'label' => 'Referrals'];
+    }
+
+    if ($currentUser->can(\App\Domain\Permission::ClinicalReview)) {
+        $navItems[] = ['href' => '/review', 'label' => 'Review'];
+    }
+
+    if ($currentUser->can(\App\Domain\Permission::UrgentAcknowledge)) {
+        $navItems[] = ['href' => '/urgent-cases', 'label' => 'Urgent'];
+    }
+
+    $navItems[] = ['href' => '/bookings/new', 'label' => 'New booking'];
+    $navItems[] = ['href' => '/bookings', 'label' => 'Upcoming'];
+    $navItems[] = ['href' => '/availability', 'label' => 'Availability'];
+
+    if ($currentUser->can(\App\Domain\Permission::SystemMaintain)) {
+        $navItems[] = ['href' => '/admin', 'label' => 'Admin'];
+    }
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -28,35 +52,45 @@
             <span class="brand-mark" aria-hidden="true"></span>
             <span><?= e($appName ?? 'Booking') ?></span>
         </a>
-        <nav class="site-nav" aria-label="Main">
-            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::ReferralTriage)): ?>
-                <a href="/referrals">Referrals</a>
-            <?php endif; ?>
-            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::ClinicalReview)): ?>
-                <a href="/review">Review</a>
-            <?php endif; ?>
-            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::UrgentAcknowledge)): ?>
-                <a href="/urgent-cases">Urgent</a>
-            <?php endif; ?>
-            <?php if (($currentUser ?? null) !== null): ?>
-                <a href="/bookings/new">New booking</a>
-                <a href="/bookings">Upcoming</a>
-                <a href="/availability">Availability</a>
-            <?php endif; ?>
-            <?php if (($currentUser ?? null) !== null && $currentUser->can(\App\Domain\Permission::SystemMaintain)): ?>
-                <a href="/admin">Admin</a>
-            <?php endif; ?>
-        </nav>
-        <div class="header-account">
-            <?php if (($currentUser ?? null) !== null): ?>
-                <span class="account-name"><?= e($currentUser->name) ?></span>
-                <form method="post" action="/logout" class="inline-form">
-                    <?= \App\Security\Csrf::field() ?>
-                    <button class="link-button" type="submit">Sign out</button>
-                </form>
-            <?php else: ?>
-                <a class="nav-signin" href="/login">Staff sign in</a>
-            <?php endif; ?>
+        <?php /*
+         * The disclosure button is only rendered when there is something to
+         * disclose. Without a script it stays hidden by CSS, so a browser with
+         * JavaScript disabled keeps the plain wrapped link bar rather than an
+         * unopenable menu.
+         */ ?>
+        <?php if ($navItems !== []): ?>
+            <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav-panel">
+                <span class="nav-toggle-bars" aria-hidden="true"></span>
+                <span>Menu</span>
+            </button>
+        <?php endif; ?>
+        <?php /*
+         * The links and the account actions share one panel because they do not
+         * fit side by side at 320px. Keeping them together means the narrow
+         * header is one row instead of three, and the panel opens as a single
+         * block rather than two independent ones.
+         */ ?>
+        <?php /*
+         * With no links there is nothing to fold away, so the panel stays inline
+         * and the anonymous header is one row instead of two.
+         */ ?>
+        <div class="<?= $navItems === [] ? 'header-nav-panel header-nav-panel--inline' : 'header-nav-panel' ?>" id="site-nav-panel">
+            <nav class="site-nav" aria-label="Main">
+                <?php foreach ($navItems as $item): ?>
+                    <a href="<?= e($item['href']) ?>"><?= e($item['label']) ?></a>
+                <?php endforeach; ?>
+            </nav>
+            <div class="header-account">
+                <?php if ($signedIn): ?>
+                    <span class="account-name"><?= e($currentUser->name) ?></span>
+                    <form method="post" action="/logout" class="inline-form">
+                        <?= \App\Security\Csrf::field() ?>
+                        <button class="link-button" type="submit">Sign out</button>
+                    </form>
+                <?php else: ?>
+                    <a class="nav-signin" href="/login">Staff sign in</a>
+                <?php endif; ?>
+            </div>
         </div>
         <p class="net-status" id="net-status" role="status" aria-live="polite" hidden>
             <span class="dot" aria-hidden="true"></span><span id="net-status-text">Offline</span>
