@@ -153,7 +153,13 @@ a:hover { color: var(--accent-hover); }
 
 .site-nav {
     display: flex;
-    gap: 1.25rem;
+    /* The links total 290px for a radiologist and 345px for an administrator. At
+       320px the bar has 280px, and without wrapping the overflow escapes the nav
+       box and widens the whole document — measured at 390px and 466px, which is
+       what made every page scroll sideways on a phone. The tables were never the
+       cause: `.table-wrap` contains its own scrolling. */
+    flex-wrap: wrap;
+    gap: 0.35rem 1.25rem;
     margin-left: auto;
 }
 

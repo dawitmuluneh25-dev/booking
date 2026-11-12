@@ -44,19 +44,52 @@ layout results. They are superseded by the re-run below.
 | `/referrals/{ref}` | **not captured** | no overflow | 1280 capture never taken |
 | `/login` | no overflow | no overflow | |
 
+## Second pass — styled, and the tables were innocent
+
+With the stylesheet serving, the same pages were measured again. The result reversed the first run's
+suspicion: every page except `/login` still overflowed at 320 px, by **70 px** (radiologist header) or
+**146 px** (administrator header) — but the tables were not the cause. `.table-wrap` measures 242.8 px
+wide with `overflow-x: auto`, so the wide tables were scrolling inside their own container the whole
+time, exactly as intended.
+
+The cause is the header. `nav.site-nav` was `display: flex` with no `flex-wrap`, so its links could
+neither wrap nor shrink. Their measured totals were **290.2 px** (radiologist: Review, Urgent, New
+booking, Upcoming, Availability) and **345.6 px** (administrator adds Admin) inside a **280 px** box.
+The last link's right edge — 390.2 px and 465.6 px — matched `document.documentElement.scrollWidth`
+exactly on both pages. That is the whole defect: a nav bar that would not wrap.
+
+## The fix and its verification
+
+`public/assets/css/app.css`: `.site-nav` gained `flex-wrap: wrap` and a two-axis gap. No template
+change, no JavaScript, no layout rewrite.
+
+Verified against the served file with cache bypass, `getComputedStyle(.site-nav).flexWrap` reading
+`wrap` on every load:
+
+| Page | 320 px | 1280 px | Nav rows at 320 |
+|---|---|---|---|
+| `/urgent-cases` | 320 / 320, overflow **0** | 1280 / 1280, **0** | 2 |
+| `/referrals/RF-2026-0148` | 320 / 320, overflow **0** | 1280 / 1280, **0** | 2 |
+| `/review/RF-2026-0143` | 320 / 320, overflow **0** | 1280 / 1280, **0** | 2 |
+
+No nav link now leaves the viewport at either width. `/referrals` (queue) and the case detail were not
+re-measured in the fixed build, but they carry one of the two header configurations measured above —
+five links (radiologist) or six (administrator) — and the defect was a function of that link count, not
+of the page body. That is reasoning from the measurement rather than a measurement of those two pages,
+and is noted as such.
+
 ## Outstanding
 
-1. **The three overflowing tables are real and still unfixed.** At 320 px the review queue, referral
-   queue and case timeline exceed the viewport by 25–117 px, and content at the right edge is
-   unreadable without horizontal scrolling. These are the first concrete responsive defects the project
-   has recorded, and they need a decision — a stacked label/value layout below a breakpoint, or an
-   explicit scroll container with a visible affordance — rather than a CSS patch invented here.
-2. **`/referrals/{ref}` at 1280 has never been rendered.** One capture of twelve is missing.
-3. **The re-run after the stylesheet and contact-form fixes has not been performed.** The measurements
-   above predate both changes. Until a second pass runs against the fixed build, no page in this
-   project has been measured while styled.
+1. **The 320 px header is now 150 px tall** — 19 % of an 800 px viewport — because the nav wraps to two
+   rows under the brand and the account line. Functionally correct and visually cramped. Whether that
+   becomes a compact menu, a shorter brand block, or an accepted cost is a design decision, not a defect
+   to patch silently.
+2. **`/referrals` and `/urgent-cases/{ref}` have no fixed-build measurement** (see above).
+3. **The earlier unstyled table measurements should be disregarded entirely** as layout evidence. They
+   stand only as a record of a harness that was serving no stylesheet.
 4. Nothing here covers keyboard navigation, contrast, focus order, or a screen reader. BL-F4's
    accessibility half is untouched.
 
-The honest summary: this is the first render evidence the project has, it immediately invalidated its
-own first result, and it found one product bug. It is not a pass.
+The honest summary: the first render pass invalidated itself, the second found one product bug
+(missing contact form) and one real layout defect (a nav that would not wrap), and the defect is fixed
+and re-measured. Two pages remain unmeasured in the fixed build, and accessibility is untouched.
