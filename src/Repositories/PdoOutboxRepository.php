@@ -24,6 +24,25 @@ final class PdoOutboxRepository implements OutboxRepository
         (new OutboxWriter($this->pdo))->write($bookingId, $referralId, $messages);
     }
 
+    /** @param list<OutboundMessage> $messages */
+    public function recordForUser(int $userId, array $messages): void
+    {
+        (new OutboxWriter($this->pdo))->writeForUser($userId, $messages);
+    }
+
+    public function scrubPayload(int $id): void
+    {
+        // Guarded on the status as well as the id: a queued message whose body was
+        // emptied can never be rendered, and would fail its way to the dead-letter
+        // pile with an error that says nothing about the real cause.
+        $statement = $this->pdo->prepare(
+            "UPDATE notification_outbox
+             SET payload = '{}', updated_at = UTC_TIMESTAMP()
+             WHERE id = :id AND status = 'sent'"
+        );
+        $statement->execute(['id' => $id]);
+    }
+
     /** @return list<OutboundMessage> */
     public function claim(int $limit, string $staleBeforeUtc): array
     {
@@ -42,7 +61,7 @@ final class PdoOutboxRepository implements OutboxRepository
             $requeue->execute(['cutoff' => $staleBeforeUtc]);
 
             $select = $this->pdo->prepare(
-                "SELECT id, channel, template, recipient, payload, attempts, status, last_error
+                "SELECT id, channel, template, recipient, payload, attempts, status, last_error, delivered_at
                  FROM notification_outbox
                  WHERE status IN ('pending', 'failed') AND available_at <= UTC_TIMESTAMP()
                  ORDER BY id
@@ -126,13 +145,46 @@ final class PdoOutboxRepository implements OutboxRepository
         $statement->execute(['error' => $error, 'id' => $id]);
     }
 
+    public function markDelivered(string $providerMessageId, string $deliveredAtUtc): bool
+    {
+        if ($providerMessageId === '') {
+            return false;
+        }
+
+        $find = $this->pdo->prepare(
+            "SELECT id, status FROM notification_outbox WHERE provider_message_id = :provider_message_id LIMIT 1"
+        );
+        $find->execute(['provider_message_id' => $providerMessageId]);
+
+        /** @var array<string, mixed>|false $row */
+        $row = $find->fetch();
+
+        // A receipt for a message this system never sent is not a delivery, it is a
+        // mistake or a forgery, and recording it would put a claim in the row that
+        // nothing supports.
+        if ($row === false || self::text($row, 'status') !== 'sent') {
+            return false;
+        }
+
+        // COALESCE keeps the first receipt. Providers repeat callbacks, and the
+        // moment of delivery does not change because the report arrived twice.
+        $update = $this->pdo->prepare(
+            "UPDATE notification_outbox
+             SET delivered_at = COALESCE(delivered_at, :delivered_at), updated_at = UTC_TIMESTAMP()
+             WHERE id = :id"
+        );
+        $update->execute(['delivered_at' => $deliveredAtUtc, 'id' => self::integer($row, 'id')]);
+
+        return true;
+    }
+
     /** @return list<OutboundMessage> */
     public function recent(int $limit): array
     {
         $limit = max(1, min($limit, 100));
 
         $statement = $this->pdo->prepare(
-            'SELECT id, channel, template, recipient, payload, attempts, status, last_error
+            'SELECT id, channel, template, recipient, payload, attempts, status, last_error, delivered_at
              FROM notification_outbox
              ORDER BY id DESC
              LIMIT :limit'
@@ -159,6 +211,7 @@ final class PdoOutboxRepository implements OutboxRepository
     private function hydrate(array $row, OutboxStatus $status, int $attempts): OutboundMessage
     {
         $lastError = $row['last_error'] ?? null;
+        $delivered = $row['delivered_at'] ?? null;
 
         return new OutboundMessage(
             channel: NotificationChannel::from(self::text($row, 'channel')),
@@ -169,6 +222,7 @@ final class PdoOutboxRepository implements OutboxRepository
             attempts: $attempts,
             status: $status,
             lastError: is_string($lastError) && $lastError !== '' ? $lastError : null,
+            deliveredAt: is_string($delivered) && $delivered !== '' ? $delivered : null,
         );
     }
 

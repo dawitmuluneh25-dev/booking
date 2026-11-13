@@ -21,6 +21,17 @@ interface OutboxRepository
     public function record(?int $bookingId, ?int $referralId, array $messages): void;
 
     /**
+     * Record a message about an account rather than an appointment.
+     *
+     * Same contract as record(): it joins the caller's transaction and never opens
+     * one. A password reset has no booking and no referral, which is why the outbox
+     * was widened to carry an account (0039).
+     *
+     * @param list<OutboundMessage> $messages
+     */
+    public function recordForUser(int $userId, array $messages): void;
+
+    /**
      * Reserve a batch for this worker. Claims are atomic, so two concurrent
      * dispatchers cannot send the same row.
      *
@@ -37,9 +48,37 @@ interface OutboxRepository
      */
     public function markSent(int $id, ?string $providerMessageId = null): void;
 
+    /**
+     * Empty a message body that must not outlive the send.
+     *
+     * A password reset link is a bearer credential: whoever holds it can take over
+     * the account. It has to sit in the payload for the dispatcher to render it,
+     * but once the provider has accepted the message the copy in our database is
+     * no longer delivering anything — it is only waiting to appear in a backup.
+     * The provider identifier and the times remain; the body does not.
+     *
+     * Called after a successful send, never before: scrubbing a queued message
+     * would leave a row that can never be rendered and will fail forever.
+     */
+    public function scrubPayload(int $id): void;
+
     public function markFailed(int $id, string $error, string $availableAtUtc): void;
 
     public function markDead(int $id, string $error): void;
+
+    /**
+     * Record that the provider reported this message delivered.
+     *
+     * The row is found by the provider's own identifier, because that is the only
+     * handle a delivery report carries (0023). A receipt is accepted only for a
+     * message this system sent: a report about a message we never handed over is
+     * either a provider error or a forged callback, and recording it would make
+     * the row claim a delivery that cannot have happened.
+     *
+     * Returns whether a receipt was recorded. Repeating the same report is not an
+     * error — providers retry callbacks — and does not move the timestamp.
+     */
+    public function markDelivered(string $providerMessageId, string $deliveredAtUtc): bool;
 
     /** @return list<OutboundMessage> */
     public function recent(int $limit): array;

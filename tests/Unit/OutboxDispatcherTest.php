@@ -137,6 +137,44 @@ final class OutboxDispatcherTest extends TestCase
         self::assertCount(0, $transport->sent);
     }
 
+    /**
+     * A reset link is a bearer credential. Once the provider has it, the copy in our
+     * database is no longer delivering anything — it is only waiting to be read out
+     * of a backup. The row stays; the body does not.
+     */
+    public function testACredentialMessageIsEmptiedOnceSent(): void
+    {
+        $outbox = new InMemoryOutboxRepository();
+        $id = $outbox->enqueue(new OutboundMessage(
+            channel: NotificationChannel::Email,
+            template: NotificationTemplate::PasswordReset,
+            recipient: 'clerk@example.test',
+            payload: [
+                'reset_url' => 'https://clinic.test/password/reset/' . str_repeat('a', 64),
+                'expires_at_utc' => '2026-11-13 18:00:00',
+            ],
+        ));
+
+        $result = (new OutboxDispatcher($outbox, new RecordingTransport()))->dispatch();
+
+        self::assertSame(1, $result['sent']);
+        self::assertTrue($outbox->payloadWasScrubbed($id));
+    }
+
+    /**
+     * The other way round: an ordinary message keeps its payload, because the body
+     * is what a retried send would need and it carries no secret.
+     */
+    public function testAnOrdinaryMessageKeepsItsBody(): void
+    {
+        $outbox = new InMemoryOutboxRepository();
+        $id = $outbox->enqueue($this->message());
+
+        (new OutboxDispatcher($outbox, new RecordingTransport()))->dispatch();
+
+        self::assertFalse($outbox->payloadWasScrubbed($id));
+    }
+
     public function testBackoffGrowsWithAttempts(): void
     {
         self::assertSame(1, OutboxDispatcher::backoffMinutes(1));

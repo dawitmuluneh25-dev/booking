@@ -45,6 +45,14 @@ final class OutboxDispatcher
             try {
                 $providerMessageId = $this->transport->send($message);
                 $this->outbox->markSent($message->id, $providerMessageId);
+
+                // A credential is spent the moment it is on its way. Keeping the
+                // body would leave a working reset link in the database and in every
+                // backup taken before it expires, for no operational gain.
+                if ($message->template->carriesCredential()) {
+                    $this->outbox->scrubPayload($message->id);
+                }
+
                 $result['sent']++;
             } catch (PermanentNotificationFailure $exception) {
                 $this->outbox->markDead(

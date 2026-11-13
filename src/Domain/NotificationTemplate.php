@@ -18,6 +18,16 @@ enum NotificationTemplate: string
     case AppointmentMoved = 'appointment_moved';
     case AppointmentCancelled = 'appointment_cancelled';
 
+    /**
+     * The only message that carries a credential rather than a fact.
+     *
+     * A reset link is a bearer token in a URL: whoever reads it can take the
+     * account. That makes it the one template whose body must not survive the
+     * send, and naming the rule here keeps it next to the template instead of
+     * leaving the dispatcher to remember which strings are dangerous.
+     */
+    case PasswordReset = 'password_reset';
+
     public function label(): string
     {
         return match ($this) {
@@ -28,6 +38,13 @@ enum NotificationTemplate: string
             self::AppointmentBooked => 'Appointment booked',
             self::AppointmentMoved => 'Appointment moved',
             self::AppointmentCancelled => 'Appointment cancelled',
+            self::PasswordReset => 'Password reset',
         };
+    }
+
+    /** Whether the body holds something that must not outlive the send. */
+    public function carriesCredential(): bool
+    {
+        return $this === self::PasswordReset;
     }
 }

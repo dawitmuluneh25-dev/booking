@@ -63,6 +63,7 @@ enum Role: string
                 // published row without one, so holding this permission cannot
                 // stand in for an approval.
                 Permission::ContentPublish,
+                Permission::NotificationRead,
             ],
             self::Staff => [
                 Permission::BookingsManage,
@@ -76,6 +77,7 @@ enum Role: string
                 Permission::DocumentUpload,
                 Permission::DocumentReadMetadata,
                 Permission::DocumentDownload,
+                Permission::NotificationRead,
             ],
             self::Radiologist => [
                 Permission::ClinicalReview,
@@ -87,6 +89,7 @@ enum Role: string
                 Permission::DocumentUpload,
                 Permission::DocumentReadMetadata,
                 Permission::DocumentDownload,
+                Permission::NotificationRead,
             ],
             self::Physician => [
                 Permission::ReferralSubmit,
@@ -103,6 +106,7 @@ enum Role: string
                 Permission::DocumentUpload,
                 Permission::DocumentReadMetadata,
                 Permission::DocumentDownload,
+                Permission::NotificationRead,
             ],
             // A record-only identity (ADR-016): the patient a referral was submitted
             // for, and the identity a guardian relationship points at. It holds no

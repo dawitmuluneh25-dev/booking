@@ -53,4 +53,15 @@ enum Permission: string
      * being mistaken for "clinically accountable for the words".
      */
     case ContentPublish = 'content.publish';
+
+    /**
+     * Reading the in-app notification list.
+     *
+     * The list carries a reference and a time and nothing else, so this is not a
+     * grant of access to anything: it lets somebody see that something happened,
+     * not what it was about. It is held by the roles that work the clinic floor and
+     * not by a referring physician, whose relationship is to their own patients
+     * rather than to the clinic's traffic.
+     */
+    case NotificationRead = 'notification.read';
 }

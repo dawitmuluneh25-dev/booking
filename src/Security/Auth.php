@@ -139,22 +139,42 @@ final class Auth
         Session::regenerate();
     }
 
-    /** Raw token, returned once; only its SHA-256 is stored. */
-    public function issueResetToken(string $email): ?string
+    /**
+     * Issue a reset link, or null when the address has no account that may sign in.
+     *
+     * Null is deliberately the same answer for "no such address" and "an account
+     * that cannot sign in". The caller must not be able to tell them apart, because
+     * a page that says "no account with that address" is an oracle for who works
+     * here.
+     *
+     * Raw token, returned once; only its SHA-256 is stored.
+     */
+    public function issueResetToken(string $email): ?ResetLink
     {
         $credentials = $this->users->findCredentialsByEmail(self::normalizeEmail($email));
-        if ($credentials === null || !$credentials['user']->active) {
+        if ($credentials === null) {
+            return null;
+        }
+
+        $user = $credentials['user'];
+
+        // A patient account is a record, not a login (ADR-016). Issuing it a reset
+        // link would hand out the credential the model says it must not have, and
+        // would do so through the one path nobody watches.
+        if (!$user->active || !$user->role->canSignIn()) {
             return null;
         }
 
         $token = bin2hex(random_bytes(32));
+        $expiresAt = gmdate('Y-m-d H:i:s', time() + self::RESET_TTL_SECONDS);
+
         $this->users->createResetToken(
-            $credentials['user']->id,
+            $user->id,
             self::hashToken($token),
-            gmdate('Y-m-d H:i:s', time() + self::RESET_TTL_SECONDS),
+            $expiresAt,
         );
 
-        return $token;
+        return new ResetLink($user->id, $token, $expiresAt);
     }
 
     public function resetTokenIsValid(string $token): bool

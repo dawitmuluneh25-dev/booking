@@ -107,8 +107,7 @@ final class AuthTest extends TestCase
 
     public function testResetTokenIsSingleUse(): void
     {
-        $token = $this->auth->issueResetToken(self::EMAIL);
-        self::assertNotNull($token);
+        $token = $this->link();
         self::assertTrue($this->auth->resetTokenIsValid($token));
 
         $this->auth->resetPassword($token, 'a-brand-new-password', 'a-brand-new-password');
@@ -121,7 +120,7 @@ final class AuthTest extends TestCase
 
     public function testResetPasswordReplacesTheOldPassword(): void
     {
-        $token = (string) $this->auth->issueResetToken(self::EMAIL);
+        $token = $this->link();
         $this->auth->resetPassword($token, 'a-brand-new-password', 'a-brand-new-password');
 
         $this->expectException(InvalidCredentialsException::class);
@@ -130,7 +129,7 @@ final class AuthTest extends TestCase
 
     public function testResetRejectsAShortPassword(): void
     {
-        $token = (string) $this->auth->issueResetToken(self::EMAIL);
+        $token = $this->link();
 
         $this->expectException(ValidationException::class);
         $this->auth->resetPassword($token, 'short', 'short');
@@ -138,7 +137,7 @@ final class AuthTest extends TestCase
 
     public function testResetRejectsMismatchedConfirmation(): void
     {
-        $token = (string) $this->auth->issueResetToken(self::EMAIL);
+        $token = $this->link();
 
         $this->expectException(ValidationException::class);
         $this->auth->resetPassword($token, 'a-brand-new-password', 'different-password');
@@ -147,5 +146,29 @@ final class AuthTest extends TestCase
     public function testUnknownEmailGetsNoResetToken(): void
     {
         self::assertNull($this->auth->issueResetToken('nobody@example.test'));
+    }
+
+    public function testAResetLinkNamesItsAccountAndWhenItStopsWorking(): void
+    {
+        $link = $this->auth->issueResetToken(self::EMAIL);
+
+        self::assertNotNull($link);
+        self::assertNotSame('', $link->token);
+        self::assertTrue($this->auth->resetTokenIsValid($link->token));
+
+        $expires = strtotime($link->expiresAtUtc . ' UTC');
+
+        self::assertNotFalse($expires);
+        // One hour, with room for the second it takes to run the assertion.
+        self::assertLessThanOrEqual(5, abs(($expires - time()) - 3600));
+    }
+
+    /** The raw token, as the tests used to get it before the link carried more. */
+    private function link(): string
+    {
+        $link = $this->auth->issueResetToken(self::EMAIL);
+        self::assertNotNull($link);
+
+        return $link->token;
     }
 }

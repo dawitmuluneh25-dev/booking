@@ -20,6 +20,10 @@ if ($signedIn) {
         $navItems[] = ['href' => '/urgent-cases', 'label' => 'Urgent'];
     }
 
+    if ($currentUser->can(\App\Domain\Permission::NotificationRead)) {
+        $navItems[] = ['href' => '/notifications', 'label' => 'Notifications'];
+    }
+
     $navItems[] = ['href' => '/bookings/new', 'label' => 'New booking'];
     $navItems[] = ['href' => '/bookings', 'label' => 'Upcoming'];
     $navItems[] = ['href' => '/availability', 'label' => 'Availability'];

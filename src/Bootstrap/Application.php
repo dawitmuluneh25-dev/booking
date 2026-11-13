@@ -14,6 +14,7 @@ use App\Domain\AuditTrail;
 use App\Domain\BookingService;
 use App\Domain\ClinicCalendar;
 use App\Domain\OpenUrgentReview;
+use App\Domain\NotificationFeedRepository;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\IdempotencyStore;
@@ -100,6 +101,7 @@ use App\Repositories\PdoClinicalAssessmentRepository;
 use App\Repositories\PdoConsentRepository;
 use App\Repositories\PdoContentRepository;
 use App\Repositories\PdoLaboratoryDestinationRepository;
+use App\Repositories\PdoNotificationFeed;
 use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoPatientRelationshipRepository;
@@ -216,6 +218,8 @@ final class Application
     private ?OpenUrgentReview $openReview = null;
 
     private ?ContentRepository $content = null;
+
+    private ?NotificationFeedRepository $notificationFeed = null;
 
     private ?PublishContent $publishContent = null;
 
@@ -423,6 +427,11 @@ final class Application
     public function verifyGuardianAuthority(): VerifyGuardianAuthority
     {
         return $this->verifyGuardian ??= new VerifyGuardianAuthority($this->referrals(), new Validator());
+    }
+
+    public function notificationFeed(): NotificationFeedRepository
+    {
+        return $this->notificationFeed ??= new PdoNotificationFeed($this->pdo());
     }
 
     public function content(): ContentRepository

@@ -19,6 +19,8 @@ final class InMemoryOutboxRow
         public int $attempts = 0,
         public string $availableAt = '',
         public ?string $providerMessageId = null,
+        public ?string $deliveredAt = null,
+        public bool $payloadScrubbed = false,
     ) {
     }
 }

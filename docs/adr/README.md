@@ -43,6 +43,7 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-018](#adr-018) | The clinical particulars are approved; production is not | **Accepted**, implementation in progress | Clinical Lead (A-01–A-11), clinical teams and laboratory leads (A-12–A-15), Operations and Legal/Data Protection (A-16–A-19) | 2026-11-12 | — |
 | [ADR-019](#adr-019) | Two identifiers per service: the catalogue code stays, the approved code is recorded beside it | Implemented | Architecture, on the approved catalogue in HR-IR-CLIN-R1-001 §3.1 | 2026-11-12 | — |
 | [ADR-020](#adr-020) | Claiming an urgent case and closing one are different permissions | Implemented | Architecture, against the two-axis urgent aggregate (WF-05) | 2026-11-12 | — |
+| [ADR-021](#adr-021) | A notification body that is a credential does not outlive its send | Implemented | Architecture + Operations | 2026-11-13 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -566,3 +567,55 @@ A-10 and the two-axis aggregate in the database specification. **Date.** 2026-11
    record the successor in this index.
 4. If it needs a signature, the status is **Implemented, unapproved** until the signature exists.
    Do not upgrade the status because the code works.
+
+## ADR-021
+
+**A notification body that is a credential does not outlive its send**
+
+**Context.** Until BL-E3 the only way to give a member of staff a password reset was
+`php bin/console user:reset-token`, which prints a URL to a terminal. That works when somebody
+with database access is available and fails at every other time, so the reset link had to leave
+through the outbox. Three things in the existing bridge stood in the way.
+
+The outbox could address a booking or a referral (`ck_outbox_subject`, 0014). A reset belongs to
+neither: it is about an account. There was nowhere to record the provider's delivery report
+either — 0023 kept the provider's identifier for an accepted message, which makes it possible to
+ask what became of a message but left no column to write the answer into. And the reset URL is a
+bearer credential: whoever reads it can take the account. A queued message has to carry it for
+the dispatcher to render the body, which means it sits in `payload` — a plaintext column that is
+copied into every backup — for as long as the row exists.
+
+**Decision.** A message may name an account as its subject (`user_id`, cascade on delete), and
+the check still refuses a row that names no subject at all. A reset link is queued, not sent from
+the request: `RequestPasswordReset` issues the token and writes the outbox row, and the existing
+dispatcher delivers it on the existing backoff ladder. Because the body is a credential, the
+dispatcher empties the payload the moment the provider accepts the message, guarded on
+`status = 'sent'` so a queued body can never be scrubbed into a row that will fail forever.
+Delivery is recorded separately from acceptance: `delivered_at` is written only against a row that
+was actually sent, by provider message id, and the first report wins so a repeated callback does
+not move the moment.
+
+The in-app list is a projection over the outbox, not a second record. It carries a reference and a
+time and nothing else: the recipient, the body and the patient are left in the table, because a
+list that reproduced them would be a casually readable second copy one screen away from anybody
+who can sign in. Delivery state lives in `outbox:list`, which is the operational console, not in
+the notification list.
+
+**Consequences.**
+
+- The raw token exists in the database only between the request and the send. A backup taken
+  inside that window still contains a live link; the window is the dispatch interval, which is a
+  cron decision rather than a code one.
+- A link is issued per request. Two presses produce two emails, because collapsing the second into
+  the first would drop a link somebody asked for after failing to receive one. The public form is
+  therefore unthrottled: how many requests, over what interval, is an operational decision nobody
+  has made, and inventing a number would have been inventing a policy. It is an open risk against
+  this slice, owned by Operations.
+- There is no inbound callback endpoint, so a receipt is entered with `outbox:receipt <provider
+  message-id>` by an operator reading the provider's log. The row can hold the fact; the transport
+  that would deliver it automatically is not configured. This is recorded rather than papered over
+  by writing `sent_at` into the delivery column.
+- A patient account cannot be sent a link at all (`Role::canSignIn()`): ADR-016 makes it a record,
+  and a reset would hand it exactly the sign-in the model says it does not have.
+- A referring physician does not hold `notification.read`. The list is the clinic's traffic, not
+  theirs.

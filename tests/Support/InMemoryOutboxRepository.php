@@ -40,6 +40,41 @@ final class InMemoryOutboxRepository implements OutboxRepository
         }
     }
 
+    /** @param list<OutboundMessage> $messages */
+    public function recordForUser(int $userId, array $messages): void
+    {
+        // The real writer keys the dedupe key on the account; the double keeps one
+        // row per message, which is enough for every assertion made against it.
+        $this->record(null, null, $messages);
+    }
+
+    public function scrubPayload(int $id): void
+    {
+        if (!isset($this->rows[$id]) || $this->rows[$id]->status !== OutboxStatus::Sent) {
+            return;
+        }
+
+        $message = $this->rows[$id]->message;
+        $this->rows[$id]->payloadScrubbed = true;
+        $this->rows[$id]->message = new OutboundMessage(
+            channel: $message->channel,
+            template: $message->template,
+            recipient: $message->recipient,
+            payload: [],
+            id: $message->id,
+            attempts: $message->attempts,
+            status: $message->status,
+            lastError: $message->lastError,
+            dedupeKey: $message->dedupeKey,
+            deliveredAt: $message->deliveredAt,
+        );
+    }
+
+    public function payloadWasScrubbed(int $id): bool
+    {
+        return $this->rows[$id]->payloadScrubbed ?? false;
+    }
+
     /** @return list<OutboundMessage> */
     public function claim(int $limit, string $staleBeforeUtc): array
     {
@@ -94,6 +129,35 @@ final class InMemoryOutboxRepository implements OutboxRepository
         $row = $this->rows[$id];
         $row->status = OutboxStatus::Dead;
         $row->message = $row->message->withState(OutboxStatus::Dead, $row->attempts, $error);
+    }
+
+    public function markDelivered(string $providerMessageId, string $deliveredAtUtc): bool
+    {
+        if ($providerMessageId === '') {
+            return false;
+        }
+
+        foreach ($this->rows as $row) {
+            if ($row->providerMessageId !== $providerMessageId) {
+                continue;
+            }
+
+            if ($row->status !== OutboxStatus::Sent) {
+                return false;
+            }
+
+            // The first report wins; a repeated callback does not move the moment.
+            $row->deliveredAt ??= $deliveredAtUtc;
+
+            return true;
+        }
+
+        return false;
+    }
+
+    public function deliveredAtOf(int $id): ?string
+    {
+        return $this->rows[$id]->deliveredAt ?? null;
     }
 
     /** @return list<OutboundMessage> */

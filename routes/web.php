@@ -24,12 +24,15 @@ use App\Controllers\ServiceController;
 use App\Controllers\DocumentController;
 use App\Controllers\HealthController;
 use App\Controllers\ScheduleController;
+use App\Controllers\ForgotPasswordController;
 use App\Controllers\HomeController;
+use App\Controllers\NotificationController;
 use App\Controllers\PasswordResetController;
 use App\Controllers\ReferralController;
 use App\Controllers\ReviewController;
 use App\Controllers\UrgentController;
 use App\Domain\Permission;
+use App\Domain\RequestPasswordReset;
 use App\Http\Request;
 use App\Http\RouteAccess;
 
@@ -39,6 +42,16 @@ return static function (Application $app): void {
     $home = new HomeController($app->view(), $app->auth());
     $auth = new AuthController($app->view(), $app->auth(), $app->auditTrail());
     $reset = new PasswordResetController($app->view(), $app->auth());
+    $notifications = new NotificationController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->notificationFeed(),
+    );
+    $forgot = new ForgotPasswordController(
+        $app->view(),
+        new RequestPasswordReset($app->auth(), $app->outbox(), $app->config()->baseUrl()),
+    );
     $adminUsers = new AdminUserController(
         $app->view(),
         $app->users(),
@@ -150,6 +163,12 @@ return static function (Application $app): void {
         static fn (Request $request) => $auth->login($request),
         RouteAccess::public('sign-in submission'),
     );
+    $router->get(
+        '/notifications',
+        static fn (Request $request) => $notifications->index($request),
+        RouteAccess::permission(Permission::NotificationRead),
+    );
+
     $router->post('/logout', static fn (Request $request) => $auth->logout($request), RouteAccess::authenticated());
 
     $router->get(
@@ -161,6 +180,19 @@ return static function (Application $app): void {
         '/password/reset/{token}',
         static fn (Request $request, array $params) => $reset->update($request, $params),
         RouteAccess::public('password reset submission'),
+    );
+
+    // A person who cannot sign in cannot authenticate first, so the form that gets
+    // them back in has to be public. It answers identically for every address.
+    $router->get(
+        '/password/forgot',
+        static fn (Request $request) => $forgot->show($request),
+        RouteAccess::public('request a password reset link'),
+    );
+    $router->post(
+        '/password/forgot',
+        static fn (Request $request) => $forgot->store($request),
+        RouteAccess::public('password reset request submission'),
     );
 
     $router->get(

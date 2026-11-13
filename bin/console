@@ -70,6 +70,9 @@ switch ($command) {
     case 'outbox:dispatch':
         exit(dispatchOutbox($app, $options));
 
+    case 'outbox:receipt':
+        exit(recordReceipt($app, $options));
+
     case 'db:backup':
         exit(createBackup($app, $options));
 
@@ -118,6 +121,7 @@ switch ($command) {
 
           php bin/console outbox:list [--limit=20]
           php bin/console outbox:dispatch [--limit=20]
+          php bin/console outbox:receipt <provider-message-id> [--at="2026-11-13 09:00:00"]
 
           php bin/console diag                  Print the operational checks
           php bin/console db:backup [--prune=14]
@@ -133,6 +137,8 @@ switch ($command) {
 
         user:create prints a generated password once when --password is omitted.
         outbox:dispatch is meant to run from cron, never from a web request.
+        outbox:receipt records that the provider reported delivery; it sends nothing,
+        and refuses an id belonging to a message this system never handed over.
         demo:seed fills an empty development database with fictional records and
         refuses to run in production. It prints one password for every demo account.
 
@@ -461,18 +467,89 @@ function listOutbox(Application $app): int
         return 0;
     }
 
-    printf("%-4s %-22s %-8s %-9s %-8s %s\n", 'ID', 'TEMPLATE', 'CHANNEL', 'STATUS', 'ATTEMPTS', 'RECIPIENT');
+    printf(
+        "%-4s %-22s %-8s %-9s %-8s %-19s %s\n",
+        'ID',
+        'TEMPLATE',
+        'CHANNEL',
+        'STATUS',
+        'ATTEMPTS',
+        'DELIVERED',
+        'RECIPIENT',
+    );
     foreach ($messages as $message) {
         printf(
-            "%-4d %-22s %-8s %-9s %-8d %s\n",
+            "%-4d %-22s %-8s %-9s %-8d %-19s %s\n",
             $message->id,
             $message->template->value,
             $message->channel->value,
             $message->status->value,
             $message->attempts,
+            // "unknown" rather than blank: no receipt is a fact, and a blank cell
+            // reads as a column that failed to print.
+            $message->deliveredAt ?? 'unknown',
             '***' . substr($message->recipient, -3),
         );
     }
+
+    return 0;
+}
+
+/**
+ * Record a provider's delivery report against the message it concerns.
+ *
+ * There is no inbound callback endpoint in this release, so the report is entered
+ * here: by an operator reading the provider's log, or by whatever job is written
+ * when the provider's webhook is configured. What matters is that the row can now
+ * hold the fact, and that acceptance (`sent_at`) stays distinguishable from it.
+ */
+function recordReceipt(Application $app, array $options): int
+{
+    $positional = array_values(array_filter(
+        $options,
+        static fn (string $option): bool => !str_starts_with($option, '--'),
+    ));
+
+    $providerMessageId = trim($positional[0] ?? '');
+
+    if ($providerMessageId === '') {
+        fwrite(STDERR, "Usage: outbox:receipt <provider-message-id> [--at=\"YYYY-MM-DD HH:MM:SS\"]\n");
+
+        return 1;
+    }
+
+    $at = gmdate('Y-m-d H:i:s');
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--at=')) {
+            $at = trim(substr($option, 5), " \"'");
+        }
+    }
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $at) !== 1) {
+        fwrite(STDERR, "The --at value must be a UTC timestamp like \"2026-11-13 09:00:00\".\n");
+
+        return 1;
+    }
+
+    try {
+        $recorded = $app->outbox()->markDelivered($providerMessageId, $at);
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Cannot record the receipt: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    if (!$recorded) {
+        fwrite(STDERR, sprintf(
+            "No sent message carries the provider id %s. A receipt is only recorded for a message "
+                . "this system handed over; check the id against the provider's log.\n",
+            $providerMessageId,
+        ));
+
+        return 1;
+    }
+
+    echo "Delivery recorded against {$providerMessageId} at {$at} (UTC).\n";
 
     return 0;
 }
@@ -627,15 +704,18 @@ function issueResetToken(Application $app, array $options): int
         return 1;
     }
 
-    $token = $app->auth()->issueResetToken($email);
-    if ($token === null) {
+    $link = $app->auth()->issueResetToken($email);
+    if ($link === null) {
         fwrite(STDERR, "No active user with that email.\n");
 
         return 1;
     }
 
-    echo "One-time reset link, valid for 60 minutes:\n";
-    echo "/password/reset/{$token}\n";
+    // The break-glass path. A person who can run this already has the database;
+    // printing the link to a terminal they control adds no exposure that their
+    // access did not already carry, and it works when mail does not.
+    echo "One-time reset link, valid for 60 minutes (expires {$link->expiresAtUtc} UTC):\n";
+    echo "/password/reset/{$link->token}\n";
 
     return 0;
 }

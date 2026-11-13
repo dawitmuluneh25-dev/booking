@@ -29,6 +29,10 @@ final class RouteAccessManifestTest extends TestCase
         'POST /login',
         'GET /password/reset/{token}',
         'POST /password/reset/{token}',
+        // Somebody who cannot sign in cannot authenticate first. The form answers
+        // the same way for an address with an account and one without.
+        'GET /password/forgot',
+        'POST /password/forgot',
         'GET /availability',
         'GET /healthz',
         // §17 pages are written for somebody who has not signed in. A patient
@@ -44,7 +48,7 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        self::assertSame(79, count($manifest));
+        self::assertSame(82, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);

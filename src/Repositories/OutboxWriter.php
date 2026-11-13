@@ -19,6 +19,10 @@ use PDO;
  * `INSERT IGNORE` is the idempotency guard. A retried request produces the same
  * dedupe key and inserts nothing; a genuinely new transition produces a new key
  * and inserts once.
+ *
+ * A message names exactly one subject — a booking, a referral or an account. The
+ * database refuses a row that names none (ck_outbox_subject), so there is no path
+ * through here that writes an unattached message by accident.
  */
 final class OutboxWriter
 {
@@ -31,16 +35,35 @@ final class OutboxWriter
      */
     public function write(?int $bookingId, ?int $referralId, array $messages): void
     {
+        $this->insert($bookingId, $referralId, null, $messages);
+    }
+
+    /**
+     * A message about an account rather than an appointment: a password reset is
+     * the only one so far, and it carries no booking because there is none.
+     *
+     * @param list<OutboundMessage> $messages
+     */
+    public function writeForUser(int $userId, array $messages): void
+    {
+        $this->insert(null, null, $userId, $messages);
+    }
+
+    /**
+     * @param list<OutboundMessage> $messages
+     */
+    private function insert(?int $bookingId, ?int $referralId, ?int $userId, array $messages): void
+    {
         if ($messages === []) {
             return;
         }
 
         $statement = $this->pdo->prepare(
             "INSERT IGNORE INTO notification_outbox
-                (booking_id, referral_id, dedupe_key, channel, template, recipient, payload,
+                (booking_id, referral_id, user_id, dedupe_key, channel, template, recipient, payload,
                  status, attempts, available_at, created_at, updated_at)
              VALUES
-                (:booking_id, :referral_id, :dedupe_key, :channel, :template, :recipient, :payload,
+                (:booking_id, :referral_id, :user_id, :dedupe_key, :channel, :template, :recipient, :payload,
                  'pending', 0, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
 
@@ -50,7 +73,8 @@ final class OutboxWriter
             $statement->execute([
                 'booking_id' => $bookingId,
                 'referral_id' => $referralId,
-                'dedupe_key' => $message->dedupeKeyFor($bookingId, $referralId),
+                'user_id' => $userId,
+                'dedupe_key' => $message->dedupeKeyFor($bookingId, $referralId, $userId),
                 'channel' => $message->channel->value,
                 'template' => $message->template->value,
                 'recipient' => $message->recipient,
