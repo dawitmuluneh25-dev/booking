@@ -349,6 +349,81 @@ $mayAssess = $currentUser->can(\App\Domain\Permission::ClinicalReview)
         \App\Domain\ReferralStatus::Closed,
     ], true);
 ?>
+<section class="panel" id="guardian">
+    <h2 class="section-title">Guardian</h2>
+
+    <?php if ($referral->guardianName === null): ?>
+        <p><strong>No guardian is named on this referral.</strong> Nobody is recorded as acting for
+            the patient, so there is no authority to verify.</p>
+    <?php else: ?>
+        <div class="table-wrap">
+            <table>
+                <caption class="visually-hidden">The guardian named on this referral</caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">Name</th>
+                        <td><?= e($referral->guardianName) ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Contact</th>
+                        <td><?= e($referral->guardianPhone ?? 'Not recorded') ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Relationship</th>
+                        <td><?= e($referral->guardianRelationship ?? 'Not recorded') ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Authority</th>
+                        <td>
+                            <?php if ($guardianVerification === null): ?>
+                                <strong>Not verified.</strong> This person is named as acting for the
+                                patient; nobody has checked that they may.
+                            <?php else: ?>
+                                Verified <?= e($guardianVerification['at']) ?>
+                                by <?= e($guardianVerification['by']) ?>
+                                — <?= e($guardianVerification['basis']) ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <?php if ($guardianVerification === null && $currentUser->can(\App\Domain\Permission::ReferralTriage)): ?>
+            <h3>Verify the authority</h3>
+            <p class="muted">
+                Say what you checked — a document, a register, the person's own record. A relationship
+                is not an authority: the adult who brings a child may be neither a parent nor a
+                guardian.
+            </p>
+            <form method="post"
+                  action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/guardian-verification"
+                  class="stack">
+                <?= \App\Security\Csrf::field() ?>
+                <div class="field">
+                    <label for="guardian_verification_basis">What the authority was checked against</label>
+                    <input id="guardian_verification_basis" name="guardian_verification_basis"
+                        maxlength="160" required minlength="10"
+                        <?= isset($errors['guardian_verification_basis'])
+                            ? 'aria-describedby="guardian_basis-error" aria-invalid="true"'
+                            : '' ?>>
+                    <?php if (isset($errors['guardian_verification_basis'])): ?>
+                        <p class="field-error" id="guardian_basis-error">
+                            <?= e($errors['guardian_verification_basis']) ?>
+                        </p>
+                    <?php endif; ?>
+                </div>
+                <?php if (isset($errors['guardian'])): ?>
+                    <p class="field-error"><?= e($errors['guardian']) ?></p>
+                <?php endif; ?>
+                <div class="form-actions">
+                    <button class="button" type="submit">Record verification</button>
+                </div>
+            </form>
+        <?php endif; ?>
+    <?php endif; ?>
+</section>
+
 <section class="panel" id="assessment">
     <h2 class="section-title">Pre-procedure assessment</h2>
     <p class="muted">

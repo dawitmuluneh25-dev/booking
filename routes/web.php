@@ -327,6 +327,7 @@ return static function (Application $app): void {
         $app->procedures(),
         $app->approveForScheduling(),
         $app->reassignClinicalPriority(),
+        $app->verifyGuardianAuthority(),
         $app->clinicalAssessments(),
         $app->recordClinicalAssessment(),
         $app->consents(),
@@ -390,6 +391,12 @@ return static function (Application $app): void {
         '/referrals/{reference}/priority',
         static fn (Request $request, array $params) => $referrals()->reassignPriority($request, $params),
         RouteAccess::permission(Permission::ClinicalApprove),
+    );
+
+    $router->post(
+        '/referrals/{reference}/guardian-verification',
+        static fn (Request $request, array $params) => $referrals()->verifyGuardian($request, $params),
+        RouteAccess::permission(Permission::ReferralTriage),
     );
 
     $router->post(

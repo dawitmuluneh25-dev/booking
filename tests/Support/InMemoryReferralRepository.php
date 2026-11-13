@@ -337,4 +337,26 @@ final class InMemoryReferralRepository implements ReferralRepository
     {
         return count($this->referrals);
     }
+
+    /** @var array<int, array{at: string, basis: string, by: string}> */
+    private array $guardianVerifications = [];
+
+    /** @return array{at: string, basis: string, by: string}|null */
+    public function guardianVerification(int $referralId): ?array
+    {
+        return $this->guardianVerifications[$referralId] ?? null;
+    }
+
+    public function verifyGuardianAuthority(
+        int $referralId,
+        Actor $actor,
+        string $basis,
+        string $occurredAtUtc,
+    ): void {
+        $this->guardianVerifications[$referralId] = [
+            'at' => $occurredAtUtc,
+            'basis' => $basis,
+            'by' => 'Test Clerk',
+        ];
+    }
 }

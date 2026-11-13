@@ -8,6 +8,7 @@ use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionRecord;
 use App\Domain\ClinicalPriorityChange;
+use App\Domain\ConsentNotPermittedException;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
 use App\Domain\ReferralNotFoundException;
@@ -487,5 +488,73 @@ final class PdoReferralRepository implements ReferralRepository
             'reason' => $reason,
             'occurred_at' => $occurredAtUtc,
         ]);
+    }
+
+    /** @return array{at: string, basis: string, by: string}|null */
+    public function guardianVerification(int $referralId): ?array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT r.guardian_verified_at, r.guardian_verification_basis, u.name AS verifier
+               FROM referrals r
+               LEFT JOIN users u ON u.id = r.guardian_verified_by_user_id
+              WHERE r.id = :id LIMIT 1'
+        );
+        $statement->execute(['id' => $referralId]);
+
+        /** @var array<string, mixed>|false $row */
+        $row = $statement->fetch();
+
+        if ($row === false || !is_scalar($row['guardian_verified_at'] ?? null)) {
+            return null;
+        }
+
+        $at = (string) $row['guardian_verified_at'];
+
+        if ($at === '') {
+            return null;
+        }
+
+        $basis = $row['guardian_verification_basis'] ?? null;
+        $verifier = $row['verifier'] ?? null;
+
+        return [
+            'at' => $at,
+            'basis' => is_scalar($basis) ? (string) $basis : '',
+            'by' => is_scalar($verifier) ? (string) $verifier : 'Unknown user',
+        ];
+    }
+
+    public function verifyGuardianAuthority(
+        int $referralId,
+        Actor $actor,
+        string $basis,
+        string $occurredAtUtc,
+    ): void {
+        // The guard is in the WHERE clause rather than in a preceding SELECT: the
+        // fact being written is "this has now happened", and reading first would let
+        // two staff members both see "not yet" and both write.
+        $statement = $this->pdo->prepare(
+            'UPDATE referrals
+                SET guardian_verified_at = :verified_at,
+                    guardian_verified_by_user_id = :verified_by,
+                    guardian_verification_basis = :basis,
+                    version = version + 1,
+                    updated_at = :updated_at
+              WHERE id = :id AND guardian_verified_at IS NULL AND guardian_name IS NOT NULL'
+        );
+        $statement->execute([
+            'verified_at' => $occurredAtUtc,
+            'verified_by' => $actor->userId,
+            'basis' => $basis,
+            'updated_at' => $occurredAtUtc,
+            'id' => $referralId,
+        ]);
+
+        if ($statement->rowCount() !== 1) {
+            throw new ConsentNotPermittedException(
+                null,
+                'This guardian was already verified, or the referral no longer names one.',
+            );
+        }
     }
 }

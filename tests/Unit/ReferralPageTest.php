@@ -12,6 +12,7 @@ use App\Domain\ClinicalDecisionType;
 use App\Domain\Procedure;
 use App\Domain\ReassignClinicalPriority;
 use App\Domain\RecordClinicalAssessment;
+use App\Domain\VerifyGuardianAuthority;
 use App\Domain\RecordProcedureConsent;
 use App\Domain\WithdrawConsent;
 use App\Domain\Referral;
@@ -92,6 +93,7 @@ final class ReferralPageTest extends TestCase
             $procedures,
             new ApproveForScheduling($this->referrals),
             new ReassignClinicalPriority($this->referrals, new Validator(), new InlineTransaction()),
+            new VerifyGuardianAuthority($this->referrals, new Validator()),
             $this->assessments,
             new RecordClinicalAssessment(
                 $this->assessments,

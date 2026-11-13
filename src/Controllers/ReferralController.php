@@ -17,6 +17,7 @@ use App\Domain\ConsentNotFoundException;
 use App\Domain\ImagingModality;
 use App\Domain\PregnancyStatus;
 use App\Domain\RecordClinicalAssessment;
+use App\Domain\VerifyGuardianAuthority;
 use App\Domain\ConsentNotPermittedException;
 use App\Domain\ConsentOutcome;
 use App\Domain\ConsentParticipant;
@@ -105,6 +106,7 @@ final class ReferralController
         private readonly ProcedureRepository $procedures,
         private readonly ApproveForScheduling $release,
         private readonly ReassignClinicalPriority $reassign,
+        private readonly VerifyGuardianAuthority $verifyGuardianCommand,
         private readonly ClinicalAssessmentRepository $assessments,
         private readonly RecordClinicalAssessment $recordAssessmentCommand,
         private readonly ConsentRepository $consents,
@@ -204,6 +206,7 @@ final class ReferralController
             'allergyStatuses' => AllergyStatus::cases(),
             'pregnancyStatuses' => PregnancyStatus::cases(),
             'imagingModalities' => ImagingModality::cases(),
+            'guardianVerification' => $this->referrals->guardianVerification($referral->id),
             'consent' => $this->consents->current($referral->id),
             'consentHistory' => $this->consents->history($referral->id),
             'consentParticipants' => ConsentParticipant::cases(),
@@ -243,6 +246,41 @@ final class ReferralController
         return Response::redirect('/referrals/' . rawurlencode($referral->reference));
     }
 
+    /**
+     * Record that a member of staff checked the guardian's authority (PAT-013).
+     *
+     * `referral.triage` because §6.3 assigns the check to reception, a clinician or
+     * governance — the people who can see the referral and are accountable for it.
+     *
+     * @param array<string, string> $params
+     */
+    public function verifyGuardian(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::ReferralTriage);
+        $this->assertCsrf($request);
+
+        $referral = $this->referrals->findByReference((string) ($params['reference'] ?? ''));
+
+        if ($referral === null) {
+            throw new HttpException(404);
+        }
+
+        try {
+            $this->verifyGuardianCommand->execute(
+                $this->actor(),
+                $referral->id,
+                (string) $request->input('guardian_verification_basis', ''),
+            );
+        } catch (ValidationException $exception) {
+            return $this->detail($referral, $exception->errors, null, 422);
+        } catch (ConsentNotPermittedException $exception) {
+            return $this->detail($referral, ['guardian' => $exception->getMessage()], null, 422);
+        }
+
+        Session::flash('notice', 'Guardian authority verified on ' . $referral->reference . '.');
+
+        return Response::redirect('/referrals/' . rawurlencode($referral->reference));
+    }
     /**
      * Record the pre-procedure assessment (§6.5, §6.6).
      *

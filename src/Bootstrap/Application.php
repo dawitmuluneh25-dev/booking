@@ -50,6 +50,7 @@ use App\Domain\PhysicianProfileRepository;
 use App\Domain\ClinicalAssessmentRepository;
 use App\Domain\ConsentRepository;
 use App\Domain\RecordClinicalAssessment;
+use App\Domain\VerifyGuardianAuthority;
 use App\Domain\AddLaboratoryDestination;
 use App\Domain\LaboratoryDestinationRepository;
 use App\Domain\RecordClinicalDecision;
@@ -151,6 +152,8 @@ final class Application
     private ?ClinicalAssessmentRepository $assessments = null;
 
     private ?RecordClinicalAssessment $recordAssessment = null;
+
+    private ?VerifyGuardianAuthority $verifyGuardian = null;
 
     private ?LaboratoryDestinationRepository $laboratories = null;
 
@@ -405,6 +408,11 @@ final class Application
             new Validator(),
             $this->transaction(),
         );
+    }
+
+    public function verifyGuardianAuthority(): VerifyGuardianAuthority
+    {
+        return $this->verifyGuardian ??= new VerifyGuardianAuthority($this->referrals(), new Validator());
     }
 
     public function laboratories(): LaboratoryDestinationRepository

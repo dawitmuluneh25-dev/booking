@@ -142,4 +142,27 @@ interface ReferralRepository
      * @return list<array{change: ClinicalPriorityChange, changedBy: string}>
      */
     public function priorityChangeHistory(int $referralId): array;
+
+    /**
+     * When the guardian's authority was verified, or null if it has not been.
+     *
+     * All three parts come back together, because a caller that has the time and not
+     * the basis cannot show a reader what was checked.
+     *
+     * @return array{at: string, basis: string, by: string}|null
+     */
+    public function guardianVerification(int $referralId): ?array;
+
+    /**
+     * Record that a member of staff checked the guardian's authority (PAT-013).
+     *
+     * Guarded by `guardian_verified_at IS NULL` in the statement itself, so two
+     * people verifying at once cannot produce two accounts of who checked what.
+     */
+    public function verifyGuardianAuthority(
+        int $referralId,
+        Actor $actor,
+        string $basis,
+        string $occurredAtUtc,
+    ): void;
 }
