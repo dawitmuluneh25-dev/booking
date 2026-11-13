@@ -222,21 +222,23 @@ final class PublishedContent
      */
     public function provenance(): string
     {
-        $parts = [];
+        // Built by concatenation rather than by joining parts, because the separators
+        // are not uniform: the reviewer and the approver are two records separated by
+        // a comma, and everything after them by a space. Joining a list would have put
+        // a space before the comma, which reads like a typo and is one.
+        $line = '';
 
         if ($this->clinicalReviewer !== null && $this->clinicalReviewer !== '') {
-            $parts[] = 'Clinically reviewed by ' . $this->clinicalReviewer;
+            $line = 'Clinically reviewed by ' . $this->clinicalReviewer;
         }
 
         if ($this->approver !== null && $this->approver !== '') {
-            $parts[] = 'approved by ' . $this->approver;
+            $line .= ($line === '' ? '' : ', ') . 'approved by ' . $this->approver;
         }
 
         if ($this->approvedOn !== null) {
-            $parts[] = 'on ' . $this->approvedOn;
+            $line .= ($line === '' ? '' : ' ') . 'on ' . $this->approvedOn;
         }
-
-        $line = implode(' ', $parts);
 
         if ($this->reviewOn !== null) {
             $line .= ($line === '' ? '' : '. ') . 'Due for review ' . $this->reviewOn;

@@ -67,7 +67,8 @@ final class PdoReferralRepository implements ReferralRepository
                          submitted_on_behalf_of, created_at, updated_at,
                          patient_age_value, patient_age_unit, patient_age_source,
                          patient_identifier, patient_identifier_type, patient_identifier_facility,
-                         patient_email, preferred_language)
+                         patient_email, preferred_language, referring_physician_credentials,
+                         referring_department, clinical_question)
                      VALUES
                         (:reference, :status, 1, :patient_name, :patient_phone, :patient_dob,
                          :guardian_name, :guardian_phone, :guardian_relationship, :procedure_code,
@@ -77,7 +78,8 @@ final class PdoReferralRepository implements ReferralRepository
                          :submitted_on_behalf_of, :created_at, :updated_at,
                          :patient_age_value, :patient_age_unit, :patient_age_source,
                          :patient_identifier, :patient_identifier_type, :patient_identifier_facility,
-                         :patient_email, :preferred_language)'
+                         :patient_email, :preferred_language, :referring_physician_credentials,
+                         :referring_department, :clinical_question)'
                 );
 
                 $insert->execute([
@@ -109,6 +111,9 @@ final class PdoReferralRepository implements ReferralRepository
                     'patient_identifier_facility' => $referral->patientIdentifierFacility,
                     'patient_email' => $referral->patientEmail,
                     'preferred_language' => $referral->preferredLanguage,
+                    'referring_physician_credentials' => $referral->referringPhysicianCredentials,
+                    'referring_department' => $referral->referringDepartment,
+                    'clinical_question' => $referral->clinicalQuestion,
                 ]);
 
                 $id = (int) $this->pdo->lastInsertId();

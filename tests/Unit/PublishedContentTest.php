@@ -127,6 +127,14 @@ final class PublishedContentTest extends TestCase
         self::assertStringContainsString('approved by Dawit Muluneh', $line);
         self::assertStringContainsString('2026-11-13', $line);
         self::assertStringContainsString('Due for review 2027-11-13', $line);
+
+        // The whole sentence, because the separators are the part that goes wrong: a
+        // space before the comma or a missing one after the year both read as typos.
+        self::assertSame(
+            'Clinically reviewed by Dr Reviewer, approved by Dawit Muluneh on 2026-11-13. '
+                . 'Due for review 2027-11-13.',
+            $line,
+        );
     }
 
     public function testTheSlugIsTheLastSegmentOfTheContentKey(): void

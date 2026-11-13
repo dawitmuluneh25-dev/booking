@@ -68,6 +68,12 @@ final class Referral
         public readonly ?string $patientEmail = null,
         /** `PAT-008`. See the traceability note: no configured language list exists yet. */
         public readonly ?string $preferredLanguage = null,
+        /** `REF-003`: the credential as stated. Verification lives on the physician profile. */
+        public readonly ?string $referringPhysicianCredentials = null,
+        /** `REF-006`. */
+        public readonly ?string $referringDepartment = null,
+        /** `REF-009`: what the referrer wants answered, distinct from why they are asking. */
+        public readonly ?string $clinicalQuestion = null,
     ) {
     }
 
@@ -109,6 +115,9 @@ final class Referral
             patientIdentifierFacility: self::nullableText($row, 'patient_identifier_facility'),
             patientEmail: self::nullableText($row, 'patient_email'),
             preferredLanguage: self::nullableText($row, 'preferred_language'),
+            referringPhysicianCredentials: self::nullableText($row, 'referring_physician_credentials'),
+            referringDepartment: self::nullableText($row, 'referring_department'),
+            clinicalQuestion: self::nullableText($row, 'clinical_question'),
         );
     }
 
@@ -229,6 +238,9 @@ final class Referral
             patientIdentifierFacility: $this->patientIdentifierFacility,
             patientEmail: $this->patientEmail,
             preferredLanguage: $this->preferredLanguage,
+            referringPhysicianCredentials: $this->referringPhysicianCredentials,
+            referringDepartment: $this->referringDepartment,
+            clinicalQuestion: $this->clinicalQuestion,
         );
     }
 

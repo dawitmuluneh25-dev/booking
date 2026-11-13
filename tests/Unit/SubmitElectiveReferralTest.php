@@ -170,6 +170,8 @@ final class SubmitElectiveReferralTest extends TestCase
                 'referring_physician_name' => 'Dr Hana Bekele',
                 'referring_facility' => 'Yekatit 12 Hospital',
                 'referring_physician_phone' => '+251911000222',
+                // A clinician referral states the question it wants answered (REF-009).
+                'clinical_question' => 'Is the hepatic lesion malignant?',
             ],
             self::NOW,
         );
@@ -570,6 +572,57 @@ final class SubmitElectiveReferralTest extends TestCase
         }
     }
 
+    public function testAClinicianReferralMustStateTheClinicalQuestionItWantsAnswered(): void
+    {
+        $this->physicians->create($this->profile(PhysicianStatus::Verified), self::NOW);
+
+        try {
+            $this->command->execute(
+                new Actor(11, Role::Physician),
+                [
+                    'referring_physician_name' => 'Dr Hana Bekele',
+                    'referring_facility' => 'Yekatit 12 Hospital',
+                    'referring_physician_phone' => '+251911000222',
+                ] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('A clinician referral was accepted with no clinical question.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('clinical_question', $exception->errors);
+        }
+    }
+
+    public function testAPatientOriginatedRequestNeedsNoClinicalQuestionBecauseReviewSettlesIt(): void
+    {
+        // §6.4 makes the question conditional for patient-originated intake: the
+        // patient is not asked to frame one, and clinical review completes it.
+        $referral = $this->command->execute(new Actor(7, Role::Staff), $this->validInput(), self::NOW);
+
+        self::assertNull($referral->clinicalQuestion);
+    }
+
+    public function testTheReferrerCredentialAndDepartmentAreStoredAsStated(): void
+    {
+        $this->physicians->create($this->profile(PhysicianStatus::Verified), self::NOW);
+
+        $referral = $this->command->execute(
+            new Actor(11, Role::Physician),
+            [
+                'referring_physician_name' => 'Dr Hana Bekele',
+                'referring_physician_credentials' => 'MD, Internal Medicine',
+                'referring_facility' => 'Yekatit 12 Hospital',
+                'referring_department' => 'Gastroenterology',
+                'referring_physician_phone' => '+251911000222',
+                'clinical_question' => 'Is the 2 cm hepatic lesion malignant?',
+            ] + $this->validInput(),
+            self::NOW,
+        );
+
+        self::assertSame('MD, Internal Medicine', $referral->referringPhysicianCredentials);
+        self::assertSame('Gastroenterology', $referral->referringDepartment);
+        self::assertSame('Is the 2 cm hepatic lesion malignant?', $referral->clinicalQuestion);
+    }
+
     /**
      * The hazard `copyWith` creates.
      *
@@ -591,6 +644,9 @@ final class SubmitElectiveReferralTest extends TestCase
                 'patient_identifier_facility' => 'Yekatit 12 Hospital',
                 'patient_email' => 'selam@example.com',
                 'preferred_language' => 'Amharic',
+                'referring_physician_credentials' => 'MD',
+                'referring_department' => 'Gastroenterology',
+                'clinical_question' => 'Is the lesion malignant?',
             ] + $this->validInput(),
             self::NOW,
         );
@@ -605,6 +661,9 @@ final class SubmitElectiveReferralTest extends TestCase
         self::assertSame('Yekatit 12 Hospital', $moved->patientIdentifierFacility);
         self::assertSame('selam@example.com', $moved->patientEmail);
         self::assertSame('Amharic', $moved->preferredLanguage);
+        self::assertSame('MD', $moved->referringPhysicianCredentials);
+        self::assertSame('Gastroenterology', $moved->referringDepartment);
+        self::assertSame('Is the lesion malignant?', $moved->clinicalQuestion);
     }
     /** @return array<string, string> */
     private function validInput(): array

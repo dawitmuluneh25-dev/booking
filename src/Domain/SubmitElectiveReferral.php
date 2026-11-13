@@ -75,6 +75,9 @@ final class SubmitElectiveReferral
             'patient_identifier_facility' => $this->text($input, 'patient_identifier_facility'),
             'patient_email' => $this->text($input, 'patient_email'),
             'preferred_language' => $this->text($input, 'preferred_language'),
+            'referring_physician_credentials' => $this->text($input, 'referring_physician_credentials'),
+            'referring_department' => $this->text($input, 'referring_department'),
+            'clinical_question' => $this->text($input, 'clinical_question'),
         ];
 
         $errors = $this->validator->validate($data, [
@@ -99,6 +102,9 @@ final class SubmitElectiveReferral
             'patient_identifier_facility' => 'max:160',
             'patient_email' => 'max:160',
             'preferred_language' => 'max:40',
+            'referring_physician_credentials' => 'max:120',
+            'referring_department' => 'max:120',
+            'clinical_question' => 'max:2000',
         ]);
 
         $dob = $this->date($data['patient_dob']);
@@ -237,12 +243,10 @@ final class SubmitElectiveReferral
                 . 'Urgent cases are coordinated by telephone, not requested here.';
         }
 
-        if ($errors !== []) {
-            throw new ValidationException($errors);
-        }
-
-        $submittedOnBehalfOf = $this->submittedOnBehalfOf($actor, $data['guardian_name'] !== '');
-
+        // Authority before content. A physician whose profile is pending or suspended is
+        // told that, rather than being walked through field errors on a form they may not
+        // submit at all. The check is read-only, so answering it first costs nothing.
+        //
         // A physician submits under their verified profile, and an unverified one
         // submits nothing (AUTH-02). Patients and staff have no profile to check.
         $profile = null;
@@ -258,6 +262,28 @@ final class SubmitElectiveReferral
                 );
             }
         }
+
+        // REF-009: a clinician referral states the question it wants answered, which
+        // is not the same thing as the reason for asking. §6.4 makes it mandatory for
+        // a clinician referral and conditional for patient-originated intake, where
+        // it is completed during clinical review instead. Refusing it here is not the
+        // same as inventing one: the referrer is told, and nothing is defaulted.
+        if (
+            $actor->role === Role::Physician
+            && $data['clinical_question'] === ''
+            && !isset($errors['clinical_question'])
+        ) {
+            $errors['clinical_question'] = 'A clinician referral states the clinical question the '
+                . 'procedure is meant to answer, for example whether a lesion is malignant.';
+        }
+
+        if ($errors !== []) {
+            throw new ValidationException($errors);
+        }
+
+        $submittedOnBehalfOf = $this->submittedOnBehalfOf($actor, $data['guardian_name'] !== '');
+
+
 
         $createdAtUtc = $nowUtc ?? gmdate('Y-m-d H:i:s');
 
@@ -320,6 +346,9 @@ final class SubmitElectiveReferral
             patientIdentifierFacility: $this->nullable($data['patient_identifier_facility']),
             patientEmail: $this->nullable($data['patient_email']),
             preferredLanguage: $this->nullable($data['preferred_language']),
+            referringPhysicianCredentials: $this->nullable($data['referring_physician_credentials']),
+            referringDepartment: $this->nullable($data['referring_department']),
+            clinicalQuestion: $this->nullable($data['clinical_question']),
         );
 
         // The confirmation is enqueued in the same transaction as the referral and

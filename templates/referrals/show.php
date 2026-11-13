@@ -284,14 +284,35 @@ $mayRecordConsent = $currentUser->can(\App\Domain\Permission::ClinicalApprove) &
                     <th scope="row">Referring clinician</th>
                     <td>
                         <?= e($referral->referringPhysicianName ?? '—') ?>
+                        <?php if ($referral->referringPhysicianCredentials !== null): ?>
+                            <span class="muted">, <?= e($referral->referringPhysicianCredentials) ?></span>
+                        <?php endif; ?>
                         <?php if ($referral->referringFacility !== null): ?>
                             <span class="muted">· <?= e($referral->referringFacility) ?></span>
+                        <?php endif; ?>
+                        <?php if ($referral->referringDepartment !== null): ?>
+                            <span class="muted">· <?= e($referral->referringDepartment) ?></span>
                         <?php endif; ?>
                     </td>
                 </tr>
                 <tr>
                     <th scope="row">Clinical summary</th>
                     <td><?= nl2br(e($referral->clinicalSummary ?? '—')) ?></td>
+                </tr>
+                <tr>
+                    <th scope="row">Clinical question</th>
+                    <td>
+                        <?php if ($referral->clinicalQuestion !== null): ?>
+                            <?= nl2br(e($referral->clinicalQuestion)) ?>
+                        <?php else: ?>
+                            <?php /*
+                             * §6.4 makes this mandatory for a clinician referral and
+                             * conditional otherwise, so an empty one is a fact worth
+                             * stating rather than a blank cell.
+                             */ ?>
+                            <span class="muted">Not stated. A clinician referral should say what the procedure is meant to answer.</span>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             </tbody>
         </table>

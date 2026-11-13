@@ -221,6 +221,20 @@ $describedBy = static fn (string $field): string => $error($field) === null
                     <p class="field-error" id="<?= e($errorId('clinical_summary')) ?>"><?= e((string) $error('clinical_summary')) ?></p>
             <?php endif; ?>
         </div>
+        <?php /*
+         * REF-009 asks a different question from the summary above: the summary says
+         * why the request was made, this says what the procedure is meant to answer.
+         * Required of a referring clinician, optional when a patient is the source,
+         * where it is settled during clinical review instead.
+         */ ?>
+        <div class="field">
+            <label for="clinical_question">Clinical question</label>
+            <textarea id="clinical_question"<?= $describedBy('clinical_question') ?> name="clinical_question" rows="3"><?= $value('clinical_question') ?></textarea>
+            <p class="muted">What the procedure should answer, for example whether a lesion is malignant.</p>
+            <?php if ($error('clinical_question') !== null): ?>
+                <p class="field-error" id="<?= e($errorId('clinical_question')) ?>"><?= e((string) $error('clinical_question')) ?></p>
+            <?php endif; ?>
+        </div>
 
         <h2 class="section-title">D. Referring clinician</h2>
         <div class="grid">
@@ -233,6 +247,24 @@ $describedBy = static fn (string $field): string => $error($field) === null
                 <label for="referring_facility">Facility</label>
                 <input id="referring_facility"<?= $describedBy('referring_facility') ?> name="referring_facility" type="text"
                        value="<?= $value('referring_facility') ?>">
+            </div>
+            <div class="field">
+                <label for="referring_physician_credentials">Credentials</label>
+                <input id="referring_physician_credentials"<?= $describedBy('referring_physician_credentials') ?>
+                       name="referring_physician_credentials" type="text"
+                       value="<?= $value('referring_physician_credentials') ?>">
+                <p class="muted">As stated here. Privileges are verified separately on the clinician's profile.</p>
+                <?php if ($error('referring_physician_credentials') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('referring_physician_credentials')) ?>"><?= e((string) $error('referring_physician_credentials')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="referring_department">Department</label>
+                <input id="referring_department"<?= $describedBy('referring_department') ?> name="referring_department" type="text"
+                       value="<?= $value('referring_department') ?>">
+                <?php if ($error('referring_department') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('referring_department')) ?>"><?= e((string) $error('referring_department')) ?></p>
+                <?php endif; ?>
             </div>
             <div class="field">
                 <label for="referring_physician_phone">Contact phone</label>
