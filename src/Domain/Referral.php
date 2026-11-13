@@ -49,6 +49,25 @@ final class Referral
          * other (AC-010).
          */
         public readonly ?string $clinicalPriority = null,
+        /**
+         * The stated age, its unit and who stated it (`PAT-003`, §6.3).
+         *
+         * All three or none. The CHECK constraints in migration 0036 enforce the
+         * same thing; this is the shape that makes an age without a unit, or an age
+         * with nobody standing behind it, unrepresentable rather than merely
+         * discouraged.
+         */
+        public readonly ?int $patientAgeValue = null,
+        public readonly ?string $patientAgeUnit = null,
+        public readonly ?string $patientAgeSource = null,
+        /** `PAT-004`: a number that is unique only inside the facility that issued it. */
+        public readonly ?string $patientIdentifier = null,
+        public readonly ?string $patientIdentifierType = null,
+        public readonly ?string $patientIdentifierFacility = null,
+        /** `PAT-007`. */
+        public readonly ?string $patientEmail = null,
+        /** `PAT-008`. See the traceability note: no configured language list exists yet. */
+        public readonly ?string $preferredLanguage = null,
     ) {
     }
 
@@ -80,6 +99,16 @@ final class Referral
                 ? (int) $row['referring_physician_profile_id']
                 : null,
             clinicalPriority: self::nullableText($row, 'clinical_priority'),
+            patientAgeValue: is_numeric($row['patient_age_value'] ?? null)
+                ? (int) $row['patient_age_value']
+                : null,
+            patientAgeUnit: self::nullableText($row, 'patient_age_unit'),
+            patientAgeSource: self::nullableText($row, 'patient_age_source'),
+            patientIdentifier: self::nullableText($row, 'patient_identifier'),
+            patientIdentifierType: self::nullableText($row, 'patient_identifier_type'),
+            patientIdentifierFacility: self::nullableText($row, 'patient_identifier_facility'),
+            patientEmail: self::nullableText($row, 'patient_email'),
+            preferredLanguage: self::nullableText($row, 'preferred_language'),
         );
     }
 
@@ -188,7 +217,40 @@ final class Referral
             createdAtUtc: $this->createdAtUtc,
             referringPhysicianProfileId: $this->referringPhysicianProfileId,
             clinicalPriority: $clinicalPriority ?? $this->clinicalPriority,
+            // These are part of the patient's identity, not of the transition being
+            // applied. Every one of them has to be carried across, or a status
+            // change would quietly delete an age, an identifier or a language —
+            // and nothing would fail, because all of them are allowed to be absent.
+            patientAgeValue: $this->patientAgeValue,
+            patientAgeUnit: $this->patientAgeUnit,
+            patientAgeSource: $this->patientAgeSource,
+            patientIdentifier: $this->patientIdentifier,
+            patientIdentifierType: $this->patientIdentifierType,
+            patientIdentifierFacility: $this->patientIdentifierFacility,
+            patientEmail: $this->patientEmail,
+            preferredLanguage: $this->preferredLanguage,
         );
+    }
+
+    /** The stated age as one object, or null when no age was recorded. */
+    public function patientAge(): ?PatientAge
+    {
+        $unit = $this->patientAgeUnit === null ? null : AgeUnit::tryFrom($this->patientAgeUnit);
+        $source = $this->patientAgeSource === null ? null : AgeSource::tryFrom($this->patientAgeSource);
+
+        if ($this->patientAgeValue === null || $unit === null || $source === null) {
+            return null;
+        }
+
+        return new PatientAge($this->patientAgeValue, $unit, $source);
+    }
+
+    /** The identifier's type as one object, or null when no identifier was recorded. */
+    public function identifierType(): ?PatientIdentifierType
+    {
+        return $this->patientIdentifierType === null
+            ? null
+            : PatientIdentifierType::tryFrom($this->patientIdentifierType);
     }
 
     /** @param array<string, mixed> $row */

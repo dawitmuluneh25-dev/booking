@@ -67,6 +67,14 @@ final class SubmitElectiveReferral
             'referring_physician_name' => $this->text($input, 'referring_physician_name'),
             'referring_facility' => $this->text($input, 'referring_facility'),
             'referring_physician_phone' => $this->text($input, 'referring_physician_phone'),
+            'patient_age_value' => $this->text($input, 'patient_age_value'),
+            'patient_age_unit' => $this->text($input, 'patient_age_unit'),
+            'patient_age_source' => $this->text($input, 'patient_age_source'),
+            'patient_identifier' => $this->text($input, 'patient_identifier'),
+            'patient_identifier_type' => $this->text($input, 'patient_identifier_type'),
+            'patient_identifier_facility' => $this->text($input, 'patient_identifier_facility'),
+            'patient_email' => $this->text($input, 'patient_email'),
+            'preferred_language' => $this->text($input, 'preferred_language'),
         ];
 
         $errors = $this->validator->validate($data, [
@@ -83,6 +91,14 @@ final class SubmitElectiveReferral
             'referring_physician_name' => 'max:120',
             'referring_facility' => 'max:160',
             'referring_physician_phone' => 'max:32',
+            'patient_age_value' => 'max:5',
+            'patient_age_unit' => 'max:8',
+            'patient_age_source' => 'max:32',
+            'patient_identifier' => 'max:64',
+            'patient_identifier_type' => 'max:32',
+            'patient_identifier_facility' => 'max:160',
+            'patient_email' => 'max:160',
+            'preferred_language' => 'max:40',
         ]);
 
         $dob = $this->date($data['patient_dob']);
@@ -125,6 +141,77 @@ final class SubmitElectiveReferral
         if ($dob !== null && $this->isMinor($dob) && $guardianGiven === []) {
             $errors['guardian_name'] = 'A patient under 18 needs a parent or guardian named, with a '
                 . 'contact number and their relationship to the patient.';
+        }
+
+        // PAT-003: an age is a number, a unit and a source, or it is nothing. Three
+        // days and three years are different patients, and a number with nobody
+        // standing behind it is worth less than the sentence that says who gave it.
+        $ageValue = null;
+        $ageUnit = $data['patient_age_unit'] === '' ? null : AgeUnit::tryFrom($data['patient_age_unit']);
+        $ageSource = $data['patient_age_source'] === '' ? null : AgeSource::tryFrom($data['patient_age_source']);
+
+        if ($data['patient_age_value'] !== '') {
+            $parsed = filter_var($data['patient_age_value'], FILTER_VALIDATE_INT);
+
+            if ($parsed === false) {
+                $errors['patient_age_value'] = 'Age must be a whole number, in the unit you choose.';
+            } elseif ($ageUnit !== null && !$ageUnit->isPlausible($parsed)) {
+                $errors['patient_age_value'] = 'That age is not possible. Check the number and the unit.';
+            } else {
+                $ageValue = $parsed;
+            }
+        }
+
+        if ($data['patient_age_unit'] !== '' && $ageUnit === null) {
+            $errors['patient_age_unit'] = 'Age unit must be one of: ' . implode(', ', AgeUnit::values()) . '.';
+        }
+
+        if ($data['patient_age_source'] !== '' && $ageSource === null) {
+            $errors['patient_age_source'] = 'Age source must be one of: ' . implode(', ', AgeSource::values()) . '.';
+        }
+
+        $ageParts = [
+            'patient_age_value' => $data['patient_age_value'],
+            'patient_age_unit' => $data['patient_age_unit'],
+            'patient_age_source' => $data['patient_age_source'],
+        ];
+        $ageGiven = array_filter($ageParts, static fn (string $part): bool => $part !== '');
+
+        if ($ageGiven !== [] && count($ageGiven) < count($ageParts)) {
+            foreach ($ageParts as $field => $value) {
+                if ($value === '' && !isset($errors[$field])) {
+                    $errors[$field] = 'An age is recorded with its unit and who supplied it; '
+                        . 'a number on its own does not describe a patient.';
+                }
+            }
+        }
+
+        // PAT-004: a hospital number is unique inside the hospital that issued it and
+        // nowhere else, so the number and its type are recorded together. §6.2 also
+        // forbids inferring an identifier from anything the submitter wrote.
+        $identifierType = $data['patient_identifier_type'] === ''
+            ? null
+            : PatientIdentifierType::tryFrom($data['patient_identifier_type']);
+
+        if ($data['patient_identifier_type'] !== '' && $identifierType === null) {
+            $errors['patient_identifier_type'] = 'Identifier type must be one of: '
+                . implode(', ', PatientIdentifierType::values()) . '.';
+        }
+
+        if (($data['patient_identifier'] === '') !== ($data['patient_identifier_type'] === '')) {
+            $missing = $data['patient_identifier'] === '' ? 'patient_identifier' : 'patient_identifier_type';
+
+            if (!isset($errors[$missing])) {
+                $errors[$missing] = 'The reference number and its type are recorded together: a number '
+                    . 'with no type has no scope.';
+            }
+        }
+
+        if (
+            $data['patient_email'] !== ''
+            && filter_var($data['patient_email'], FILTER_VALIDATE_EMAIL) === false
+        ) {
+            $errors['patient_email'] = 'That does not look like an email address.';
         }
 
         if (
@@ -225,6 +312,14 @@ final class SubmitElectiveReferral
             submittedOnBehalfOf: $submittedOnBehalfOf,
             createdAtUtc: $createdAtUtc,
             referringPhysicianProfileId: $profile?->id,
+            patientAgeValue: $ageValue,
+            patientAgeUnit: $ageUnit?->value,
+            patientAgeSource: $ageSource?->value,
+            patientIdentifier: $this->nullable($data['patient_identifier']),
+            patientIdentifierType: $identifierType?->value,
+            patientIdentifierFacility: $this->nullable($data['patient_identifier_facility']),
+            patientEmail: $this->nullable($data['patient_email']),
+            preferredLanguage: $this->nullable($data['preferred_language']),
         );
 
         // The confirmation is enqueued in the same transaction as the referral and

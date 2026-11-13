@@ -190,6 +190,57 @@ $mayRecordConsent = $currentUser->can(\App\Domain\Permission::ClinicalApprove) &
                     <th scope="row">Patient phone</th>
                     <td><?= e($referral->patientPhone) ?></td>
                 </tr>
+                <?php if ($referral->patientAge() !== null): ?>
+                    <tr>
+                        <th scope="row">Age</th>
+                        <td><?= e($referral->patientAge()->describeWithSource()) ?></td>
+                    </tr>
+                <?php endif; ?>
+                <?php /*
+                 * §6.3: an age recorded alongside a date of birth is flagged for
+                 * reconciliation when the two disagree. The comparison is arithmetic
+                 * against the unit's own span, so it states a conflict rather than
+                 * deciding which of the two is right — that is a person's job.
+                 */ ?>
+                <?php if ($referral->patientAge()?->disagreesWithDateOfBirth($referral->patientDob, $referral->createdAtUtc) === true): ?>
+                    <tr>
+                        <th scope="row">Age and date of birth</th>
+                        <td>
+                            <strong>These disagree.</strong>
+                            <span class="muted">
+                                The date of birth does not match the recorded age
+                                (<?= e($referral->patientAge()->describe()) ?>), which was stated when
+                                the request was taken. Reconcile before relying on either.
+                            </span>
+                        </td>
+                    </tr>
+                <?php endif; ?>
+                <?php if ($referral->patientIdentifier !== null): ?>
+                    <tr>
+                        <th scope="row">Reference number</th>
+                        <td>
+                            <?= e($referral->patientIdentifier) ?>
+                            <span class="muted">
+                                <?= e($referral->identifierType()?->label() ?? 'Unclassified') ?>
+                                <?php if ($referral->patientIdentifierFacility !== null): ?>
+                                    &middot; issued by <?= e($referral->patientIdentifierFacility) ?>
+                                <?php endif; ?>
+                            </span>
+                        </td>
+                    </tr>
+                <?php endif; ?>
+                <?php if ($referral->patientEmail !== null): ?>
+                    <tr>
+                        <th scope="row">Patient email</th>
+                        <td><?= e($referral->patientEmail) ?></td>
+                    </tr>
+                <?php endif; ?>
+                <?php if ($referral->preferredLanguage !== null): ?>
+                    <tr>
+                        <th scope="row">Preferred language</th>
+                        <td><?= e($referral->preferredLanguage) ?></td>
+                    </tr>
+                <?php endif; ?>
                 <tr>
                     <th scope="row">Procedure</th>
                     <td>

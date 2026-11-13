@@ -64,14 +64,20 @@ final class PdoReferralRepository implements ReferralRepository
                          requested_urgency, clinical_summary, target_site, referring_physician_name,
                          referring_facility, referring_physician_phone,
                          referring_physician_profile_id, submitted_by_user_id,
-                         submitted_on_behalf_of, created_at, updated_at)
+                         submitted_on_behalf_of, created_at, updated_at,
+                         patient_age_value, patient_age_unit, patient_age_source,
+                         patient_identifier, patient_identifier_type, patient_identifier_facility,
+                         patient_email, preferred_language)
                      VALUES
                         (:reference, :status, 1, :patient_name, :patient_phone, :patient_dob,
                          :guardian_name, :guardian_phone, :guardian_relationship, :procedure_code,
                          :requested_urgency, :clinical_summary, :target_site, :referring_physician_name,
                          :referring_facility, :referring_physician_phone,
                          :physician_profile, :submitted_by_user_id,
-                         :submitted_on_behalf_of, :created_at, :updated_at)'
+                         :submitted_on_behalf_of, :created_at, :updated_at,
+                         :patient_age_value, :patient_age_unit, :patient_age_source,
+                         :patient_identifier, :patient_identifier_type, :patient_identifier_facility,
+                         :patient_email, :preferred_language)'
                 );
 
                 $insert->execute([
@@ -95,6 +101,14 @@ final class PdoReferralRepository implements ReferralRepository
                     'submitted_on_behalf_of' => $referral->submittedOnBehalfOf,
                     'created_at' => $referral->createdAtUtc,
                     'updated_at' => $referral->createdAtUtc,
+                    'patient_age_value' => $referral->patientAgeValue,
+                    'patient_age_unit' => $referral->patientAgeUnit,
+                    'patient_age_source' => $referral->patientAgeSource,
+                    'patient_identifier' => $referral->patientIdentifier,
+                    'patient_identifier_type' => $referral->patientIdentifierType,
+                    'patient_identifier_facility' => $referral->patientIdentifierFacility,
+                    'patient_email' => $referral->patientEmail,
+                    'preferred_language' => $referral->preferredLanguage,
                 ]);
 
                 $id = (int) $this->pdo->lastInsertId();

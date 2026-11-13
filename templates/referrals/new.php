@@ -71,6 +71,88 @@ $describedBy = static fn (string $field): string => $error($field) === null
                     <p class="field-error" id="<?= e($errorId('patient_dob')) ?>"><?= e((string) $error('patient_dob')) ?></p>
                 <?php endif; ?>
             </div>
+            <?php /*
+             * §6.3 offers the age as an alternative to a date of birth, and asks for
+             * the unit and the source with it. The three inputs are deliberately
+             * adjacent: a number in one box and its unit two fields away is how
+             * "3" becomes three years old.
+             */ ?>
+            <div class="field">
+                <label for="patient_age_value">Age, if the date of birth is not known</label>
+                <input id="patient_age_value"<?= $describedBy('patient_age_value') ?> name="patient_age_value"
+                       type="number" min="0" inputmode="numeric" value="<?= $value('patient_age_value') ?>">
+                <?php if ($error('patient_age_value') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('patient_age_value')) ?>"><?= e((string) $error('patient_age_value')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="patient_age_unit">Age unit</label>
+                <select id="patient_age_unit"<?= $describedBy('patient_age_unit') ?> name="patient_age_unit">
+                    <option value="">Not stated</option>
+                    <?php foreach (\App\Domain\AgeUnit::cases() as $unit): ?>
+                        <option value="<?= e($unit->value) ?>"<?= $value('patient_age_unit') === $unit->value ? ' selected' : '' ?>><?= e(ucfirst($unit->value)) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if ($error('patient_age_unit') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('patient_age_unit')) ?>"><?= e((string) $error('patient_age_unit')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="patient_age_source">Who supplied the age</label>
+                <select id="patient_age_source"<?= $describedBy('patient_age_source') ?> name="patient_age_source">
+                    <option value="">Not stated</option>
+                    <?php foreach (\App\Domain\AgeSource::cases() as $source): ?>
+                        <option value="<?= e($source->value) ?>"<?= $value('patient_age_source') === $source->value ? ' selected' : '' ?>><?= e(ucfirst($source->label())) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if ($error('patient_age_source') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('patient_age_source')) ?>"><?= e((string) $error('patient_age_source')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="patient_identifier">Hospital or clinic number</label>
+                <input id="patient_identifier"<?= $describedBy('patient_identifier') ?> name="patient_identifier"
+                       type="text" value="<?= $value('patient_identifier') ?>">
+                <?php if ($error('patient_identifier') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('patient_identifier')) ?>"><?= e((string) $error('patient_identifier')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="patient_identifier_type">What kind of number</label>
+                <select id="patient_identifier_type"<?= $describedBy('patient_identifier_type') ?> name="patient_identifier_type">
+                    <option value="">Not stated</option>
+                    <?php foreach (\App\Domain\PatientIdentifierType::cases() as $type): ?>
+                        <option value="<?= e($type->value) ?>"<?= $value('patient_identifier_type') === $type->value ? ' selected' : '' ?>><?= e($type->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if ($error('patient_identifier_type') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('patient_identifier_type')) ?>"><?= e((string) $error('patient_identifier_type')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="patient_identifier_facility">Issued by</label>
+                <input id="patient_identifier_facility"<?= $describedBy('patient_identifier_facility') ?>
+                       name="patient_identifier_facility" type="text" value="<?= $value('patient_identifier_facility') ?>">
+                <?php if ($error('patient_identifier_facility') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('patient_identifier_facility')) ?>"><?= e((string) $error('patient_identifier_facility')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="patient_email">Email, if you use one</label>
+                <input id="patient_email"<?= $describedBy('patient_email') ?> name="patient_email" type="email"
+                       value="<?= $value('patient_email') ?>">
+                <?php if ($error('patient_email') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('patient_email')) ?>"><?= e((string) $error('patient_email')) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="field">
+                <label for="preferred_language">Preferred language</label>
+                <input id="preferred_language"<?= $describedBy('preferred_language') ?> name="preferred_language"
+                       type="text" value="<?= $value('preferred_language') ?>">
+                <?php if ($error('preferred_language') !== null): ?>
+                    <p class="field-error" id="<?= e($errorId('preferred_language')) ?>"><?= e((string) $error('preferred_language')) ?></p>
+                <?php endif; ?>
+            </div>
         </div>
 
         <h2 class="section-title">B. Guardian, where the patient is a minor</h2>

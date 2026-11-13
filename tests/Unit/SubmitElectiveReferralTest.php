@@ -443,6 +443,169 @@ final class SubmitElectiveReferralTest extends TestCase
 
         self::assertNull($referral->guardianName);
     }
+
+    public function testAnAgeIsStoredWithItsUnitAndItsSourceTogether(): void
+    {
+        $referral = $this->command->execute(
+            new Actor(7, Role::Staff),
+            [
+                'patient_dob' => '',
+                'patient_age_value' => '9',
+                'patient_age_unit' => 'months',
+                'patient_age_source' => 'parent_or_guardian',
+            ] + $this->validInput(),
+            self::NOW,
+        );
+
+        self::assertSame(9, $referral->patientAgeValue);
+        self::assertSame('months', $referral->patientAgeUnit);
+        self::assertNotNull($referral->patientAge());
+        self::assertSame('9 months, stated by a parent or guardian.', $referral->patientAge()->describeWithSource());
+    }
+
+    public function testAnAgeWithoutAUnitIsRefusedBecauseThreeIsNotAnAge(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['patient_age_value' => '3'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('An age with no unit was accepted, so three days and three years became one record.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('patient_age_unit', $exception->errors);
+        }
+
+        self::assertSame(0, $this->repository->count());
+    }
+
+    public function testAnAgeWithNobodyToAttributeItToIsRefused(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['patient_age_value' => '3', 'patient_age_unit' => 'years'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('An age was accepted with no record of who supplied it.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('patient_age_source', $exception->errors);
+        }
+    }
+
+    public function testAnAgeThatCannotBelongToALivingPatientIsRefused(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                [
+                    'patient_age_value' => '200',
+                    'patient_age_unit' => 'years',
+                    'patient_age_source' => 'staff',
+                ] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('An age of 200 years was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('patient_age_value', $exception->errors);
+        }
+    }
+
+    public function testAUnitWithoutAnAgeIsRefusedRatherThanStoredAlone(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['patient_age_unit' => 'years', 'patient_age_source' => 'staff'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('A unit with no number was stored.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('patient_age_value', $exception->errors);
+        }
+    }
+
+    public function testAReferenceNumberNeedsItsTypeBecauseTheTypeIsItsScope(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['patient_identifier' => 'MRN-88421'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('A reference number with no type was accepted as if it were globally unique.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('patient_identifier_type', $exception->errors);
+        }
+    }
+
+    public function testAReferenceNumberIsStoredWithItsTypeAndIssuingFacility(): void
+    {
+        $referral = $this->command->execute(
+            new Actor(7, Role::Staff),
+            [
+                'patient_identifier' => 'MRN-88421',
+                'patient_identifier_type' => 'hospital_number',
+                'patient_identifier_facility' => 'Yekatit 12 Hospital',
+            ] + $this->validInput(),
+            self::NOW,
+        );
+
+        self::assertSame('MRN-88421', $referral->patientIdentifier);
+        self::assertSame('Hospital number', $referral->identifierType()?->label());
+        self::assertSame('Yekatit 12 Hospital', $referral->patientIdentifierFacility);
+    }
+
+    public function testAMalformedEmailIsRefusedRatherThanStoredAsText(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['patient_email' => 'selamawit.girma.example.com'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('A malformed email address was stored.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('patient_email', $exception->errors);
+        }
+    }
+
+    /**
+     * The hazard `copyWith` creates.
+     *
+     * A status transition rebuilds the aggregate field by field. Any new field not
+     * threaded through that method is silently dropped — and because every one of
+     * these is nullable, nothing fails. This asserts the identity fields survive a
+     * transition, which is the only thing that makes them worth storing.
+     */
+    public function testAStatusChangeKeepsThePatientIdentityIntact(): void
+    {
+        $referral = $this->command->execute(
+            new Actor(7, Role::Staff),
+            [
+                'patient_age_value' => '42',
+                'patient_age_unit' => 'years',
+                'patient_age_source' => 'patient',
+                'patient_identifier' => 'MRN-1',
+                'patient_identifier_type' => 'hospital_number',
+                'patient_identifier_facility' => 'Yekatit 12 Hospital',
+                'patient_email' => 'selam@example.com',
+                'preferred_language' => 'Amharic',
+            ] + $this->validInput(),
+            self::NOW,
+        );
+
+        $moved = $referral->withStatus(ReferralStatus::ClinicalReview, 2);
+
+        self::assertSame(42, $moved->patientAgeValue);
+        self::assertSame('years', $moved->patientAgeUnit);
+        self::assertSame('patient', $moved->patientAgeSource);
+        self::assertSame('MRN-1', $moved->patientIdentifier);
+        self::assertSame('hospital_number', $moved->patientIdentifierType);
+        self::assertSame('Yekatit 12 Hospital', $moved->patientIdentifierFacility);
+        self::assertSame('selam@example.com', $moved->patientEmail);
+        self::assertSame('Amharic', $moved->preferredLanguage);
+    }
     /** @return array<string, string> */
     private function validInput(): array
     {

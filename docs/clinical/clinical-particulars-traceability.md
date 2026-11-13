@@ -61,7 +61,7 @@ before production and none has been executed.
 
 | Field group | Status | Evidence / notes |
 |---|---|---|
-| `PAT-001`–`PAT-010` patient identity and contact | Partial | `patient_name`, `patient_phone`, `patient_dob`, `patient_sex`; the document's remaining identity fields have no column |
+| `PAT-001`–`PAT-010` patient identity and contact | Implemented except the submitter's own name | `patient_name`, `patient_phone`, `patient_dob`, `patient_sex`; `PAT-003` as `patient_age_value` + `patient_age_unit` + `patient_age_source` (migration 0036) with the pairing and source enforced by CHECK, and the reconciliation flag computed against a date of birth rather than stored; `PAT-004` as `patient_identifier` + `patient_identifier_type` + `patient_identifier_facility`; `PAT-007` `patient_email`; `PAT-008` `preferred_language`. `PAT-009`/`PAT-010` are only coarsely represented: `submitted_on_behalf_of` records patient, guardian, staff or referrer, but not the finer relationship §6.3 lists (legal guardian, caregiver), and there is no separate `submitter_name` — for a staff-entered record the submitter is the authenticated user, and for a guardian submission the guardian fields already name them. `PatientAgeTest`, `SubmitElectiveReferralTest` |
 | `PAT-011`–`PAT-013` guardian | Implemented | Intake records the three parts (`guardian_name`, `guardian_phone`, `guardian_relationship`) and refuses a partial one; `PAT-013`'s verification is a separate staff act with its own actor and basis (`guardian_verified_at`, `guardian_verified_by_user_id`, `guardian_verification_basis`, migration 0034). `VerifyGuardianAuthority` requires `ReferralTriage`, refuses a second verification, and refuses a basis that says nothing; the CHECK constraints make a verification time without an actor unrepresentable. Nothing infers authority from a relationship label or a missing date of birth (§6.2, §6.3). `VerifyGuardianAuthorityTest`, `SubmitElectiveReferralTest` |
 | `REF-001`–`REF-010` referral and referrer | Partial | referrer name, facility, phone, `referring_physician_profile_id`; indication is free text in `clinical_summary` |
 | `REF-011`–`REF-012` requested vs clinical priority | Implemented | Separate columns with separate write paths; `Priority`, migration 0024, `MigrationIntegrityTest::testPriorityColumnsAcceptExactlyTheApprovedVocabulary` |
@@ -223,6 +223,17 @@ constraint on BL-D2 rather than a fork in the road:
   and do nothing, which `Role::permissions()` explicitly argues against.
 - Until then, no checklist item may be assigned to a role that does not exist, and the checklist is
   not partially built on a mapping that would let a receptionist complete a nursing check.
+
+### 4.4a `PAT-008` has no configured language list to validate against
+
+**Status: open, deliberately under-constrained.** §6.3 says to "use configured language list; free-text
+'other' with review". No such list exists in this release: translation governance (A-19) approved the
+requirement but produced no languages, and inventing a list would state which languages the clinic
+supports — an operational fact nobody has given.
+
+`preferred_language` therefore stores what was written, bounded at 40 characters and nothing more. The
+consequence is that the field cannot be counted by language until a list exists, which is the same
+blocker as the translated-content work rather than a second one.
 
 ### 4.5 Two governance inputs answered on 13 November 2026
 
