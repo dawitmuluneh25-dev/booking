@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionRecord;
+use App\Domain\ClinicalDecisionType;
 use App\Domain\ClinicalPriorityChange;
 use App\Domain\OutboundMessage;
 use App\Domain\Referral;
@@ -85,6 +86,50 @@ final class InMemoryReferralRepository implements ReferralRepository
     public function findById(int $id): ?Referral
     {
         return $this->referrals[$id] ?? null;
+    }
+
+    /** @return list<Referral> */
+    public function referredBy(int $physicianProfileId, int $limit = 50): array
+    {
+        $mine = [];
+
+        foreach ($this->referrals as $referral) {
+            if ($referral->referringPhysicianProfileId === $physicianProfileId) {
+                $mine[] = $referral;
+            }
+        }
+
+        usort(
+            $mine,
+            static fn (Referral $a, Referral $b): int => [$b->createdAtUtc, $b->id] <=> [$a->createdAtUtc, $a->id],
+        );
+
+        return array_slice($mine, 0, max(1, $limit));
+    }
+
+    public function outstandingInformation(int $referralId): ?string
+    {
+        $reason = null;
+
+        // Appended in order, so the last match is the newest transition into the
+        // state — the same row the PDO adapter's ORDER BY returns.
+        foreach ($this->history as $row) {
+            if ($row['referral_id'] === $referralId && $row['to'] === ReferralStatus::AwaitingInformation->value) {
+                $reason = $row['reason'];
+            }
+        }
+
+        if ($reason !== null && trim($reason) !== '') {
+            return trim($reason);
+        }
+
+        $decision = $this->currentDecision($referralId);
+
+        if ($decision === null || $decision->type !== ClinicalDecisionType::MoreInformation) {
+            return null;
+        }
+
+        return $decision->informationRequested;
     }
 
     /** @param list<OutboundMessage> $messages */

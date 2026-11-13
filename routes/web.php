@@ -26,6 +26,7 @@ use App\Controllers\HealthController;
 use App\Controllers\ScheduleController;
 use App\Controllers\ForgotPasswordController;
 use App\Controllers\HomeController;
+use App\Controllers\MyReferralsController;
 use App\Controllers\NotificationController;
 use App\Controllers\PasswordResetController;
 use App\Controllers\ReferralController;
@@ -410,6 +411,25 @@ return static function (Application $app): void {
         $app->recordProcedureConsent(),
         $app->withdrawConsent(),
         $app->config()->timezone(),
+    );
+
+    // The referrer's own list (BL-E1). A separate surface from the triage queue on
+    // purpose: the permission admits the page, and `ReferralAccessPolicy` decides
+    // the rows, so a physician reading a colleague's referral would take a change
+    // to the profile on the row and not a guessed URL.
+    $myReferrals = new MyReferralsController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->referrals(),
+        $app->referralAccess(),
+        $app->config()->timezone(),
+    );
+
+    $router->get(
+        '/my-referrals',
+        static fn (Request $request) => $myReferrals->index($request),
+        RouteAccess::permission(Permission::ReferralReadOwn),
     );
 
     // The queue and the intake form are staff and referrer surfaces. There is no

@@ -9,6 +9,9 @@ use App\Domain\Actor;
 use App\Domain\ApproveForScheduling;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
+use App\Domain\PhysicianProfile;
+use App\Domain\PhysicianProfileRepository;
+use App\Domain\PhysicianStatus;
 use App\Domain\Procedure;
 use App\Domain\ReassignClinicalPriority;
 use App\Domain\RecordClinicalAssessment;
@@ -52,6 +55,10 @@ final class ReferralPageTest extends TestCase
 
     private ReferralController $controller;
 
+    private InMemoryUserRepository $users;
+
+    private InMemoryProcedureRepository $procedures;
+
     private InMemoryReferralRepository $referrals;
 
     private InMemoryConsentRepository $consents;
@@ -62,15 +69,15 @@ final class ReferralPageTest extends TestCase
     {
         $_SESSION = [];
 
-        $users = new InMemoryUserRepository();
-        $users->seed('clerk@example.test', 'Clerk', Role::Staff, (new PasswordHasher())->hash('correct horse'));
+        $this->users = new InMemoryUserRepository();
+        $this->users->seed('clerk@example.test', 'Clerk', Role::Staff, (new PasswordHasher())->hash('correct horse'));
 
-        $auth = new Auth($users, new PasswordHasher());
+        $auth = new Auth($this->users, new PasswordHasher());
         $auth->attempt('clerk@example.test', 'correct horse', '127.0.0.1');
 
-        $procedures = new InMemoryProcedureRepository();
-        $procedures->add($this->procedure('image_guided_fnac', 'Image-guided fine needle aspiration (FNAC)'));
-        $procedures->add($this->procedure('image_guided_abscess_drainage', 'Image-guided abscess drainage'));
+        $this->procedures = new InMemoryProcedureRepository();
+        $this->procedures->add($this->procedure('image_guided_fnac', 'Image-guided fine needle aspiration (FNAC)'));
+        $this->procedures->add($this->procedure('image_guided_abscess_drainage', 'Image-guided abscess drainage'));
 
         $this->referrals = new InMemoryReferralRepository();
         $this->referrals->create($this->referralEntity(), new Actor(7, Role::Staff), self::NOW);
@@ -78,19 +85,28 @@ final class ReferralPageTest extends TestCase
         $this->consents = new InMemoryConsentRepository();
         $this->assessments = new InMemoryClinicalAssessmentRepository();
 
-        $this->controller = new ReferralController(
+        $this->controller = $this->build($auth, new InMemoryPhysicianProfileRepository());
+    }
+
+    /**
+     * The same controller behind a different session, so a test can act as somebody
+     * other than the clerk the rest of the class uses.
+     */
+    private function build(Auth $auth, PhysicianProfileRepository $physicians): ReferralController
+    {
+        return new ReferralController(
             new View(dirname(__DIR__, 2) . '/templates'),
             new Gate($auth),
             new SubmitElectiveReferral(
                 $this->referrals,
                 new Validator(),
                 new InMemoryIdempotencyStore(),
-                new InMemoryPhysicianProfileRepository(),
+                $physicians,
             ),
-            new SaveReferralDraft($this->referrals, $procedures),
+            new SaveReferralDraft($this->referrals, $this->procedures),
             new SubmitDraft($this->referrals),
             $this->referrals,
-            $procedures,
+            $this->procedures,
             new ApproveForScheduling($this->referrals),
             new ReassignClinicalPriority($this->referrals, new Validator(), new InlineTransaction()),
             new VerifyGuardianAuthority($this->referrals, new Validator()),
@@ -124,6 +140,78 @@ final class ReferralPageTest extends TestCase
 
         self::assertSame(200, $response->status);
         self::assertStringContainsString('RF-2026-0001', $this->body($response));
+    }
+
+    /**
+     * A referrer cannot open `/referrals/{reference}` — that page is the clinic's
+     * working record and its route asks for `referral.triage` — so sending them
+     * there after a successful submission would turn the next click into a 403.
+     * BL-E1's list is where they land, with the referral at the top of it.
+     *
+     * The submission also has to succeed, which is why this test types the clinical
+     * question: REF-009 makes it mandatory for a clinician referral, and until the
+     * controller's field list matched the form the value was dropped between the two
+     * and the referrer was told to state what they had just stated.
+     */
+    public function testAPhysicianIsSentToTheirOwnListAfterSubmitting(): void
+    {
+        $users = new InMemoryUserRepository();
+        $userId = $users->seed(
+            'referrer@example.test',
+            'Dr Hana Bekele',
+            Role::Physician,
+            (new PasswordHasher())->hash('correct horse'),
+        );
+
+        $auth = new Auth($users, new PasswordHasher());
+        $auth->attempt('referrer@example.test', 'correct horse', '127.0.0.1');
+
+        $physicians = new InMemoryPhysicianProfileRepository();
+        $physicians->create(new PhysicianProfile(
+            id: 0,
+            userId: $userId,
+            practiceNumber: 'ET-MD-77',
+            institution: 'Yekatit 12 Hospital',
+            specialty: 'Internal medicine',
+            status: PhysicianStatus::Verified,
+            verifiedByUserId: 1,
+            verifiedAtUtc: self::NOW,
+            reviewNote: null,
+            createdAtUtc: self::NOW,
+        ), self::NOW);
+
+        $response = $this->build($auth, $physicians)->store(
+            Request::create('POST', '/referrals', [], $this->referralForm() + [Csrf::FIELD => Csrf::token()]),
+        );
+
+        self::assertSame(303, $response->status);
+        self::assertSame('/my-referrals', $response->header('Location'));
+        self::assertSame(2, $this->referrals->count());
+    }
+
+    public function testTheDeskKeepsTheReferralPageItWorksFrom(): void
+    {
+        $response = $this->controller->store(
+            Request::create('POST', '/referrals', [], $this->referralForm() + [Csrf::FIELD => Csrf::token()]),
+        );
+
+        self::assertSame(303, $response->status);
+        self::assertStringStartsWith('/referrals/RF-', (string) $response->header('Location'));
+    }
+
+    /** @return array<string, string> */
+    private function referralForm(): array
+    {
+        return [
+            'patient_name' => 'Selamawit Girma',
+            'patient_phone' => '+251911000333',
+            'patient_dob' => '1991-04-12',
+            'procedure_code' => 'image_guided_fnac',
+            'requested_urgency' => 'routine',
+            'clinical_summary' => 'Six weeks of right upper quadrant pain; a 2 cm hepatic lesion on ultrasound.',
+            'clinical_question' => 'Is the lesion malignant?',
+            'target_site' => 'Liver, segment VI',
+        ];
     }
 
     public function testTheFormOffersOnlyTheConfiguredCatalogueAndSaysItIsNotAnAppointment(): void

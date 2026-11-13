@@ -39,6 +39,32 @@ interface ReferralRepository
     public function findById(int $id): ?Referral;
 
     /**
+     * Referrals a physician's own verified profile is named on, newest first.
+     *
+     * Scoped by `referring_physician_profile_id`, not by `submitted_by_user_id`: a
+     * referral reception typed on the physician's behalf is still theirs, and one a
+     * colleague submitted is not — the same rule `ReferralAccessPolicy` applies to
+     * a single record (AUTH-03, ADR-014).
+     *
+     * @return list<Referral>
+     */
+    public function referredBy(int $physicianProfileId, int $limit = 50): array;
+
+    /**
+     * What the service is waiting for on a referral that is awaiting information.
+     *
+     * Two people can ask. Reception's request is the reason recorded on the
+     * transition into the state; a radiologist's is the standing decision's
+     * `information_requested`, because asking a clinical question is not one of the
+     * outcomes that must justify itself and so leaves the transition reason empty.
+     *
+     * Returns the newest of the two, or null when nothing is recorded. It never
+     * substitutes a sentence of its own: "we are waiting for something" with no
+     * statement of what is not an instruction anybody can act on (SEC 6.2).
+     */
+    public function outstandingInformation(int $referralId): ?string;
+
+    /**
      * Apply a transition only if the stored version is still the one read.
      *
      * @param list<OutboundMessage> $messages notifications to enqueue in the same

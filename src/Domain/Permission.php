@@ -15,6 +15,20 @@ enum Permission: string
     case ClinicConfigure = 'clinic.configure';
     case SystemMaintain = 'system.maintain';
     case ReferralSubmit = 'referral.submit';
+
+    /**
+     * Reading the referrals I referred (BL-E1).
+     *
+     * A referring physician has to be able to see what became of what they sent.
+     * This permission admits the page; it does not decide the rows — the verified
+     * profile named on the referral does (`ReferralAccessPolicy`), so granting the
+     * page cannot be mistaken for granting the queue. It is deliberately not
+     * `referral.triage`: reading one's own correspondence is not reading the
+     * clinic's work, and handing a referrer triage to make a list render would have
+     * been the cheap way to do it.
+     */
+    case ReferralReadOwn = 'referral.read.own';
+
     case ReferralTriage = 'referral.triage';
     case ClinicalReview = 'clinical.review';
     case ClinicalApprove = 'clinical.approve';

@@ -7,6 +7,7 @@ namespace App\Repositories;
 use App\Domain\Actor;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionRecord;
+use App\Domain\ClinicalDecisionType;
 use App\Domain\ClinicalPriorityChange;
 use App\Domain\ConsentNotPermittedException;
 use App\Domain\OutboundMessage;
@@ -136,6 +137,63 @@ final class PdoReferralRepository implements ReferralRepository
     public function findById(int $id): ?Referral
     {
         return $this->findOne('id = :value', (string) $id);
+    }
+
+    /** @return list<Referral> */
+    public function referredBy(int $physicianProfileId, int $limit = 50): array
+    {
+        // Newest first: a referrer opens this page to see how the case they sent
+        // yesterday is doing, not the one from last year.
+        $statement = $this->pdo->prepare(
+            'SELECT ' . self::COLUMNS . ' FROM referrals
+              WHERE referring_physician_profile_id = :profile
+              ORDER BY created_at DESC, id DESC
+              LIMIT :limit'
+        );
+        $statement->bindValue('profile', $physicianProfileId, PDO::PARAM_INT);
+        $statement->bindValue('limit', max(1, min($limit, 200)), PDO::PARAM_INT);
+        $statement->execute();
+
+        $referrals = [];
+        foreach ($statement->fetchAll() as $row) {
+            if (is_array($row)) {
+                /** @var array<string, mixed> $row */
+                $referrals[] = Referral::fromRow($row);
+            }
+        }
+
+        return $referrals;
+    }
+
+    public function outstandingInformation(int $referralId): ?string
+    {
+        // Reception's request lives on the transition, because that is where the
+        // desk says why it is sending the case back. The newest one wins: an earlier
+        // answer is history once the referral has been back and out again.
+        $statement = $this->pdo->prepare(
+            "SELECT h.reason FROM referral_status_history h
+              WHERE h.referral_id = :referral_id AND h.to_status = 'awaiting_information'
+              ORDER BY h.occurred_at DESC, h.id DESC
+              LIMIT 1"
+        );
+        $statement->execute(['referral_id' => $referralId]);
+
+        $reason = $statement->fetchColumn();
+
+        if (is_scalar($reason) && trim((string) $reason) !== '') {
+            return trim((string) $reason);
+        }
+
+        // Empty here does not mean nothing was asked. A radiologist recording
+        // `more_information` moves the referral with no reason (the outcome does not
+        // require one), so the question is on the decision and nowhere else.
+        $decision = $this->currentDecision($referralId);
+
+        if ($decision === null || $decision->type !== ClinicalDecisionType::MoreInformation) {
+            return null;
+        }
+
+        return $decision->informationRequested;
     }
 
     /** @param list<OutboundMessage> $messages */

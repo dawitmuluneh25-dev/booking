@@ -12,6 +12,10 @@ if ($signedIn) {
         $navItems[] = ['href' => '/referrals', 'label' => 'Referrals'];
     }
 
+    if ($currentUser->can(\App\Domain\Permission::ReferralReadOwn)) {
+        $navItems[] = ['href' => '/my-referrals', 'label' => 'My referrals'];
+    }
+
     if ($currentUser->can(\App\Domain\Permission::ClinicalReview)) {
         $navItems[] = ['href' => '/review', 'label' => 'Review'];
     }

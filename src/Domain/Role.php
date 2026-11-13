@@ -93,6 +93,9 @@ enum Role: string
             ],
             self::Physician => [
                 Permission::ReferralSubmit,
+                // Their own referrals, not the clinic's queue (BL-E1): the page is
+                // admitted here, and the object-level policy decides which rows.
+                Permission::ReferralReadOwn,
                 Permission::DocumentUpload,
                 Permission::DocumentReadMetadata,
                 Permission::DocumentDownload,

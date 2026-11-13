@@ -56,11 +56,17 @@ final class RoleTest extends TestCase
         self::assertFalse(Role::Staff->can(Permission::ClinicalApprove));
     }
 
-    public function testReferrersMayOnlySubmitReferrals(): void
+    /**
+     * BL-E1 gives a referrer a page showing what became of the referrals their own
+     * verified profile is named on. That is a second permission, not a wider one:
+     * reading one's own correspondence still does not open the clinic's queue.
+     */
+    public function testReferrersSubmitAndReadTheirOwnButDoNotTriage(): void
     {
         $role = Role::Physician;
 
         self::assertTrue($role->can(Permission::ReferralSubmit));
+        self::assertTrue($role->can(Permission::ReferralReadOwn));
         self::assertFalse($role->can(Permission::ReferralTriage));
         self::assertFalse($role->can(Permission::ClinicalApprove));
         self::assertFalse($role->can(Permission::ScheduleManage));

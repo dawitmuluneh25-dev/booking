@@ -49,6 +49,12 @@ final class ReferralRepositoryTest extends TestCase
     /** @var list<int> */
     private array $createdReferralIds = [];
 
+    /** @var list<int> */
+    private array $createdProfileIds = [];
+
+    /** @var list<int> */
+    private array $probeUserIds = [];
+
     protected function setUp(): void
     {
         $root = dirname(__DIR__, 2);
@@ -85,12 +91,20 @@ final class ReferralRepositoryTest extends TestCase
                 $this->pdo->exec('DELETE FROM referrals WHERE id = ' . $id);
             }
 
-            if ($this->actorUserId > 0) {
-                $this->pdo->exec('DELETE FROM users WHERE id = ' . $this->actorUserId);
+            foreach ($this->createdProfileIds as $id) {
+                $this->pdo->exec('DELETE FROM physician_profiles WHERE id = ' . $id);
+            }
+
+            foreach ([...$this->probeUserIds, $this->actorUserId] as $id) {
+                if ($id > 0) {
+                    $this->pdo->exec('DELETE FROM users WHERE id = ' . $id);
+                }
             }
         }
 
         $this->createdReferralIds = [];
+        $this->createdProfileIds = [];
+        $this->probeUserIds = [];
         $this->pdo = null;
         $this->repository = null;
     }
@@ -520,6 +534,137 @@ final class ReferralRepositoryTest extends TestCase
         self::assertSame(0, (int) $messages->fetchColumn());
     }
 
+    /**
+     * AUTH-03 / BL-E1: the profile on the row is the boundary — not the account that
+     * typed the form, and not the institution two physicians share (ADR-014).
+     */
+    public function testReferredByReturnsOnlyThatProfilesReferrals(): void
+    {
+        $mine = $this->insertPhysicianProfile();
+        $theirs = $this->insertPhysicianProfile();
+
+        $myReferral = $this->createReferral($mine);
+        $theirReferral = $this->createReferral($theirs);
+        $unattributed = $this->createReferral();
+
+        $ids = array_map(
+            static fn (Referral $referral): int => $referral->id,
+            $this->repository()->referredBy($mine),
+        );
+
+        self::assertContains($myReferral->id, $ids);
+        self::assertNotContains($theirReferral->id, $ids);
+        self::assertNotContains($unattributed->id, $ids);
+    }
+
+    public function testReferredByIsNewestFirst(): void
+    {
+        $profile = $this->insertPhysicianProfile();
+
+        $older = $this->createReferral($profile);
+        $newer = $this->createReferral($profile);
+
+        $ids = array_map(
+            static fn (Referral $referral): int => $referral->id,
+            $this->repository()->referredBy($profile),
+        );
+
+        // Both rows share a timestamp in this fixture, so the id decides the tie the
+        // way the statement's ORDER BY does. What is being asserted is that the list
+        // is ordered newest first rather than by whatever the table happened to
+        // return.
+        self::assertSame([$newer->id, $older->id], array_slice($ids, 0, 2));
+    }
+
+    public function testOutstandingInformationIsReceptionsRequest(): void
+    {
+        $referral = $this->createReferral();
+
+        self::assertNull($this->repository()->outstandingInformation($referral->id));
+
+        $clerk = new Actor($this->actorUserId, Role::Staff);
+
+        $this->repository()->transition($referral, ReferralStatus::Received, $clerk, null, self::NOW);
+        $this->repository()->transition(
+            $this->reload($referral->id),
+            ReferralStatus::AdministrativeReview,
+            $clerk,
+            null,
+            self::NOW,
+        );
+        $this->repository()->transition(
+            $this->reload($referral->id),
+            ReferralStatus::AwaitingInformation,
+            $clerk,
+            'Send the most recent ultrasound report.',
+            self::NOW,
+        );
+
+        self::assertSame(
+            'Send the most recent ultrasound report.',
+            $this->repository()->outstandingInformation($referral->id),
+        );
+    }
+
+    /**
+     * A radiologist asking a clinical question moves the referral with no reason —
+     * `more_information` is not one of the outcomes that must justify itself — so the
+     * question exists only on the decision. The second source has to be read, or the
+     * referrer is shown a state with nothing to answer.
+     */
+    public function testACliniciansQuestionIsFoundOnTheDecision(): void
+    {
+        $referral = $this->createReferral();
+        $clerk = new Actor($this->actorUserId, Role::Staff);
+
+        $this->repository()->transition($referral, ReferralStatus::Received, $clerk, null, self::NOW);
+        $this->repository()->transition(
+            $this->reload($referral->id),
+            ReferralStatus::AdministrativeReview,
+            $clerk,
+            null,
+            self::NOW,
+        );
+        $this->repository()->transition(
+            $this->reload($referral->id),
+            ReferralStatus::ClinicalReview,
+            $clerk,
+            null,
+            self::NOW,
+        );
+
+        $this->repository()->recordDecision(new ClinicalDecision(
+            id: 0,
+            referralId: $referral->id,
+            type: ClinicalDecisionType::MoreInformation,
+            rationale: 'The referral does not say whether the patient is still breastfeeding.',
+            technique: null,
+            modality: null,
+            sedation: null,
+            estimatedDurationMinutes: null,
+            preprocedureConditions: null,
+            redirectDestination: null,
+            informationRequested: 'Confirm current breastfeeding status.',
+            decidedByUserId: $this->actorUserId,
+            decidedAtUtc: self::NOW,
+            supersedesId: null,
+            clinicalPriority: null,
+        ));
+
+        $this->repository()->transition(
+            $this->reload($referral->id),
+            ReferralStatus::AwaitingInformation,
+            new Actor($this->actorUserId, Role::Radiologist),
+            null,
+            self::NOW,
+        );
+
+        self::assertSame(
+            'Confirm current breastfeeding status.',
+            $this->repository()->outstandingInformation($referral->id),
+        );
+    }
+
     private function referralEntity(string $reference): Referral
     {
         return new Referral(
@@ -546,7 +691,7 @@ final class ReferralRepositoryTest extends TestCase
         );
     }
 
-    private function createReferral(): Referral
+    private function createReferral(?int $physicianProfileId = null): Referral
     {
         $referral = $this->repository()->create(
             new Referral(
@@ -570,6 +715,7 @@ final class ReferralRepositoryTest extends TestCase
                 submittedByUserId: $this->actorUserId,
                 submittedOnBehalfOf: 'self',
                 createdAtUtc: self::NOW,
+                referringPhysicianProfileId: $physicianProfileId,
             ),
             new Actor($this->actorUserId, Role::Patient),
             self::NOW,
@@ -578,6 +724,32 @@ final class ReferralRepositoryTest extends TestCase
         $this->createdReferralIds[] = $referral->id;
 
         return $referral;
+    }
+
+    /**
+     * A referrer record, so a referral can name one. Inserted `pending`: the
+     * scoping query does not read the verification status, and the `verified` state
+     * has its own CHECK requiring a verifier and a date.
+     */
+    private function insertPhysicianProfile(): int
+    {
+        $userId = $this->insertUser();
+        $this->probeUserIds[] = $userId;
+
+        $statement = $this->pdo()->prepare(
+            "INSERT INTO physician_profiles
+                (user_id, practice_number, institution, status, created_at, updated_at)
+             VALUES (:user_id, :practice, 'Yekatit 12 Hospital', 'pending', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
+        $statement->execute([
+            'user_id' => $userId,
+            'practice' => 'ET-MD-' . bin2hex(random_bytes(5)),
+        ]);
+
+        $id = (int) $this->pdo()->lastInsertId();
+        $this->createdProfileIds[] = $id;
+
+        return $id;
     }
 
     private function reload(int $id): Referral

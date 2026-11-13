@@ -37,6 +37,7 @@ use App\Domain\ReferralTransitionException;
 use App\Domain\SaveReferralDraft;
 use App\Domain\SubmitDraft;
 use App\Domain\SubmitElectiveReferral;
+use App\Domain\User;
 use App\Domain\ValidationException;
 use App\Http\HttpException;
 use App\Http\Request;
@@ -60,19 +61,42 @@ use PDOException;
  */
 final class ReferralController
 {
-    /** The fields the command accepts, in the order the form presents them. */
+    /**
+     * The fields the form posts, in the order it presents them.
+     *
+     * This list and the template must agree. It used to hold only the fields the
+     * earliest version of the form had, so everything added since — patient age and
+     * identifier, email, preferred language, the referrer's credentials and
+     * department, and the clinical question — was rendered, typed and then silently
+     * dropped here. The visible symptom was a referrer being told to state the
+     * clinical question on a form where they had just stated it (REF-009).
+     *
+     * `idempotency_key` is read separately: it is not patient data and does not
+     * belong in the values array that is re-rendered on a validation failure.
+     */
     private const FIELDS = [
         'patient_name',
         'patient_phone',
         'patient_dob',
+        'patient_age_value',
+        'patient_age_unit',
+        'patient_age_source',
+        'patient_identifier',
+        'patient_identifier_type',
+        'patient_identifier_facility',
+        'patient_email',
+        'preferred_language',
         'guardian_name',
         'guardian_phone',
         'guardian_relationship',
         'procedure_code',
         'requested_urgency',
         'clinical_summary',
+        'clinical_question',
         'target_site',
         'referring_physician_name',
+        'referring_physician_credentials',
+        'referring_department',
         'referring_facility',
         'referring_physician_phone',
     ];
@@ -165,23 +189,26 @@ final class ReferralController
 
         Session::flash('notice', 'Referral ' . $referral->reference . ' submitted.');
 
-        return Response::redirect('/referrals/' . rawurlencode($referral->reference));
+        return $this->afterWriting($referral->reference, $user);
     }
 
-    /** @param array<string, string> $params */
+    /**
+     * The clinic's view of one referral.
+     *
+     * The route asks for `referral.triage`, and this page is why: it carries the
+     * pre-procedure assessment, the consent records, the priority history and the
+     * radiologist's rationale. A referrer's own view is `/my-referrals` (BL-E1),
+     * which shows the state of their request and what is outstanding and nothing of
+     * the clinical record; that is a separate decision, made there rather than
+     * inherited by this page.
+     *
+     * @param array<string, string> $params
+     */
     public function show(Request $request, array $params): Response
     {
-        $user = $this->gate->authenticate();
-
         $referral = $this->referrals->findByReference((string) ($params['reference'] ?? ''));
 
-        // A referrer may open their own referral — including a draft, which is
-        // theirs alone. Everyone else needs the triage permission. The check is
-        // on the record, not on the URL, so guessing a reference gets a 404.
-        if (
-            $referral === null
-            || (!$user->can(Permission::ReferralTriage) && $referral->submittedByUserId !== $user->id)
-        ) {
+        if ($referral === null) {
             throw new HttpException(404);
         }
 
@@ -381,6 +408,24 @@ final class ReferralController
         Session::flash('notice', 'Consent withdrawn on ' . $referral->reference . '.');
 
         return Response::redirect('/referrals/' . rawurlencode($referral->reference));
+    }
+
+    /**
+     * Where to send somebody who has just written a referral.
+     *
+     * A referrer cannot open `/referrals/{reference}` — the route asks for
+     * `referral.triage` — so redirecting them there would turn a successful
+     * submission into a 403 on the next click. They land on their own list instead
+     * (BL-E1), where the referral they just wrote is at the top. The desk keeps the
+     * detail page it works from.
+     */
+    private function afterWriting(string $reference, User $user): Response
+    {
+        if ($user->can(Permission::ReferralTriage)) {
+            return Response::redirect('/referrals/' . rawurlencode($reference));
+        }
+
+        return Response::redirect('/my-referrals');
     }
 
     private function actor(): Actor
@@ -648,7 +693,7 @@ final class ReferralController
 
         Session::flash('notice', 'Draft saved. Submit it when the details are complete.');
 
-        return Response::redirect('/referrals/' . rawurlencode($draft->reference));
+        return $this->afterWriting($draft->reference, $user);
     }
 
     /** @param array<string, string> $params */
@@ -679,7 +724,7 @@ final class ReferralController
 
         Session::flash('notice', 'Referral ' . $referral->reference . ' submitted.');
 
-        return Response::redirect('/referrals/' . rawurlencode($referral->reference));
+        return $this->afterWriting($referral->reference, $user);
     }
 
     /**
