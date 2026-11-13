@@ -42,4 +42,15 @@ enum Permission: string
     case DocumentReadMetadata = 'document.read.metadata';
     case DocumentDownload = 'document.download';
     case DocumentQuarantineManage = 'document.quarantine.manage';
+
+    /**
+     * Putting patient-facing content live (§17.5).
+     *
+     * This is the act of publishing what somebody else approved, not the approval
+     * itself. The approval is a recorded name and date on the content row, and no
+     * permission can stand in for it: the schema refuses a published row that does
+     * not carry one. Separating the two is what stops "can use the button" from
+     * being mistaken for "clinically accountable for the words".
+     */
+    case ContentPublish = 'content.publish';
 }

@@ -104,6 +104,7 @@ if ($signedIn) {
 
 <footer class="site-footer">
     <div class="shell">
+        <p><a href="/services">Services and procedures</a></p>
         <p>Requests are reviewed by the team. A submitted request is not a confirmed appointment.</p>
         <p class="muted">&copy; <?= e(gmdate('Y')) ?> <?= e($appName ?? 'Booking') ?></p>
     </div>

@@ -31,6 +31,10 @@ final class RouteAccessManifestTest extends TestCase
         'POST /password/reset/{token}',
         'GET /availability',
         'GET /healthz',
+        // §17 pages are written for somebody who has not signed in. A patient
+        // information page behind a login is not patient information.
+        'GET /services',
+        'GET /services/{slug}',
         // The token is the credential; the route has to work without a session
         // because that is the entire point of a status link.
         'GET /r/{token}',
@@ -40,7 +44,7 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        self::assertSame(74, count($manifest));
+        self::assertSame(79, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);

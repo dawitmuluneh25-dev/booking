@@ -57,6 +57,12 @@ enum Role: string
                 Permission::DocumentReadMetadata,
                 Permission::DocumentDownload,
                 Permission::DocumentQuarantineManage,
+                // Publishing patient-facing content is an administrative act on
+                // something a clinician approved, not clinical authority: the
+                // approver is a recorded name on the row and the schema refuses a
+                // published row without one, so holding this permission cannot
+                // stand in for an approval.
+                Permission::ContentPublish,
             ],
             self::Staff => [
                 Permission::BookingsManage,

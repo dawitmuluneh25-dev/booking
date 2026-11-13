@@ -56,6 +56,9 @@ use App\Domain\LaboratoryDestinationRepository;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\RecordProcedureConsent;
 use App\Domain\WithdrawConsent;
+use App\Domain\ContentRepository;
+use App\Domain\PublishContent;
+use App\Domain\WithdrawContent;
 use App\Domain\ScheduleWorkspace;
 use App\Domain\ScheduleRepository;
 use App\Domain\ScheduleBoard;
@@ -95,6 +98,7 @@ use App\Repositories\PdoReferralRetentionRepository;
 use App\Repositories\PdoTrackingTokenRepository;
 use App\Repositories\PdoClinicalAssessmentRepository;
 use App\Repositories\PdoConsentRepository;
+use App\Repositories\PdoContentRepository;
 use App\Repositories\PdoLaboratoryDestinationRepository;
 use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
@@ -210,6 +214,12 @@ final class Application
     private ?AdvanceUrgentCoordination $advanceCoordination = null;
 
     private ?OpenUrgentReview $openReview = null;
+
+    private ?ContentRepository $content = null;
+
+    private ?PublishContent $publishContent = null;
+
+    private ?WithdrawContent $withdrawContent = null;
 
     private ?Kernel $kernel = null;
 
@@ -413,6 +423,21 @@ final class Application
     public function verifyGuardianAuthority(): VerifyGuardianAuthority
     {
         return $this->verifyGuardian ??= new VerifyGuardianAuthority($this->referrals(), new Validator());
+    }
+
+    public function content(): ContentRepository
+    {
+        return $this->content ??= new PdoContentRepository($this->pdo());
+    }
+
+    public function publishContent(): PublishContent
+    {
+        return $this->publishContent ??= new PublishContent($this->content());
+    }
+
+    public function withdrawContent(): WithdrawContent
+    {
+        return $this->withdrawContent ??= new WithdrawContent($this->content());
     }
 
     public function laboratories(): LaboratoryDestinationRepository

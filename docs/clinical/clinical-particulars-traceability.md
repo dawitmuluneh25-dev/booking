@@ -62,7 +62,7 @@ before production and none has been executed.
 | Field group | Status | Evidence / notes |
 |---|---|---|
 | `PAT-001`–`PAT-010` patient identity and contact | Partial | `patient_name`, `patient_phone`, `patient_dob`, `patient_sex`; the document's remaining identity fields have no column |
-| `PAT-011`–`PAT-013` guardian | Partial | `guardian_name`, `guardian_phone`, `guardian_relationship` are stored; `guardian_verified_at` has no writer yet (BL-A4) |
+| `PAT-011`–`PAT-013` guardian | Implemented | Intake records the three parts (`guardian_name`, `guardian_phone`, `guardian_relationship`) and refuses a partial one; `PAT-013`'s verification is a separate staff act with its own actor and basis (`guardian_verified_at`, `guardian_verified_by_user_id`, `guardian_verification_basis`, migration 0034). `VerifyGuardianAuthority` requires `ReferralTriage`, refuses a second verification, and refuses a basis that says nothing; the CHECK constraints make a verification time without an actor unrepresentable. Nothing infers authority from a relationship label or a missing date of birth (§6.2, §6.3). `VerifyGuardianAuthorityTest`, `SubmitElectiveReferralTest` |
 | `REF-001`–`REF-010` referral and referrer | Partial | referrer name, facility, phone, `referring_physician_profile_id`; indication is free text in `clinical_summary` |
 | `REF-011`–`REF-012` requested vs clinical priority | Implemented | Separate columns with separate write paths; `Priority`, migration 0024, `MigrationIntegrityTest::testPriorityColumnsAcceptExactlyTheApprovedVocabulary` |
 | `MED-001`–`MED-007` history, medication, allergy, assessment | Implemented except structured medications | `referral_clinical_assessments` (migration 0032) with append-only supersede chain: MED-003 anticoagulant, MED-004 allergy and MED-005 pregnancy as four-value vocabularies that include `unknown` and `not_yet_assessed`, plus MED-001 history, MED-006 prior procedure and MED-007 examination context. Every column is nullable and null means "not recorded", never "no" (§6.2). MED-002 current medications needs its own child table and is deliberately not half-built. `RecordClinicalAssessmentTest` |
@@ -122,10 +122,10 @@ before production and none has been executed.
 
 | Requirement | Status | Evidence / notes |
 |---|---|---|
-| Approved service pages | Not started | BL-A1, BL-A3; no `/services` route |
+| Approved service pages | Built as drafts, none published | `/services` and `/services/{slug}` exist and need no session; the four pages (§17.1–§17.4) are rows in `published_content` (migration 0035), imported by `bin/console content:sync`. Nothing is served yet, because publication requires §17.5's reviewer and both dates and the rows deliberately do not have them. `ServicePageTest`, `AdminContentPageTest`, `ContentRepositoryTest` |
 | Urgent pathway notice with real numbers | Not started | BL-A6; the page must fail closed if numbers are absent |
 | Privacy, booking policy, contact and referral guidance | Not started | BL-A7 |
-| Content carries a named approver and review date | Approver named, model not built | **Dawit Muluneh, approved 2026-11-13**, recorded as the approver for all published clinical copy. The content model that stores the name and date beside each page does not exist yet, so nothing is published and nothing claims approval — see §4.5 |
+| Content carries a named approver and review date | Implemented as a gate, not as a claim | `published_content` stores §17.5's field set — content key, audience, language, version, author, clinical reviewer, approver, approval date, effective date, review date, superseded version, translation-review status. **Dawit Muluneh, approved 2026-11-13** is recorded as the approver for the four service pages. The `ck_published_content_complete` CHECK refuses a published row missing the reviewer, the approver, either date, the review date or the translation-review status, and `PublishContent` names whichever are missing (§17.5's first four bullets are therefore structural, not procedural). Expiry is derived from the review date rather than stored, so a page stops being served without anyone having to remember. See §4.5 |
 
 ### 3.10 Consent, governance and urgent coordination (§18, §20, §10)
 
@@ -226,7 +226,7 @@ constraint on BL-D2 rather than a fork in the road:
 
 ### 4.5 Two governance inputs answered on 13 November 2026
 
-**Status: recorded, one of them still without a place to live.**
+**Status: recorded; one of them now has a place to live, and one is still short of three inputs.**
 
 **Approval of published clinical copy.** Dawit Muluneh is the named approver, with an approval date of
 2026-11-13, for the clinical content the package supplies (§17.1–§17.4 service pages, §11.2–§11.3
@@ -234,11 +234,21 @@ confirmation and upload wording, §10.5 urgent wording, and the policy pages). R
 the whole set rather than one per page; if that is wrong, the correction is a per-page name and date,
 which is exactly what the content model has to store.
 
-What this does **not** do is make anything publishable. §17.5 requires the approver and review date to
-appear *with the page*, and there is no content model yet — so the name is now a known input and not an
-implemented fact. The first slice that builds public pages (BL-A3) must carry the approver and date
-from a stored record, not from a template constant, so that changing the approver is a data change and
-a page cannot be published with an empty one.
+The name and the date now live in a row rather than a template constant, per §17.5: `published_content`
+(migration 0035) stores them per page and version, and `/services` renders whatever the record says.
+Changing the approver is a data change.
+
+What it still does **not** do is make anything publishable, and the reason is now specific rather than
+structural. §17.5 asks for an author, a clinical reviewer and an approver — three records, which may
+name one person but are not one field — plus an approval date, an effective date, a review date, a
+version and a language/translation-review status. The package supplies the author (itself) and the
+version (1.0); the decision above supplies the approver and the approval date; the English master is
+its own source language. **The clinical reviewer, the effective date and the review date have not been
+supplied.** So the four pages are imported as drafts whose record says exactly that, and both
+`PublishContent` and the `ck_published_content_complete` CHECK refuse to publish them until the three
+arrive. They are not blanks waiting to be defaulted to the approval date — an effective date and a
+review date are decisions about when the words start and stop applying, and this is not the place to
+make them up.
 
 **Laboratory destinations for specimens (§19.1).** Destinations are serialised pathology laboratories:
 `Pathology Lab 1`, `Pathology Lab 2`, and so on. The count is deliberately unspecified — laboratories

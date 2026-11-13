@@ -35,6 +35,12 @@
         </article>
 
         <article class="card">
+            <h3>Patient content</h3>
+            <p>The words patients read, with §17.5's reviewer, approver and review date.</p>
+            <a class="link" href="/admin/content">Review and publish</a>
+        </article>
+
+        <article class="card">
             <h3>Audit trail</h3>
             <p>Every status change with who made it and when.</p>
             <a class="link" href="/admin/audit">Review history</a>

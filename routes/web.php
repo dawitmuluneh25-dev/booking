@@ -19,6 +19,8 @@ use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
 use App\Controllers\AvailabilityController;
 use App\Controllers\BookingController;
+use App\Controllers\AdminContentController;
+use App\Controllers\ServiceController;
 use App\Controllers\DocumentController;
 use App\Controllers\HealthController;
 use App\Controllers\ScheduleController;
@@ -89,6 +91,15 @@ return static function (Application $app): void {
         $app->addLaboratoryDestination(),
     );
 
+    $content = new AdminContentController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->content(),
+        $app->publishContent(),
+        $app->withdrawContent(),
+    );
+
     $diagnostics = new AdminDiagnosticsController(
         $app->view(),
         $app->auth(),
@@ -113,6 +124,21 @@ return static function (Application $app): void {
     );
 
     $router->get('/', static fn (Request $request) => $home->index($request), RouteAccess::public('public home page'));
+
+    $services = new ServiceController($app->view(), $app->auth(), $app->content());
+
+    // §17 pages, written for somebody who has not signed in and carrying §17.5's
+    // approver and review date from the content record rather than a template.
+    $router->get(
+        '/services',
+        static fn (Request $request) => $services->index($request),
+        RouteAccess::public('public service index'),
+    );
+    $router->get(
+        '/services/{slug}',
+        static fn (Request $request, array $params) => $services->show($request, $params),
+        RouteAccess::public('public service page'),
+    );
 
     $router->get(
         '/login',
@@ -271,6 +297,24 @@ return static function (Application $app): void {
         '/admin/laboratories/{id}',
         static fn (Request $request, array $params) => $laboratories->toggle($request, $params),
         RouteAccess::permission(Permission::ClinicConfigure),
+    );
+
+    // §17.5: publishing is a named, dated act, and the screen that performs it is
+    // also the screen that says why a page is not showing.
+    $router->get(
+        '/admin/content',
+        static fn (Request $request) => $content->index($request),
+        RouteAccess::permission(Permission::ContentPublish),
+    );
+    $router->post(
+        '/admin/content/{id}/publish',
+        static fn (Request $request, array $params) => $content->publish($request, $params),
+        RouteAccess::permission(Permission::ContentPublish),
+    );
+    $router->post(
+        '/admin/content/{id}/withdraw',
+        static fn (Request $request, array $params) => $content->withdraw($request, $params),
+        RouteAccess::permission(Permission::ContentPublish),
     );
 
     $router->get(
