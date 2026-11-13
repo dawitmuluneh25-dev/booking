@@ -29,6 +29,12 @@
         </article>
 
         <article class="card">
+            <h3>Laboratories</h3>
+            <p>Where a specimen can be sent, as a serialised catalogue.</p>
+            <a class="link" href="/admin/laboratories">Manage destinations</a>
+        </article>
+
+        <article class="card">
             <h3>Audit trail</h3>
             <p>Every status change with who made it and when.</p>
             <a class="link" href="/admin/audit">Review history</a>

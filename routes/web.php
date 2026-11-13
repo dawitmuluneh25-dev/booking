@@ -11,6 +11,7 @@ use App\Bootstrap\Application;
 use App\Controllers\AdminAuditController;
 use App\Controllers\AdminController;
 use App\Controllers\AdminDiagnosticsController;
+use App\Controllers\AdminLaboratoryController;
 use App\Controllers\AdminHoursController;
 use App\Controllers\AdminPhysicianController;
 use App\Controllers\AdminResourceController;
@@ -78,6 +79,14 @@ return static function (Application $app): void {
         $app->resourceBlocks(),
         $app->resourceAdmin(),
         $app->config()->timezone(),
+    );
+
+    $laboratories = new AdminLaboratoryController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->laboratories(),
+        $app->addLaboratoryDestination(),
     );
 
     $diagnostics = new AdminDiagnosticsController(
@@ -245,6 +254,25 @@ return static function (Application $app): void {
         static fn (Request $request, array $params) => $resources->saveWeek($request, $params),
         RouteAccess::permission(Permission::ClinicConfigure),
     );
+    // The laboratory catalogue a specimen dispatch will reference (§19.1). There is
+    // no delete route: a laboratory closes, because specimens already sent there
+    // must keep naming where they went.
+    $router->get(
+        '/admin/laboratories',
+        static fn (Request $request) => $laboratories->index($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/laboratories',
+        static fn (Request $request) => $laboratories->store($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/laboratories/{id}',
+        static fn (Request $request, array $params) => $laboratories->toggle($request, $params),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+
     $router->get(
         '/admin/diagnostics',
         static fn (Request $request) => $diagnostics->index($request),

@@ -48,6 +48,8 @@ use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RecordUrgentDecision;
 use App\Domain\PhysicianProfileRepository;
 use App\Domain\ConsentRepository;
+use App\Domain\AddLaboratoryDestination;
+use App\Domain\LaboratoryDestinationRepository;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\RecordProcedureConsent;
 use App\Domain\WithdrawConsent;
@@ -89,6 +91,7 @@ use App\Repositories\PdoDocumentRepository;
 use App\Repositories\PdoReferralRetentionRepository;
 use App\Repositories\PdoTrackingTokenRepository;
 use App\Repositories\PdoConsentRepository;
+use App\Repositories\PdoLaboratoryDestinationRepository;
 use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoPatientRelationshipRepository;
@@ -141,6 +144,10 @@ final class Application
     private ?ReassignClinicalPriority $reassignPriority = null;
 
     private ?ConsentRepository $consents = null;
+
+    private ?LaboratoryDestinationRepository $laboratories = null;
+
+    private ?AddLaboratoryDestination $addLaboratory = null;
 
     private ?RecordProcedureConsent $recordConsent = null;
 
@@ -376,6 +383,16 @@ final class Application
     public function consents(): ConsentRepository
     {
         return $this->consents ??= new PdoConsentRepository($this->pdo());
+    }
+
+    public function laboratories(): LaboratoryDestinationRepository
+    {
+        return $this->laboratories ??= new PdoLaboratoryDestinationRepository($this->pdo());
+    }
+
+    public function addLaboratoryDestination(): AddLaboratoryDestination
+    {
+        return $this->addLaboratory ??= new AddLaboratoryDestination($this->laboratories());
     }
 
     public function recordProcedureConsent(): RecordProcedureConsent

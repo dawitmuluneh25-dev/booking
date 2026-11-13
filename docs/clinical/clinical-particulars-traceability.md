@@ -106,7 +106,7 @@ before production and none has been executed.
 | Requirement | Status | Evidence / notes |
 |---|---|---|
 | Time-out, milestones, procedure record | Not started | BL-C3 |
-| Specimen dispatch, receipt and follow-up ownership | Not started | BL-C3, and the laboratory destination is still an Operations dependency (LP-004 – LP-006) |
+| Specimen dispatch, receipt and follow-up ownership | Partly enabled; the record itself is not started | The laboratory destination is no longer a dependencies item: `laboratory_destinations` (migration 0031) is a serialised catalogue — `PATHOLOGY-LAB-<n>` / `Pathology Lab <n>`, both derived from one serial — administered at `/admin/laboratories`, with closure instead of deletion so an earlier specimen keeps naming where it went. The specimen record itself is BL-C7 and still needs the C-1 field sets and BL-C3's milestones |
 | Outcome and follow-up record | Not started | BL-C3 |
 
 ### 3.8 Role authority (§16, A-10)
