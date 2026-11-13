@@ -226,14 +226,27 @@ final class PublishedContent
         // are not uniform: the reviewer and the approver are two records separated by
         // a comma, and everything after them by a space. Joining a list would have put
         // a space before the comma, which reads like a typo and is one.
+        $reviewer = self::collapse($this->clinicalReviewer);
+        $approver = self::collapse($this->approver);
+
+        // One person may hold both roles, and the record still keeps two fields, because
+        // "who reviewed it" and "who approved it" are two questions even when the answer
+        // is the same. The sentence a patient reads does not repeat the name: printed
+        // twice it reads as a copy-paste error and invites the reader to ask who checked
+        // the checker. Said once as "reviewed and approved", the same fact is stated
+        // without dressing a single signature up as two.
+        $samePerson = $reviewer !== '' && $approver !== '' && self::sameName($reviewer, $approver);
+
         $line = '';
 
-        if ($this->clinicalReviewer !== null && $this->clinicalReviewer !== '') {
-            $line = 'Clinically reviewed by ' . $this->clinicalReviewer;
+        if ($samePerson) {
+            $line = 'Reviewed and approved by ' . $reviewer;
+        } elseif ($reviewer !== '') {
+            $line = 'Clinically reviewed by ' . $reviewer;
         }
 
-        if ($this->approver !== null && $this->approver !== '') {
-            $line .= ($line === '' ? '' : ', ') . 'approved by ' . $this->approver;
+        if ($approver !== '' && !$samePerson) {
+            $line .= ($line === '' ? '' : ', ') . ($line === '' ? 'Approved' : 'approved') . ' by ' . $approver;
         }
 
         if ($this->approvedOn !== null) {
@@ -245,6 +258,27 @@ final class PublishedContent
         }
 
         return $line === '' ? '' : rtrim($line, '.') . '.';
+    }
+
+    /**
+     * A name as a sentence needs it: no leading or trailing space, and no run of spaces
+     * inside, so "Dawit  Muluneh" and "Dawit Muluneh" are recognised as one signature
+     * rather than printed as two.
+     */
+    private static function collapse(?string $name): string
+    {
+        if ($name === null) {
+            return '';
+        }
+
+        $collapsed = preg_replace('/\s+/u', ' ', trim($name));
+
+        return is_string($collapsed) ? $collapsed : trim($name);
+    }
+
+    private static function sameName(string $one, string $other): bool
+    {
+        return strtolower($one) === strtolower($other);
     }
 
     /** @param array<string, mixed> $row */

@@ -122,7 +122,7 @@ before production and none has been executed.
 
 | Requirement | Status | Evidence / notes |
 |---|---|---|
-| Approved service pages | **Published 2026-11-13** | `/services` and `/services/{slug}` serve the four §17.1–§17.4 pages with no session. They are rows in `published_content` (migration 0035), imported and reconciled by `bin/console content:sync` through `ContentSource`, and published through `PublishContent` by the administrator account, which the row records (`published_at`, `published_by_user_id`). Each page carries its §17.5 provenance from the record: "Clinically reviewed by Dawit Muluneh, approved by Dawit Muluneh on 2026-11-13. Due for review 2027-11-13." A fifth of the route family does not exist: an unknown slug 404s, and withdrawing a page 404s it again without deleting anything. `ContentSourceTest`, `ServicePageTest`, `AdminContentPageTest`, `ContentRepositoryTest` |
+| Approved service pages | **Published 2026-11-13** | `/services` and `/services/{slug}` serve the four §17.1–§17.4 pages with no session. They are rows in `published_content` (migration 0035), imported and reconciled by `bin/console content:sync` through `ContentSource`, and published through `PublishContent` by the administrator account, which the row records (`published_at`, `published_by_user_id`). Each page carries its §17.5 provenance from the record: "Reviewed and approved by Dawit Muluneh on 2026-11-13. Due for review 2027-11-13." — one signature named once, because the reviewer and the approver are the same person; the two fields stay separate and a second reviewer would restore the two-clause form. A fifth of the route family does not exist: an unknown slug 404s, and withdrawing a page 404s it again without deleting anything. `ContentSourceTest`, `ServicePageTest`, `AdminContentPageTest`, `ContentRepositoryTest` |
 | Urgent pathway notice with real numbers | Not started | BL-A6; the page must fail closed if numbers are absent |
 | Privacy, booking policy, contact and referral guidance | Not started | BL-A7 |
 | Content carries a named approver and review date | Implemented as a gate, not as a claim | `published_content` stores §17.5's field set — content key, audience, language, version, author, clinical reviewer, approver, approval date, effective date, review date, superseded version, translation-review status. **Dawit Muluneh, approved 2026-11-13** is recorded as the approver for the four service pages. The `ck_published_content_complete` CHECK refuses a published row missing the reviewer, the approver, either date, the review date or the translation-review status, and `PublishContent` names whichever are missing (§17.5's first four bullets are therefore structural, not procedural). Expiry is derived from the review date rather than stored, so a page stops being served without anyone having to remember. See §4.5 |
@@ -253,6 +253,17 @@ The remaining inputs arrived on the same day and are now recorded: **Dawit Mulun
 as well as approver** (§17.5 lists them separately and they are stored as two fields, because one field
 saying "the same person did both" would lose the fact that two acts were asked for), effective
 **2026-11-13**, and a review date.
+
+Because both fields name one person, the sentence a patient reads names them once: **"Reviewed and
+approved by Dawit Muluneh on 2026-11-13."** The record keeps two fields; only the rendering is combined,
+and `PublishedContent::provenance()` does it by comparing the two names without case or runs of spaces.
+Printing the same signature on both sides of a comma reads as a copy-paste error on a page whose whole
+purpose is to show that the words were checked. The decision was taken by the clinical owner on
+2026-11-13 after the duplication was raised, and `PublishedContentTest` locks the exact sentence. Note
+what this does *not* do: it does not add an independent check on the copy. One person holding both roles
+is a governance fact recorded as such, and it is carried against BL-G5 (§3.10), not hidden by wording.
+If a second clinician ever reviews the pages, naming them as `clinical_reviewer` restores the two-clause
+form automatically, because the fields are still separate.
 
 That last one is the one thing on the record that is ours rather than the clinical owner's, and it says
 so in `database/content/service-pages.php`. The date supplied was **2026-11-11**, two days *before* the

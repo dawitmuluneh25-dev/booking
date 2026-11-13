@@ -137,6 +137,60 @@ final class PublishedContentTest extends TestCase
         );
     }
 
+    /**
+     * One person holding both roles is stated once, not twice.
+     *
+     * The record keeps two fields because §17.5 asks two questions; the sentence a
+     * patient reads answers them together. Printing the same name on both sides of a
+     * comma reads as a copy-paste error, and the reader is left wondering who checked
+     * the checker.
+     */
+    public function testOnePersonHoldingBothRolesIsNamedOnce(): void
+    {
+        $line = $this->published([
+            'clinicalReviewer' => 'Dawit Muluneh',
+            'approver' => 'Dawit Muluneh',
+        ])->provenance();
+
+        self::assertSame(
+            'Reviewed and approved by Dawit Muluneh on 2026-11-13. Due for review 2027-11-13.',
+            $line,
+        );
+        self::assertStringNotContainsString('Clinically reviewed by', $line);
+    }
+
+    /**
+     * The same signature typed twice is the same signature: case and spacing are not
+     * a second reviewer.
+     */
+    public function testTheSignatureIsComparedWithoutCaseOrRunsOfSpaces(): void
+    {
+        $line = $this->published([
+            'clinicalReviewer' => '  dawit   MULUNEH ',
+            'approver' => 'Dawit Muluneh',
+        ])->provenance();
+
+        self::assertSame(
+            'Reviewed and approved by dawit MULUNEH on 2026-11-13. Due for review 2027-11-13.',
+            $line,
+        );
+    }
+
+    /**
+     * §6.2: an approver who is not on the record is not implied by a reviewer who is.
+     */
+    public function testAReviewerWithNoApproverMakesNoApprovalClaim(): void
+    {
+        $line = $this->published([
+            'clinicalReviewer' => 'Dr Reviewer',
+            'approver' => null,
+            'approvedOn' => null,
+        ])->provenance();
+
+        self::assertSame('Clinically reviewed by Dr Reviewer. Due for review 2027-11-13.', $line);
+        self::assertStringNotContainsString('approved', $line);
+    }
+
     public function testTheSlugIsTheLastSegmentOfTheContentKey(): void
     {
         self::assertSame('fnac', $this->content(['contentKey' => 'service.fnac'])->slug());
