@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Domain\ContentRepository;
+use App\Domain\ContentStatus;
 use App\Domain\PublishedContent;
 use PDO;
 
@@ -125,6 +126,44 @@ final class PdoContentRepository implements ContentRepository
         ]);
 
         return (int) $this->pdo->lastInsertId();
+    }
+
+    public function reconcileDraft(int $id, PublishedContent $content, string $occurredAtUtc): bool
+    {
+        // The status is checked before the write rather than folded into the WHERE
+        // clause, because MySQL reports zero affected rows both for "not a draft"
+        // and for "draft, but nothing changed" — and those two mean opposite things.
+        $existing = $this->find($id);
+
+        if ($existing === null || $existing->status !== ContentStatus::Draft) {
+            return false;
+        }
+
+        $statement = $this->pdo->prepare(
+            'UPDATE published_content
+                SET title = :title, body = :body, author = :author,
+                    clinical_reviewer = :clinical_reviewer, approver = :approver,
+                    approved_on = :approved_on, effective_on = :effective_on, review_on = :review_on,
+                    superseded_version = :superseded_version,
+                    translation_review_status = :translation_review_status, updated_at = :updated_at
+              WHERE id = :id AND status = \'draft\''
+        );
+        $statement->execute([
+            'title' => $content->title,
+            'body' => $content->body,
+            'author' => $content->author,
+            'clinical_reviewer' => $content->clinicalReviewer,
+            'approver' => $content->approver,
+            'approved_on' => $content->approvedOn,
+            'effective_on' => $content->effectiveOn,
+            'review_on' => $content->reviewOn,
+            'superseded_version' => $content->supersededVersion,
+            'translation_review_status' => $content->translationReviewStatus,
+            'updated_at' => $occurredAtUtc,
+            'id' => $id,
+        ]);
+
+        return true;
     }
 
     public function publish(int $id, int $actorUserId, string $occurredAtUtc): void

@@ -99,6 +99,44 @@ final class InMemoryContentRepository implements ContentRepository
         return $id;
     }
 
+    public function reconcileDraft(int $id, PublishedContent $content, string $occurredAtUtc): bool
+    {
+        $record = $this->records[$id] ?? null;
+
+        if ($record === null || $record->status !== ContentStatus::Draft) {
+            return false;
+        }
+
+        // The §17.5 fields come from the source; identity, status and the timestamps
+        // that record acts stay with the row.
+        $this->records[$id] = new PublishedContent(
+            id: $record->id,
+            contentKey: $record->contentKey,
+            audience: $record->audience,
+            language: $record->language,
+            title: $content->title,
+            body: $content->body,
+            version: $record->version,
+            author: $content->author,
+            clinicalReviewer: $content->clinicalReviewer,
+            approver: $content->approver,
+            approvedOn: $content->approvedOn,
+            effectiveOn: $content->effectiveOn,
+            reviewOn: $content->reviewOn,
+            supersededVersion: $content->supersededVersion,
+            translationReviewStatus: $content->translationReviewStatus,
+            status: $record->status,
+            publishedAtUtc: $record->publishedAtUtc,
+            publishedByUserId: $record->publishedByUserId,
+            withdrawnAtUtc: $record->withdrawnAtUtc,
+            withdrawnByUserId: $record->withdrawnByUserId,
+            createdAtUtc: $record->createdAtUtc,
+            updatedAtUtc: $occurredAtUtc,
+        );
+
+        return true;
+    }
+
     public function publish(int $id, int $actorUserId, string $occurredAtUtc): void
     {
         $record = $this->records[$id] ?? null;

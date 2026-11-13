@@ -8,8 +8,8 @@ use App\Database\DemoSeedGuard;
 use App\Database\DemoSeedRefused;
 use App\Database\DemoSeeder;
 use App\Database\Migrator;
-use App\Domain\ContentStatus;
-use App\Domain\PublishedContent;
+use App\Domain\ContentSource;
+use App\Domain\ValidationException;
 use App\Domain\RetentionPolicy;
 use App\Domain\RetentionService;
 use App\Domain\Role;
@@ -170,57 +170,43 @@ function syncContent(Application $app): int
     }
 
     $repository = $app->content();
+    $contentSource = new ContentSource();
     $now = gmdate('Y-m-d H:i:s');
     $created = 0;
     $existing = 0;
     $failures = 0;
+    $unpublishable = 0;
 
     foreach ($pages as $index => $page) {
-        if (!is_array($page) || !is_string($page['key'] ?? null) || !is_array($page['sections'] ?? null)) {
-            fwrite(STDERR, "Entry {$index} is not a page: it needs a key and sections.\n");
+        if (!is_array($page)) {
+            fwrite(STDERR, "Entry {$index} is not a page.\n");
             $failures++;
             continue;
         }
 
-        $key = $page['key'];
-        $version = '1.0';
-        $language = 'en';
+        try {
+            $draft = $contentSource->toDraft($page, $now);
+        } catch (ValidationException $exception) {
+            fwrite(STDERR, "Entry {$index}: " . implode(' ', $exception->errors) . "\n");
+            $failures++;
+            continue;
+        }
 
-        $body = json_encode(
-            $page['sections'],
-            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
-        );
-
-        $draft = new PublishedContent(
-            id: 0,
-            contentKey: $key,
-            audience: 'patient',
-            language: $language,
-            title: is_string($page['title'] ?? null) ? $page['title'] : '',
-            body: $body,
-            version: $version,
-            author: is_string($page['author'] ?? null) ? $page['author'] : '',
-            clinicalReviewer: null,
-            approver: $page['approver'] ?? null,
-            approvedOn: $page['approved_on'] ?? null,
-            effectiveOn: $page['effective_on'] ?? null,
-            reviewOn: $page['review_on'] ?? null,
-            supersededVersion: null,
-            translationReviewStatus: $page['translation_review_status'] ?? null,
-            status: ContentStatus::Draft,
-            publishedAtUtc: null,
-            publishedByUserId: null,
-            withdrawnAtUtc: null,
-            withdrawnByUserId: null,
-            createdAtUtc: $now,
-            updatedAtUtc: $now,
-        );
+        $key = $draft->contentKey;
+        $version = $draft->version;
+        $language = $draft->language;
 
         $already = $repository->findVersion($key, $version, $language);
 
         if ($already !== null) {
             $existing++;
-            $state = 'already imported';
+            // A draft is brought in line with the source, so that supplying a
+            // reviewer or a date later actually lands somewhere. A published row is
+            // left alone: an import must not rewrite words under an approval.
+            $state = $repository->reconcileDraft($already->id, $draft, $now)
+                ? 'synchronised'
+                : 'left as it was (not a draft)';
+            $already = $repository->find($already->id);
         } else {
             $already = $repository->find($repository->importDraft($draft, $now));
             $created++;
@@ -234,6 +220,10 @@ function syncContent(Application $app): int
         }
 
         $missing = $already->missingForPublication();
+
+        if ($missing !== []) {
+            $unpublishable++;
+        }
         $verdict = $missing === []
             ? 'ready to publish'
             : 'not publishable yet — no ' . implode(', no ', $missing);
@@ -254,8 +244,13 @@ function syncContent(Application $app): int
         echo "Nothing to do: every page in the source is already imported.\n";
     }
 
-    echo "These are drafts. Publishing needs the clinical reviewer, the effective date and the\n";
-    echo "review date that §17.5 requires, and no command here will invent them.\n";
+    if ($unpublishable > 0) {
+        echo "These are drafts. For {$unpublishable} of them §17.5 is still short of a clinical\n";
+        echo "reviewer, an effective date or a review date, and no command here will invent them.\n";
+    } else {
+        echo "All four are complete by §17.5 and ready to publish. This command does not publish:\n";
+        echo "that is a dated, attributed act, performed at /admin/content.\n";
+    }
 
     return $failures === 0 ? 0 : 1;
 }

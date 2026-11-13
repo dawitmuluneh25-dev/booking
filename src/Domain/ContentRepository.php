@@ -50,6 +50,22 @@ interface ContentRepository
     public function importDraft(PublishedContent $content, string $occurredAtUtc): int;
 
     /**
+     * Bring an already-imported draft in line with the source it came from.
+     *
+     * Without this, supplying a reviewer or a date to an existing draft would do
+     * nothing: the import is idempotent on (key, version, language), so a second
+     * run finds the row and stops. Re-running the import has to be able to fill in
+     * §17.5's fields as they arrive, or the only way to record them would be to
+     * delete the row and start again — which would lose the fact that it was
+     * imported once already.
+     *
+     * Returns false for a published or withdrawn row and changes nothing. An
+     * import must never rewrite the words, or the approval, underneath a page
+     * somebody has already signed off.
+     */
+    public function reconcileDraft(int $id, PublishedContent $content, string $occurredAtUtc): bool;
+
+    /**
      * Make a version live, and record who did it and when.
      *
      * The CHECK in migration 0035 refuses this unless §17.5 is complete, so the

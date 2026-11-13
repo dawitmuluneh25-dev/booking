@@ -104,6 +104,54 @@ final class ContentRepositoryTest extends TestCase
         self::assertSame(1, (int) $statement->fetchColumn());
     }
 
+    public function testReimportingADraftFillsInTheFieldsThatArrivedLater(): void
+    {
+        $id = $this->import(ContentFactory::content('service.later', [
+            'clinicalReviewer' => null,
+            'effectiveOn' => null,
+        ]));
+
+        $before = $this->repository()->find($id);
+        self::assertNotNull($before);
+        self::assertSame(['clinical reviewer', 'effective date'], $before->missingForPublication());
+
+        // The reviewer's name and the effective date arrive afterwards. Re-running
+        // the import has to be able to record them; otherwise the only way in would
+        // be to delete the row and pretend it had never been imported.
+        $updated = $this->repository()->reconcileDraft(
+            $id,
+            ContentFactory::content('service.later'),
+            '2026-11-14 09:00:00',
+        );
+
+        self::assertTrue($updated);
+
+        $after = $this->repository()->find($id);
+        self::assertNotNull($after);
+        self::assertSame('Dr Reviewer', $after->clinicalReviewer);
+        self::assertSame('2026-11-13', $after->effectiveOn);
+        self::assertSame(ContentStatus::Draft, $after->status, 'Reconciliation changed the status.');
+        self::assertSame('2026-11-13 10:00:00', $after->createdAtUtc, 'Reconciliation rewrote when it was imported.');
+    }
+
+    public function testReconcilingLeavesAPublishedRowExactlyAsItWasApproved(): void
+    {
+        $id = $this->import(ContentFactory::content('service.approved'));
+        $this->repository()->publish($id, $this->actorUserId, self::NOW);
+
+        $updated = $this->repository()->reconcileDraft(
+            $id,
+            ContentFactory::content('service.approved', ['title' => 'Rewritten after approval']),
+            '2026-11-14 09:00:00',
+        );
+
+        self::assertFalse($updated, 'An import was allowed to rewrite a published page.');
+
+        $stored = $this->repository()->find($id);
+        self::assertNotNull($stored);
+        self::assertNotSame('Rewritten after approval', $stored->title);
+    }
+
     public function testTheSchemaRefusesToPublishARowThatIsMissingAReviewer(): void
     {
         $id = $this->import(ContentFactory::content('service.incomplete', ['clinicalReviewer' => null]));

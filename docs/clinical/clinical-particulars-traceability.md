@@ -122,7 +122,7 @@ before production and none has been executed.
 
 | Requirement | Status | Evidence / notes |
 |---|---|---|
-| Approved service pages | Built as drafts, none published | `/services` and `/services/{slug}` exist and need no session; the four pages (§17.1–§17.4) are rows in `published_content` (migration 0035), imported by `bin/console content:sync`. Nothing is served yet, because publication requires §17.5's reviewer and both dates and the rows deliberately do not have them. `ServicePageTest`, `AdminContentPageTest`, `ContentRepositoryTest` |
+| Approved service pages | Built, complete by §17.5, not yet published | `/services` and `/services/{slug}` exist and need no session; the four pages (§17.1–§17.4) are rows in `published_content` (migration 0035), imported and reconciled by `bin/console content:sync` through `ContentSource`. All four now carry a reviewer, an approver, an approval date, an effective date and a review date, so `/admin/content` reports them ready to publish; publishing them is a separate attributed act that has not been performed, and until it is, `/services` shows the honest empty state and each page 404s. `ContentSourceTest`, `ServicePageTest`, `AdminContentPageTest`, `ContentRepositoryTest` |
 | Urgent pathway notice with real numbers | Not started | BL-A6; the page must fail closed if numbers are absent |
 | Privacy, booking policy, contact and referral guidance | Not started | BL-A7 |
 | Content carries a named approver and review date | Implemented as a gate, not as a claim | `published_content` stores §17.5's field set — content key, audience, language, version, author, clinical reviewer, approver, approval date, effective date, review date, superseded version, translation-review status. **Dawit Muluneh, approved 2026-11-13** is recorded as the approver for the four service pages. The `ck_published_content_complete` CHECK refuses a published row missing the reviewer, the approver, either date, the review date or the translation-review status, and `PublishContent` names whichever are missing (§17.5's first four bullets are therefore structural, not procedural). Expiry is derived from the review date rather than stored, so a page stops being served without anyone having to remember. See §4.5 |
@@ -226,7 +226,7 @@ constraint on BL-D2 rather than a fork in the road:
 
 ### 4.5 Two governance inputs answered on 13 November 2026
 
-**Status: recorded; one of them now has a place to live, and one is still short of three inputs.**
+**Status: recorded, and both now live in a record. One input is an assumption and is marked as such.**
 
 **Approval of published clinical copy.** Dawit Muluneh is the named approver, with an approval date of
 2026-11-13, for the clinical content the package supplies (§17.1–§17.4 service pages, §11.2–§11.3
@@ -238,17 +238,22 @@ The name and the date now live in a row rather than a template constant, per §1
 (migration 0035) stores them per page and version, and `/services` renders whatever the record says.
 Changing the approver is a data change.
 
-What it still does **not** do is make anything publishable, and the reason is now specific rather than
-structural. §17.5 asks for an author, a clinical reviewer and an approver — three records, which may
-name one person but are not one field — plus an approval date, an effective date, a review date, a
-version and a language/translation-review status. The package supplies the author (itself) and the
-version (1.0); the decision above supplies the approver and the approval date; the English master is
-its own source language. **The clinical reviewer, the effective date and the review date have not been
-supplied.** So the four pages are imported as drafts whose record says exactly that, and both
-`PublishContent` and the `ck_published_content_complete` CHECK refuse to publish them until the three
-arrive. They are not blanks waiting to be defaulted to the approval date — an effective date and a
-review date are decisions about when the words start and stop applying, and this is not the place to
-make them up.
+The remaining inputs arrived on the same day and are now recorded: **Dawit Muluneh as clinical reviewer
+as well as approver** (§17.5 lists them separately and they are stored as two fields, because one field
+saying "the same person did both" would lose the fact that two acts were asked for), effective
+**2026-11-13**, and a review date.
+
+That last one is the one thing on the record that is ours rather than the clinical owner's, and it says
+so in `database/content/service-pages.php`. The date supplied was **2026-11-11**, two days *before* the
+approval it would be reviewing: stored as given it would fail `ck_published_content_review_after_approval`
+and make the page expired on the day it was published. The instruction that followed was to insert a
+logical date without naming an interval, so the review date is **2027-11-13** — twelve months after
+approval, the ordinary cadence for patient-facing clinical copy. It is one field per page and no
+migration, so a different interval is a four-line change. **If the intended interval is not twelve
+months, that is the field to correct.**
+
+With that, all four pages satisfy §17.5 and `/admin/content` reports them ready to publish. Publishing
+them is still a separate, attributed act and has not been performed.
 
 **Laboratory destinations for specimens (§19.1).** Destinations are serialised pathology laboratories:
 `Pathology Lab 1`, `Pathology Lab 2`, and so on. The count is deliberately unspecified — laboratories

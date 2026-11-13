@@ -12,22 +12,28 @@ declare(strict_types=1);
  * clinical copy and there is no version of "improving" it that is not somebody
  * other than its approver writing it.
  *
- * Two fields are deliberately absent and are not oversights:
+ * §17.5's provenance, as supplied by the clinical owner:
  *
- *   `clinical_reviewer` — §17.5 lists an author, a clinical reviewer and an
- *   approver. The approver was named for this set (Dawit Muluneh, 2026-11-13);
- *   no clinical reviewer was, and the two are not the same record even when they
- *   turn out to be the same person.
+ *   `author` — the package, not a person. It records where the words came from.
+ *   `clinical_reviewer` and `approver` — both Dawit Muluneh. §17.5 lists them as
+ *   separate records, which they remain: one field saying "the same person did
+ *   both" would lose the fact that two acts were asked for.
+ *   `approved_on` and `effective_on` — 2026-11-13 for both, because the copy was
+ *   approved and takes effect on the same day.
  *
- *   `effective_on` and `review_on` — approval says the words are right; an
- *   effective date says when they start applying and a review date says when
- *   somebody must read them again. Neither date was supplied, and inventing
- *   either would put a claim on a patient-facing page that nobody made.
+ * `review_on` — 2027-11-13, one year after approval.
  *
- * Because those are null, `PublishContent` refuses to publish these rows and the
- * CHECK in migration 0035 refuses them even if the command is bypassed. The pages
- * exist, are editable and are visible to administrators as drafts; they are not
- * shown to patients.
+ * This one is our assumption rather than a supplied fact, and the distinction is
+ * worth keeping visible. The date supplied with the other two was 2026-11-11,
+ * which falls two days *before* the approval it would be reviewing and before
+ * every other date on the record: stored as given it would fail
+ * `ck_published_content_review_after_approval`, and even if it did not, it would
+ * make the page expired on the day it was published — live for no time at all.
+ * The clinical owner then asked for "a logical date" without naming an interval.
+ * A twelve-month review is the ordinary cadence for patient-facing clinical copy,
+ * so the date follows from the approval by exactly that. It is one field per page,
+ * so replacing it with a different interval is a change to four lines and no
+ * migration.
  *
  * `author` is the package, not a person: it records where the words came from.
  *
@@ -52,9 +58,9 @@ return [
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
-        'clinical_reviewer' => null,
-        'effective_on' => null,
-        'review_on' => null,
+        'clinical_reviewer' => 'Dawit Muluneh',
+        'effective_on' => '2026-11-13',
+        'review_on' => '2027-11-13',
         'translation_review_status' => 'source',
         'sections' => [
             [
@@ -138,9 +144,9 @@ return [
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
-        'clinical_reviewer' => null,
-        'effective_on' => null,
-        'review_on' => null,
+        'clinical_reviewer' => 'Dawit Muluneh',
+        'effective_on' => '2026-11-13',
+        'review_on' => '2027-11-13',
         'translation_review_status' => 'source',
         'sections' => [
             [
@@ -223,9 +229,9 @@ return [
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
-        'clinical_reviewer' => null,
-        'effective_on' => null,
-        'review_on' => null,
+        'clinical_reviewer' => 'Dawit Muluneh',
+        'effective_on' => '2026-11-13',
+        'review_on' => '2027-11-13',
         'translation_review_status' => 'source',
         'sections' => [
             [
@@ -309,9 +315,9 @@ return [
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
-        'clinical_reviewer' => null,
-        'effective_on' => null,
-        'review_on' => null,
+        'clinical_reviewer' => 'Dawit Muluneh',
+        'effective_on' => '2026-11-13',
+        'review_on' => '2027-11-13',
         'translation_review_status' => 'source',
         'sections' => [
             [
