@@ -9,7 +9,14 @@ use App\Domain\ApproveForScheduling;
 use App\Domain\AuthorisationException;
 use App\Domain\ClinicalDecisionRecord;
 use App\Domain\ClinicalPriorityChange;
+use App\Domain\AllergyStatus;
+use App\Domain\AnticoagulantStatus;
+use App\Domain\AssessmentNotPermittedException;
+use App\Domain\ClinicalAssessmentRepository;
 use App\Domain\ConsentNotFoundException;
+use App\Domain\ImagingModality;
+use App\Domain\PregnancyStatus;
+use App\Domain\RecordClinicalAssessment;
 use App\Domain\ConsentNotPermittedException;
 use App\Domain\ConsentOutcome;
 use App\Domain\ConsentParticipant;
@@ -98,6 +105,8 @@ final class ReferralController
         private readonly ProcedureRepository $procedures,
         private readonly ApproveForScheduling $release,
         private readonly ReassignClinicalPriority $reassign,
+        private readonly ClinicalAssessmentRepository $assessments,
+        private readonly RecordClinicalAssessment $recordAssessmentCommand,
         private readonly ConsentRepository $consents,
         private readonly RecordProcedureConsent $recordConsentCommand,
         private readonly WithdrawConsent $withdrawConsentCommand,
@@ -189,6 +198,12 @@ final class ReferralController
             'decision' => $this->standingDecision($referral),
             'priorityChanges' => $this->priorityChanges($referral),
             'priorities' => Priority::cases(),
+            'assessment' => $this->assessments->current($referral->id),
+            'assessmentHistory' => $this->assessments->history($referral->id),
+            'anticoagulantStatuses' => AnticoagulantStatus::cases(),
+            'allergyStatuses' => AllergyStatus::cases(),
+            'pregnancyStatuses' => PregnancyStatus::cases(),
+            'imagingModalities' => ImagingModality::cases(),
             'consent' => $this->consents->current($referral->id),
             'consentHistory' => $this->consents->history($referral->id),
             'consentParticipants' => ConsentParticipant::cases(),
@@ -224,6 +239,39 @@ final class ReferralController
         }
 
         Session::flash('notice', 'Clinical priority changed on ' . $referral->reference . '.');
+
+        return Response::redirect('/referrals/' . rawurlencode($referral->reference));
+    }
+
+    /**
+     * Record the pre-procedure assessment (§6.5, §6.6).
+     *
+     * The route and the command both require `clinical.review`: an assessment is a
+     * clinician's judgement, and reception seeing that one exists is different from
+     * reception being able to write it.
+     *
+     * @param array<string, string> $params
+     */
+    public function recordAssessment(Request $request, array $params): Response
+    {
+        $this->gate->authorize(Permission::ClinicalReview);
+        $this->assertCsrf($request);
+
+        $referral = $this->referrals->findByReference((string) ($params['reference'] ?? ''));
+
+        if ($referral === null) {
+            throw new HttpException(404);
+        }
+
+        try {
+            $this->recordAssessmentCommand->execute($this->actor(), $referral->id, $request->all());
+        } catch (ValidationException $exception) {
+            return $this->detail($referral, $exception->errors, null, 422);
+        } catch (AssessmentNotPermittedException $exception) {
+            return $this->detail($referral, ['assessment' => $exception->getMessage()], null, 422);
+        }
+
+        Session::flash('notice', 'Assessment recorded for ' . $referral->reference . '.');
 
         return Response::redirect('/referrals/' . rawurlencode($referral->reference));
     }

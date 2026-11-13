@@ -327,6 +327,8 @@ return static function (Application $app): void {
         $app->procedures(),
         $app->approveForScheduling(),
         $app->reassignClinicalPriority(),
+        $app->clinicalAssessments(),
+        $app->recordClinicalAssessment(),
         $app->consents(),
         $app->recordProcedureConsent(),
         $app->withdrawConsent(),
@@ -388,6 +390,12 @@ return static function (Application $app): void {
         '/referrals/{reference}/priority',
         static fn (Request $request, array $params) => $referrals()->reassignPriority($request, $params),
         RouteAccess::permission(Permission::ClinicalApprove),
+    );
+
+    $router->post(
+        '/referrals/{reference}/assessment',
+        static fn (Request $request, array $params) => $referrals()->recordAssessment($request, $params),
+        RouteAccess::permission(Permission::ClinicalReview),
     );
 
     // Consent is recorded by a clinician after the decision and before the

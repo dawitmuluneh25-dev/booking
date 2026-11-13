@@ -11,6 +11,7 @@ use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
 use App\Domain\Procedure;
 use App\Domain\ReassignClinicalPriority;
+use App\Domain\RecordClinicalAssessment;
 use App\Domain\RecordProcedureConsent;
 use App\Domain\WithdrawConsent;
 use App\Domain\Referral;
@@ -29,6 +30,7 @@ use App\Security\Gate;
 use App\Security\PasswordHasher;
 use App\Support\View;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\InMemoryClinicalAssessmentRepository;
 use Tests\Support\InMemoryConsentRepository;
 use Tests\Support\InlineTransaction;
 use Tests\Support\InMemoryIdempotencyStore;
@@ -53,6 +55,8 @@ final class ReferralPageTest extends TestCase
 
     private InMemoryConsentRepository $consents;
 
+    private InMemoryClinicalAssessmentRepository $assessments;
+
     protected function setUp(): void
     {
         $_SESSION = [];
@@ -71,6 +75,7 @@ final class ReferralPageTest extends TestCase
         $this->referrals->create($this->referralEntity(), new Actor(7, Role::Staff), self::NOW);
 
         $this->consents = new InMemoryConsentRepository();
+        $this->assessments = new InMemoryClinicalAssessmentRepository();
 
         $this->controller = new ReferralController(
             new View(dirname(__DIR__, 2) . '/templates'),
@@ -87,6 +92,13 @@ final class ReferralPageTest extends TestCase
             $procedures,
             new ApproveForScheduling($this->referrals),
             new ReassignClinicalPriority($this->referrals, new Validator(), new InlineTransaction()),
+            $this->assessments,
+            new RecordClinicalAssessment(
+                $this->assessments,
+                $this->referrals,
+                new Validator(),
+                new InlineTransaction(),
+            ),
             $this->consents,
             new RecordProcedureConsent(
                 $this->consents,

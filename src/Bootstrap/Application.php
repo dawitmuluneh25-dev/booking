@@ -47,7 +47,9 @@ use App\Domain\RecordPatientArrival;
 use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RecordUrgentDecision;
 use App\Domain\PhysicianProfileRepository;
+use App\Domain\ClinicalAssessmentRepository;
 use App\Domain\ConsentRepository;
+use App\Domain\RecordClinicalAssessment;
 use App\Domain\AddLaboratoryDestination;
 use App\Domain\LaboratoryDestinationRepository;
 use App\Domain\RecordClinicalDecision;
@@ -90,6 +92,7 @@ use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoDocumentRepository;
 use App\Repositories\PdoReferralRetentionRepository;
 use App\Repositories\PdoTrackingTokenRepository;
+use App\Repositories\PdoClinicalAssessmentRepository;
 use App\Repositories\PdoConsentRepository;
 use App\Repositories\PdoLaboratoryDestinationRepository;
 use App\Repositories\PdoIdempotencyStore;
@@ -144,6 +147,10 @@ final class Application
     private ?ReassignClinicalPriority $reassignPriority = null;
 
     private ?ConsentRepository $consents = null;
+
+    private ?ClinicalAssessmentRepository $assessments = null;
+
+    private ?RecordClinicalAssessment $recordAssessment = null;
 
     private ?LaboratoryDestinationRepository $laboratories = null;
 
@@ -383,6 +390,21 @@ final class Application
     public function consents(): ConsentRepository
     {
         return $this->consents ??= new PdoConsentRepository($this->pdo());
+    }
+
+    public function clinicalAssessments(): ClinicalAssessmentRepository
+    {
+        return $this->assessments ??= new PdoClinicalAssessmentRepository($this->pdo());
+    }
+
+    public function recordClinicalAssessment(): RecordClinicalAssessment
+    {
+        return $this->recordAssessment ??= new RecordClinicalAssessment(
+            $this->clinicalAssessments(),
+            $this->referrals(),
+            new Validator(),
+            $this->transaction(),
+        );
     }
 
     public function laboratories(): LaboratoryDestinationRepository

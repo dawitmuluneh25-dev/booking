@@ -332,6 +332,223 @@ $mayRecordConsent = $currentUser->can(\App\Domain\Permission::ClinicalApprove) &
     <?php endif; ?>
 </section>
 
+<?php
+/**
+ * @var \App\Domain\ClinicalAssessment|null $assessment
+ * @var list<array{assessment: \App\Domain\ClinicalAssessment, recordedBy: string}> $assessmentHistory
+ * @var list<\App\Domain\AnticoagulantStatus> $anticoagulantStatuses
+ * @var list<\App\Domain\AllergyStatus>       $allergyStatuses
+ * @var list<\App\Domain\PregnancyStatus>     $pregnancyStatuses
+ * @var list<\App\Domain\ImagingModality>     $imagingModalities
+ */
+$mayAssess = $currentUser->can(\App\Domain\Permission::ClinicalReview)
+    && !in_array($referral->status, [
+        \App\Domain\ReferralStatus::Draft,
+        \App\Domain\ReferralStatus::Declined,
+        \App\Domain\ReferralStatus::Cancelled,
+        \App\Domain\ReferralStatus::Closed,
+    ], true);
+?>
+<section class="panel" id="assessment">
+    <h2 class="section-title">Pre-procedure assessment</h2>
+    <p class="muted">
+        Allergy, anticoagulant use and pregnancy are recorded as answers somebody gave, not as
+        blanks that mean &ldquo;no&rdquo;. &ldquo;Unknown&rdquo; and &ldquo;not yet assessed&rdquo;
+        are real answers here: a bleeding risk judged from an empty field is a bleeding risk nobody
+        assessed.
+    </p>
+
+    <?php if ($assessment === null): ?>
+        <p><strong>Not recorded.</strong> Nothing has been assessed yet, which is not the same as
+            nothing being wrong.</p>
+    <?php else: ?>
+        <div class="table-wrap">
+            <table>
+                <caption class="visually-hidden">The assessment that currently stands</caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">Anticoagulant or antiplatelet</th>
+                        <td><?= e($assessment->anticoagulant?->label() ?? 'Not recorded') ?>
+                            <?php if ($assessment->anticoagulantDetails !== null): ?>
+                                — <?= e($assessment->anticoagulantDetails) ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Allergy</th>
+                        <td><?= e($assessment->allergy?->label() ?? 'Not recorded') ?>
+                            <?php if ($assessment->allergyDetails !== null): ?>
+                                — <?= e($assessment->allergyDetails) ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Pregnancy</th>
+                        <td><?= e($assessment->pregnancy?->label() ?? 'Not recorded') ?>
+                            <?php if ($assessment->pregnancyDetails !== null): ?>
+                                — <?= e($assessment->pregnancyDetails) ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Relevant history</th>
+                        <td><?= $assessment->relevantHistory !== null
+                            ? nl2br(e($assessment->relevantHistory))
+                            : 'Not recorded' ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Prior procedure</th>
+                        <td><?= e($assessment->priorProcedure ?? 'Not recorded') ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Imaging</th>
+                        <td>
+                            <?= e($assessment->imagingModality?->label() ?? 'Not recorded') ?>
+                            <?php if ($assessment->imagingDate !== null): ?>
+                                — <?= e($assessment->imagingDate) ?>
+                            <?php endif; ?>
+                            <?php if ($assessment->imagingReference !== null): ?>
+                                (<?= e($assessment->imagingReference) ?>)
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Recorded</th>
+                        <td><?= e($assessment->recordedAtUtc) ?>
+                            by user #<?= e((string) $assessment->recordedByUserId) ?></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <?php if (!$assessment->isCompleteForProcedure()): ?>
+            <p class="alert alert-warning">
+                This assessment is not complete for a procedure: allergy and anticoagulant use both
+                have to be established, and pregnancy must not be left open.
+            </p>
+        <?php endif; ?>
+
+        <?php if (count($assessmentHistory) > 1): ?>
+            <h3>Earlier assessments</h3>
+            <p class="muted">Nothing is overwritten. A later assessment supersedes an earlier one,
+                and the earlier one stays readable.</p>
+            <div class="table-wrap">
+                <table>
+                    <caption class="visually-hidden">Every assessment recorded on this referral</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Recorded</th>
+                            <th scope="col">Allergy</th>
+                            <th scope="col">Anticoagulant</th>
+                            <th scope="col">By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($assessmentHistory as $row): ?>
+                            <?php $entry = $row['assessment']; ?>
+                            <tr>
+                                <th scope="row"><?= e($entry->recordedAtUtc) ?></th>
+                                <td><?= e($entry->allergy?->label() ?? 'Not recorded') ?></td>
+                                <td><?= e($entry->anticoagulant?->label() ?? 'Not recorded') ?></td>
+                                <td><?= e($row['recordedBy']) ?>
+                                    <?= $entry->id === $assessment->id ? '(current)' : '' ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    <?php endif; ?>
+
+    <?php if ($mayAssess): ?>
+        <h3><?= $assessment === null ? 'Record the assessment' : 'Record a new assessment' ?></h3>
+        <p class="muted">
+            Leave a question blank if it has not been asked. Choosing &ldquo;unknown&rdquo; is a
+            different statement from leaving it blank, and the record keeps them apart.
+        </p>
+        <form method="post" action="/referrals/<?= e(rawurlencode($referral->reference)) ?>/assessment" class="stack">
+            <?= \App\Security\Csrf::field() ?>
+            <div class="field">
+                <label for="anticoagulant_status">Anticoagulant or antiplatelet use</label>
+                <select id="anticoagulant_status" name="anticoagulant_status">
+                    <option value="">— not recorded —</option>
+                    <?php foreach ($anticoagulantStatuses as $status): ?>
+                        <option value="<?= e($status->value) ?>"><?= e($status->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="field">
+                <label for="anticoagulant_details">Drug, indication and last dose if known</label>
+                <input id="anticoagulant_details" name="anticoagulant_details" maxlength="500">
+            </div>
+            <div class="field">
+                <label for="allergy_status">Allergy</label>
+                <select id="allergy_status" name="allergy_status">
+                    <option value="">— not recorded —</option>
+                    <?php foreach ($allergyStatuses as $status): ?>
+                        <option value="<?= e($status->value) ?>"><?= e($status->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="field">
+                <label for="allergy_details">Allergy and reaction where known</label>
+                <input id="allergy_details" name="allergy_details" maxlength="500">
+            </div>
+            <div class="field">
+                <label for="pregnancy_status">Pregnancy-related assessment</label>
+                <select id="pregnancy_status" name="pregnancy_status">
+                    <option value="">— not recorded —</option>
+                    <?php foreach ($pregnancyStatuses as $status): ?>
+                        <option value="<?= e($status->value) ?>"><?= e($status->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="field">
+                <label for="pregnancy_details">Pregnancy assessment detail</label>
+                <input id="pregnancy_details" name="pregnancy_details" maxlength="500">
+            </div>
+            <div class="field">
+                <label for="relevant_history">Relevant medical history</label>
+                <textarea id="relevant_history" name="relevant_history" rows="3"></textarea>
+            </div>
+            <div class="field">
+                <label for="prior_procedure">Relevant prior biopsy, drainage or intervention</label>
+                <input id="prior_procedure" name="prior_procedure" maxlength="1000">
+            </div>
+            <div class="field">
+                <label for="examination_context">Examination and clinical context</label>
+                <textarea id="examination_context" name="examination_context" rows="3"></textarea>
+            </div>
+            <div class="field">
+                <label for="imaging_modality">Imaging available</label>
+                <select id="imaging_modality" name="imaging_modality">
+                    <option value="">— not recorded —</option>
+                    <?php foreach ($imagingModalities as $modality): ?>
+                        <option value="<?= e($modality->value) ?>"><?= e($modality->label()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="field">
+                <label for="imaging_date">Date of the imaging</label>
+                <input id="imaging_date" name="imaging_date" type="date">
+            </div>
+            <div class="field">
+                <label for="imaging_reference">Secure imaging reference</label>
+                <input id="imaging_reference" name="imaging_reference" maxlength="200">
+                <p class="muted">A reference to an approved route, never a public link or credentials.</p>
+            </div>
+            <?php foreach (['anticoagulant_details', 'allergy_details', 'imaging_date', 'assessment'] as $field): ?>
+                <?php if (isset($errors[$field])): ?>
+                    <p class="field-error"><?= e($errors[$field]) ?></p>
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <div class="form-actions">
+                <button class="button" type="submit">Record assessment</button>
+            </div>
+        </form>
+    <?php endif; ?>
+</section>
+
 <section class="panel" id="consent">
     <h2 class="section-title">Consent</h2>
     <p class="muted">

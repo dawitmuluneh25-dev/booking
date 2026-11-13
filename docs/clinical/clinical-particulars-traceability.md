@@ -65,10 +65,10 @@ before production and none has been executed.
 | `PAT-011`–`PAT-013` guardian | Partial | `guardian_name`, `guardian_phone`, `guardian_relationship` are stored; `guardian_verified_at` has no writer yet (BL-A4) |
 | `REF-001`–`REF-010` referral and referrer | Partial | referrer name, facility, phone, `referring_physician_profile_id`; indication is free text in `clinical_summary` |
 | `REF-011`–`REF-012` requested vs clinical priority | Implemented | Separate columns with separate write paths; `Priority`, migration 0024, `MigrationIntegrityTest::testPriorityColumnsAcceptExactlyTheApprovedVocabulary` |
-| `MED-001`–`MED-007` history, medication, allergy, assessment | Not started | No structured columns; the clinical review record carries a free-text rationale |
-| `IMG-001`–`IMG-004` imaging context | Partial | Documents can be attached and their metadata read; there is no imaging-review status field |
+| `MED-001`–`MED-007` history, medication, allergy, assessment | Implemented except structured medications | `referral_clinical_assessments` (migration 0032) with append-only supersede chain: MED-003 anticoagulant, MED-004 allergy and MED-005 pregnancy as four-value vocabularies that include `unknown` and `not_yet_assessed`, plus MED-001 history, MED-006 prior procedure and MED-007 examination context. Every column is nullable and null means "not recorded", never "no" (§6.2). MED-002 current medications needs its own child table and is deliberately not half-built. `RecordClinicalAssessmentTest` |
+| `IMG-001`–`IMG-004` imaging context | Partial | IMG-001 modality, IMG-002 date and IMG-004 secure reference are stored on the assessment (0032), with `none_available` and `unknown` as distinct values; IMG-003 imaging report is a document upload. There is still no imaging-review status field |
 | `DOC-001`, `COM-001`, `COM-002` | Partial | Document upload, quarantine and download are implemented; contact and acknowledgement records exist for urgent cases only |
-| `CONS-001` consent | Not started | No consent record, no version, no representative-authority status |
+| `CONS-001` consent | Partial | `procedure_consents` (0030) records the dialogue, outcome, withdrawal and representative authority; CONS-001's eight-value process status is not stored as one field — the presence and outcome of a record imply it. "Discussion planned" has no representation |
 
 ### 3.4 Clinical review and decision (§12, A-07)
 

@@ -61,6 +61,7 @@ final class MigrationIntegrityTest extends TestCase
         'clinical_decisions',
         'document_access_events',
         'procedure_consents',
+        'referral_clinical_assessments',
         'referral_documents',
         'referral_status_history',
         'referral_tracking_tokens',
