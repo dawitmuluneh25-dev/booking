@@ -126,7 +126,13 @@ final class SubmitElectiveReferralTest extends TestCase
     {
         $referral = $this->command->execute(
             new Actor(7, Role::Staff),
-            $this->validInput() + ['guardian_name' => 'Tesfaye Alemu'],
+            // A guardian is three facts, not one: name, a way to reach them, and how
+            // they stand to the patient. A name alone is refused as partial.
+            $this->validInput() + [
+                'guardian_name' => 'Tesfaye Alemu',
+                'guardian_phone' => '+251911222555',
+                'guardian_relationship' => 'father',
+            ],
             self::NOW,
         );
 
@@ -380,6 +386,63 @@ final class SubmitElectiveReferralTest extends TestCase
         self::assertSame(1, $this->repository->count());
     }
 
+    public function testASubmissionForAChildNeedsSomebodyNamedToActForThem(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['patient_dob' => '2018-06-01'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('A referral for a child was accepted with nobody named to act for them.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('guardian_name', $exception->errors);
+        }
+    }
+
+    public function testTheSameChildIsAcceptedOnceTheGuardianIsNamedProperly(): void
+    {
+        $referral = $this->command->execute(
+            new Actor(7, Role::Staff),
+            [
+                'patient_dob' => '2018-06-01',
+                'guardian_name' => 'Meseret Alemu',
+                'guardian_phone' => '+251911222444',
+                'guardian_relationship' => 'mother',
+            ] + $this->validInput(),
+            self::NOW,
+        );
+
+        self::assertSame('Meseret Alemu', $referral->guardianName);
+        // Naming a guardian is not accepting their authority: that needs a person to
+        // verify it (PAT-013), and this command deliberately records none.
+        self::assertSame('mother', $referral->guardianRelationship);
+    }
+
+    public function testGuardianDetailsAreOneFactAndAPartialSetIsRefused(): void
+    {
+        try {
+            $this->command->execute(
+                new Actor(7, Role::Staff),
+                ['guardian_name' => 'Meseret Alemu'] + $this->validInput(),
+                self::NOW,
+            );
+            self::fail('A guardian name with no contact number or relationship was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('guardian_phone', $exception->errors);
+            self::assertArrayHasKey('guardian_relationship', $exception->errors);
+        }
+    }
+
+    public function testWithoutADateOfBirthNoGuardianIsDemandedBecauseNothingIsInferred(): void
+    {
+        $input = $this->validInput();
+        unset($input['patient_dob']);
+
+        $referral = $this->command->execute(new Actor(7, Role::Staff), $input, self::NOW);
+
+        self::assertNull($referral->guardianName);
+    }
     /** @return array<string, string> */
     private function validInput(): array
     {

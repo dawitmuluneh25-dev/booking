@@ -97,6 +97,36 @@ final class SubmitElectiveReferral
             $errors['guardian_phone'] = 'Guardian phone does not look like a phone number.';
         }
 
+        // §6.3: guardian details are one fact in three parts. A name with no way to
+        // reach the guardian, or one that does not say how they stand to the patient,
+        // is a record nobody can act on — and the third part is what separates "a
+        // relative brought the child" from "this person may decide for the child".
+        $guardianParts = [
+            'guardian_name' => $data['guardian_name'],
+            'guardian_phone' => $data['guardian_phone'],
+            'guardian_relationship' => $data['guardian_relationship'],
+        ];
+        $guardianGiven = array_filter($guardianParts, static fn (string $part): bool => $part !== '');
+
+        if ($guardianGiven !== [] && count($guardianGiven) < count($guardianParts)) {
+            foreach ($guardianParts as $field => $value) {
+                if ($value === '') {
+                    $errors[$field] = 'Guardian name, contact number and relationship are recorded '
+                        . 'together; one without the others cannot be acted on.';
+                }
+            }
+        }
+
+        // A submission for a child is made by somebody acting for them, and §6.2
+        // forbids inferring who that is. Without a date of birth the age is unknown,
+        // and nothing at all is inferred from its absence — the rule simply does not
+        // fire. Naming a guardian here is not the same as accepting their authority:
+        // that stays unverified until a member of staff records otherwise (PAT-013).
+        if ($dob !== null && $this->isMinor($dob) && $guardianGiven === []) {
+            $errors['guardian_name'] = 'A patient under 18 needs a parent or guardian named, with a '
+                . 'contact number and their relationship to the patient.';
+        }
+
         if (
             $data['referring_physician_phone'] !== ''
             && preg_match('/^\+?[0-9][0-9 ()\-]{6,19}$/', $data['referring_physician_phone']) !== 1
@@ -254,6 +284,25 @@ final class SubmitElectiveReferral
         }
 
         return $value;
+    }
+
+    /**
+     * Whether a date of birth falls on the minor side of the age of majority.
+     *
+     * 18 is the age of majority in this jurisdiction. The boundary decides one thing
+     * only: whether somebody acting for the patient has to be named. It says nothing
+     * about capacity or authority — those are assessed by a person (PAT-013), and
+     * treating an age check as an authority check is the inference §6.2 forbids.
+     */
+    private function isMinor(string $dateOfBirth): bool
+    {
+        $born = DateTimeImmutable::createFromFormat('!Y-m-d', $dateOfBirth, new DateTimeZone('UTC'));
+
+        if ($born === false) {
+            return false;
+        }
+
+        return $born->diff(new DateTimeImmutable('today', new DateTimeZone('UTC')))->y < 18;
     }
 
     private function nullable(string $value): ?string
