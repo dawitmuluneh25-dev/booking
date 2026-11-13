@@ -37,6 +37,9 @@ final class ClinicalAssessment
         public readonly int $recordedByUserId,
         public readonly string $recordedAtUtc,
         public readonly ?int $supersedesId = null,
+        public readonly ?MedicationReviewStatus $medicationReview = null,
+        /** @var list<Medication> */
+        public readonly array $medications = [],
     ) {
     }
 
@@ -60,9 +63,44 @@ final class ClinicalAssessment
             recordedByUserId: $this->recordedByUserId,
             recordedAtUtc: $this->recordedAtUtc,
             supersedesId: $this->supersedesId,
+            medicationReview: $this->medicationReview,
+            medications: $this->medications,
         );
     }
 
+    /**
+     * The same assessment with its medication rows attached.
+     *
+     * Loading is deliberately separate from reading the row: the list lives in a
+     * child table, and a caller that only needs the statuses (a history table, for
+     * instance) should not pay for the rows.
+     *
+     * @param list<Medication> $medications
+     */
+    public function withMedications(array $medications): self
+    {
+        return new self(
+            id: $this->id,
+            referralId: $this->referralId,
+            anticoagulant: $this->anticoagulant,
+            anticoagulantDetails: $this->anticoagulantDetails,
+            allergy: $this->allergy,
+            allergyDetails: $this->allergyDetails,
+            pregnancy: $this->pregnancy,
+            pregnancyDetails: $this->pregnancyDetails,
+            relevantHistory: $this->relevantHistory,
+            priorProcedure: $this->priorProcedure,
+            examinationContext: $this->examinationContext,
+            imagingModality: $this->imagingModality,
+            imagingDate: $this->imagingDate,
+            imagingReference: $this->imagingReference,
+            recordedByUserId: $this->recordedByUserId,
+            recordedAtUtc: $this->recordedAtUtc,
+            supersedesId: $this->supersedesId,
+            medicationReview: $this->medicationReview,
+            medications: $medications,
+        );
+    }
     /**
      * Whether anything at all has been established that a procedure could rely on.
      *
@@ -74,7 +112,8 @@ final class ClinicalAssessment
     {
         return $this->allergy?->isEstablished() === true
             && $this->anticoagulant?->isEstablished() === true
-            && $this->pregnancy?->isOpen() !== true;
+            && $this->pregnancy?->isOpen() !== true
+            && $this->medicationReview?->isReconciled() === true;
     }
 
     /** What the record says about a status, saying "not recorded" rather than a negative. */
@@ -108,6 +147,7 @@ final class ClinicalAssessment
             recordedByUserId: self::intOf($row['recorded_by_user_id'] ?? null),
             recordedAtUtc: self::stringOf($row['recorded_at'] ?? null),
             supersedesId: is_numeric($row['supersedes_id'] ?? null) ? (int) $row['supersedes_id'] : null,
+            medicationReview: MedicationReviewStatus::tryFrom(self::stringOf($row['medication_review_status'] ?? null)),
         );
     }
 

@@ -6,6 +6,7 @@ namespace App\Repositories;
 
 use App\Domain\ClinicalAssessment;
 use App\Domain\ClinicalAssessmentRepository;
+use App\Domain\Medication;
 use PDO;
 
 /**
@@ -20,7 +21,7 @@ final class PdoClinicalAssessmentRepository implements ClinicalAssessmentReposit
     private const COLUMNS = 'id, referral_id, anticoagulant_status, anticoagulant_details,
         allergy_status, allergy_details, pregnancy_status, pregnancy_details, relevant_history,
         prior_procedure, examination_context, imaging_modality, imaging_date, imaging_reference,
-        recorded_by_user_id, recorded_at, supersedes_id';
+        recorded_by_user_id, recorded_at, supersedes_id, medication_review_status';
 
     public function __construct(private readonly PDO $pdo)
     {
@@ -33,12 +34,14 @@ final class PdoClinicalAssessmentRepository implements ClinicalAssessmentReposit
                 (referral_id, anticoagulant_status, anticoagulant_details, allergy_status,
                  allergy_details, pregnancy_status, pregnancy_details, relevant_history,
                  prior_procedure, examination_context, imaging_modality, imaging_date,
-                 imaging_reference, recorded_by_user_id, recorded_at, supersedes_id)
+                 imaging_reference, recorded_by_user_id, recorded_at, supersedes_id,
+                 medication_review_status)
              VALUES
                 (:referral_id, :anticoagulant_status, :anticoagulant_details, :allergy_status,
                  :allergy_details, :pregnancy_status, :pregnancy_details, :relevant_history,
                  :prior_procedure, :examination_context, :imaging_modality, :imaging_date,
-                 :imaging_reference, :recorded_by, :recorded_at, :supersedes)'
+                 :imaging_reference, :recorded_by, :recorded_at, :supersedes,
+                 :medication_review)'
         );
 
         $insert->execute([
@@ -58,9 +61,13 @@ final class PdoClinicalAssessmentRepository implements ClinicalAssessmentReposit
             'recorded_by' => $assessment->recordedByUserId,
             'recorded_at' => $assessment->recordedAtUtc,
             'supersedes' => $assessment->supersedesId,
+            'medication_review' => $assessment->medicationReview?->value,
         ]);
 
-        return $assessment->withIdentity((int) $this->pdo->lastInsertId());
+        $id = (int) $this->pdo->lastInsertId();
+        $this->insertMedications($id, $assessment->medications);
+
+        return $assessment->withIdentity($id);
     }
 
     public function findById(int $id): ?ClinicalAssessment
@@ -73,7 +80,7 @@ final class PdoClinicalAssessmentRepository implements ClinicalAssessmentReposit
         /** @var array<string, mixed>|false $row */
         $row = $statement->fetch();
 
-        return $row === false ? null : ClinicalAssessment::fromRow($row);
+        return $row === false ? null : $this->hydrate($row);
     }
 
     public function current(int $referralId): ?ClinicalAssessment
@@ -93,7 +100,7 @@ final class PdoClinicalAssessmentRepository implements ClinicalAssessmentReposit
         /** @var array<string, mixed>|false $row */
         $row = $statement->fetch();
 
-        return $row === false ? null : ClinicalAssessment::fromRow($row);
+        return $row === false ? null : $this->hydrate($row);
     }
 
     public function history(int $referralId): array
@@ -122,5 +129,57 @@ final class PdoClinicalAssessmentRepository implements ClinicalAssessmentReposit
         }
 
         return $history;
+    }
+
+    /**
+     * @param list<Medication> $medications
+     */
+    private function insertMedications(int $assessmentId, array $medications): void
+    {
+        if ($medications === []) {
+            return;
+        }
+
+        $insert = $this->pdo->prepare(
+            'INSERT INTO referral_medications (assessment_id, name, dose, frequency, position)
+             VALUES (:assessment_id, :name, :dose, :frequency, :position)'
+        );
+
+        foreach ($medications as $index => $medication) {
+            $insert->execute([
+                'assessment_id' => $assessmentId,
+                'name' => $medication->name,
+                'dose' => $medication->dose,
+                'frequency' => $medication->frequency,
+                'position' => $index + 1,
+            ]);
+        }
+    }
+
+    /** @param array<string, mixed> $row */
+    private function hydrate(array $row): ClinicalAssessment
+    {
+        $assessment = ClinicalAssessment::fromRow($row);
+
+        if ($assessment->medicationReview === null) {
+            return $assessment;
+        }
+
+        $statement = $this->pdo->prepare(
+            'SELECT name, dose, frequency FROM referral_medications
+              WHERE assessment_id = :id ORDER BY position ASC'
+        );
+        $statement->execute(['id' => $assessment->id]);
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        $medications = [];
+
+        foreach ($rows as $medicationRow) {
+            $medications[] = Medication::fromRow($medicationRow);
+        }
+
+        return $assessment->withMedications($medications);
     }
 }

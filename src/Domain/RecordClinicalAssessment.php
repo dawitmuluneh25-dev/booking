@@ -93,6 +93,7 @@ final class RecordClinicalAssessment
             'imaging_modality' => $this->text($input, 'imaging_modality'),
             'imaging_date' => $this->text($input, 'imaging_date'),
             'imaging_reference' => $this->text($input, 'imaging_reference'),
+            'medication_review_status' => $this->text($input, 'medication_review_status'),
         ];
 
         $errors = $this->validator->validate($data, [
@@ -107,6 +108,7 @@ final class RecordClinicalAssessment
             'prior_procedure' => 'max:1000',
             'examination_context' => 'max:8000',
             'imaging_reference' => 'max:200',
+            'medication_review_status' => 'in:' . $this->allowed(MedicationReviewStatus::cases()),
         ]);
 
         // An empty string is not a value for a controlled column: it has to be
@@ -132,7 +134,28 @@ final class RecordClinicalAssessment
             $errors['imaging_date'] = 'An imaging date in the future cannot be a study already reviewed.';
         }
 
-        if ($errors === [] && !$this->hasAnyContent($data)) {
+        $medicationReview = MedicationReviewStatus::tryFrom($data['medication_review_status']);
+        $medications = $this->medications($input, $errors);
+
+        if ($medicationReview?->requiresList() === true && $medications === []) {
+            $errors['medications'] = 'This status says a list exists, but none was entered. '
+                . 'Use “Unknown” if nobody has asked, or “None” if asking produced nothing.';
+        }
+
+        if (
+            $medicationReview !== null
+            && !$medicationReview->requiresList()
+            && $medications !== []
+        ) {
+            $errors['medications'] = 'A list was entered with a status that says there is no list. '
+                . 'Choose “Reported, not yet reconciled” or “List recorded and reviewed”.';
+        }
+
+        if ($medicationReview === null && $medications !== []) {
+            $errors['medications'] = 'Say how far the medication review got — a list with no status '
+                . 'cannot be told apart from a list nobody has checked.';
+        }
+        if ($errors === [] && !$this->hasAnyContent($data) && $medications === []) {
             $errors['assessment'] = 'This record would be empty. Record at least one answer, or '
                 . 'leave the assessment unrecorded — an empty assessment reads as “assessed and '
                 . 'unremarkable”, which nobody said.';
@@ -160,6 +183,8 @@ final class RecordClinicalAssessment
             imagingModality: $imaging,
             imagingDate: $this->nullable($data['imaging_date']),
             imagingReference: $this->nullable($data['imaging_reference']),
+            medicationReview: $medicationReview,
+            medications: $medications,
             recordedByUserId: $actor->userId,
             recordedAtUtc: $recordedAtUtc,
             supersedesId: $current?->id,
@@ -168,6 +193,84 @@ final class RecordClinicalAssessment
         return $this->transaction->run(fn (): ClinicalAssessment => $this->assessments->record($assessment));
     }
 
+    /**
+     * The medication rows, from three parallel arrays.
+     *
+     * A row with nothing in it is skipped rather than refused, because the form
+     * always renders a few empty rows. A row with a dose but no name is refused:
+     * "5 mg" alone is not a medication, and storing it would let a list look
+     * populated while saying nothing.
+     *
+     * @param array<string, mixed>  $input
+     * @param array<string, string> $errors
+     *
+     * @return list<Medication>
+     */
+    private function medications(array $input, array &$errors): array
+    {
+        $names = $this->listOf($input, 'medication_name');
+        $doses = $this->listOf($input, 'medication_dose');
+        $frequencies = $this->listOf($input, 'medication_frequency');
+
+        if (count($names) > 50) {
+            $errors['medications'] = 'At most 50 medications can be recorded in one assessment.';
+
+            return [];
+        }
+
+        $medications = [];
+
+        foreach ($names as $index => $name) {
+            $dose = $doses[$index] ?? '';
+            $frequency = $frequencies[$index] ?? '';
+
+            if ($name === '' && $dose === '' && $frequency === '') {
+                continue;
+            }
+
+            if ($name === '') {
+                $errors['medications'] = 'Every medication needs a name; dose and frequency are optional.';
+
+                continue;
+            }
+
+            if (mb_strlen($name) > 200 || mb_strlen($dose) > 100 || mb_strlen($frequency) > 100) {
+                $errors['medications'] = 'A medication name, dose or frequency is too long.';
+
+                continue;
+            }
+
+            $medications[] = new Medication(
+                name: $name,
+                dose: $dose === '' ? null : $dose,
+                frequency: $frequency === '' ? null : $frequency,
+            );
+        }
+
+        return $medications;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     *
+     * @return list<string>
+     */
+    private function listOf(array $input, string $key): array
+    {
+        $value = $input[$key] ?? [];
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $values = [];
+
+        foreach ($value as $item) {
+            $values[] = is_string($item) ? trim($item) : '';
+        }
+
+        return $values;
+    }
     /** @param array<string, string> $data */
     private function hasAnyContent(array $data): bool
     {

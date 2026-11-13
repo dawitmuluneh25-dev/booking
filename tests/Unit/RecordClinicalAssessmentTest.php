@@ -9,6 +9,7 @@ use App\Domain\AllergyStatus;
 use App\Domain\AnticoagulantStatus;
 use App\Domain\AssessmentNotPermittedException;
 use App\Domain\AuthorisationException;
+use App\Domain\MedicationReviewStatus;
 use App\Domain\PregnancyStatus;
 use App\Domain\RecordClinicalAssessment;
 use App\Domain\Referral;
@@ -60,6 +61,9 @@ final class RecordClinicalAssessmentTest extends TestCase
             'allergy_status' => 'no_known_allergy_confirmed',
             'anticoagulant_status' => 'no_use_confirmed',
             'pregnancy_status' => 'not_relevant',
+            // Complete also needs the medication list reconciled, so "asked and the
+            // answer was none" is part of a genuinely complete record.
+            'medication_review_status' => 'none_reported_confirmed',
         ], self::NOW);
 
         self::assertSame(AllergyStatus::NoKnownAllergyConfirmed, $assessment->allergy);
@@ -185,6 +189,99 @@ final class RecordClinicalAssessmentTest extends TestCase
         ], self::NOW);
     }
 
+    public function testAMedicationListIsStoredWithTheStatusThatSaysItWasReviewed(): void
+    {
+        $assessment = $this->command->execute($this->clinician(), $this->referralId, [
+            'medication_review_status' => 'recorded',
+            'medication_name' => ['Warfarin', 'Amlodipine'],
+            'medication_dose' => ['5 mg', ''],
+            'medication_frequency' => ['once daily', 'once daily'],
+        ], self::NOW);
+
+        self::assertSame(MedicationReviewStatus::Recorded, $assessment->medicationReview);
+        self::assertCount(2, $assessment->medications);
+        self::assertSame('Warfarin — 5 mg, once daily', $assessment->medications[0]->describe());
+        self::assertSame('Amlodipine — once daily', $assessment->medications[1]->describe());
+    }
+
+    /**
+     * The distinction the package asks for: a list nobody has checked is neither
+     * "reviewed" nor "none", and it does not complete an assessment.
+     */
+    public function testAListReportedButNotReconciledDoesNotCompleteTheAssessment(): void
+    {
+        $assessment = $this->command->execute($this->clinician(), $this->referralId, [
+            'medication_review_status' => 'not_reconciled',
+            'medication_name' => ['Metformin'],
+        ], self::NOW);
+
+        self::assertSame(MedicationReviewStatus::NotReconciled, $assessment->medicationReview);
+        self::assertFalse($assessment->medicationReview->isReconciled());
+        self::assertFalse($assessment->isCompleteForProcedure());
+    }
+
+    public function testAStatusThatClaimsAListWithoutOneIsRefused(): void
+    {
+        try {
+            $this->command->execute($this->clinician(), $this->referralId, [
+                'medication_review_status' => 'recorded',
+            ], self::NOW);
+            self::fail('A reviewed list was claimed with no medications.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('medications', $exception->errors);
+        }
+    }
+
+    public function testAListWithNoStatusCannotBeToldApartFromOneNobodyChecked(): void
+    {
+        try {
+            $this->command->execute($this->clinician(), $this->referralId, [
+                'medication_name' => ['Insulin'],
+            ], self::NOW);
+            self::fail('A list was stored with no statement of how far the review got.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('medications', $exception->errors);
+        }
+    }
+
+    public function testConfirmedNoneCannotCarryAList(): void
+    {
+        try {
+            $this->command->execute($this->clinician(), $this->referralId, [
+                'medication_review_status' => 'none_reported_confirmed',
+                'medication_name' => ['Insulin'],
+            ], self::NOW);
+            self::fail('“None confirmed” was stored alongside a medication.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('medications', $exception->errors);
+        }
+    }
+
+    public function testARowWithADoseButNoNameIsRefusedRatherThanSkipped(): void
+    {
+        try {
+            $this->command->execute($this->clinician(), $this->referralId, [
+                'medication_review_status' => 'recorded',
+                'medication_name' => [''],
+                'medication_dose' => ['5 mg'],
+            ], self::NOW);
+            self::fail('A dose with no medication name was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('medications', $exception->errors);
+        }
+    }
+
+    public function testAnEmptyRowIsSkippedBecauseTheFormAlwaysRendersSome(): void
+    {
+        $assessment = $this->command->execute($this->clinician(), $this->referralId, [
+            'medication_review_status' => 'recorded',
+            'medication_name' => ['Insulin', '', ''],
+            'medication_dose' => ['', '', ''],
+        ], self::NOW);
+
+        self::assertCount(1, $assessment->medications);
+        self::assertSame('Insulin', $assessment->medications[0]->name);
+    }
     private function clinician(): Actor
     {
         return new Actor(12, Role::Radiologist);

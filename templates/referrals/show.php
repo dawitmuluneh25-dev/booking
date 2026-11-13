@@ -397,6 +397,19 @@ $mayAssess = $currentUser->can(\App\Domain\Permission::ClinicalReview)
                             : 'Not recorded' ?></td>
                     </tr>
                     <tr>
+                        <th scope="row">Current medications</th>
+                        <td>
+                            <?= e($assessment->medicationReview?->label() ?? 'Not recorded') ?>
+                            <?php if ($assessment->medications !== []): ?>
+                                <ul class="plain-list">
+                                    <?php foreach ($assessment->medications as $medication): ?>
+                                        <li><?= e($medication->describe()) ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row">Prior procedure</th>
                         <td><?= e($assessment->priorProcedure ?? 'Not recorded') ?></td>
                     </tr>
@@ -537,7 +550,44 @@ $mayAssess = $currentUser->can(\App\Domain\Permission::ClinicalReview)
                 <input id="imaging_reference" name="imaging_reference" maxlength="200">
                 <p class="muted">A reference to an approved route, never a public link or credentials.</p>
             </div>
-            <?php foreach (['anticoagulant_details', 'allergy_details', 'imaging_date', 'assessment'] as $field): ?>
+            <fieldset class="field">
+                <legend>Current medications</legend>
+                <div class="field">
+                    <label for="medication_review_status">How far the review got</label>
+                    <select id="medication_review_status" name="medication_review_status">
+                        <option value="">— not recorded —</option>
+                        <option value="recorded">List recorded and reviewed</option>
+                        <option value="not_reconciled">Reported, not yet reconciled</option>
+                        <option value="none_reported_confirmed">None — confirmed by asking</option>
+                        <option value="unknown">Unknown</option>
+                    </select>
+                    <p class="muted">
+                        A list typed in at intake is &ldquo;reported, not reconciled&rdquo; until a
+                        clinician has checked it. Leaving this blank means nobody asked — which is
+                        not the same as the patient taking nothing.
+                    </p>
+                </div>
+                <?php for ($i = 0; $i < 3; $i++): ?>
+                    <div class="field-row">
+                        <div class="field">
+                            <label for="medication_name_<?= (string) $i ?>">Medication</label>
+                            <input id="medication_name_<?= (string) $i ?>" name="medication_name[]"
+                                maxlength="200">
+                        </div>
+                        <div class="field">
+                            <label for="medication_dose_<?= (string) $i ?>">Dose</label>
+                            <input id="medication_dose_<?= (string) $i ?>" name="medication_dose[]"
+                                maxlength="100">
+                        </div>
+                        <div class="field">
+                            <label for="medication_frequency_<?= (string) $i ?>">Frequency</label>
+                            <input id="medication_frequency_<?= (string) $i ?>"
+                                name="medication_frequency[]" maxlength="100">
+                        </div>
+                    </div>
+                <?php endfor; ?>
+            </fieldset>
+            <?php foreach (['anticoagulant_details', 'allergy_details', 'imaging_date', 'medications', 'assessment'] as $field): ?>
                 <?php if (isset($errors[$field])): ?>
                     <p class="field-error"><?= e($errors[$field]) ?></p>
                 <?php endif; ?>

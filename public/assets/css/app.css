@@ -348,6 +348,13 @@ a:hover { color: var(--accent-hover); }
 /* Forms */
 .field { margin-bottom: 1.15rem; }
 
+/* Three short fields on one line, stacking when there is no room: medication name,
+   dose and frequency are one row to a reader even though they are three inputs. */
+.field-row { display: flex; flex-wrap: wrap; gap: 0 0.75rem; }
+.field-row > .field { flex: 1 1 8rem; min-width: 8rem; }
+
+.plain-list { margin: 0.35rem 0 0; padding-left: 1.1rem; }
+
 .field label {
     display: block;
     font-weight: 500;
