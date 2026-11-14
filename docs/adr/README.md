@@ -806,3 +806,65 @@ Three choices are part of the decision:
 
 **Status.** Implemented. **Owner.** Architecture + Operations, on Product Owner Decision 4 (C-2).
 **Date.** 2026-11-14. **Supersedes.** —.
+
+## ADR-025
+
+**A procedure-day event is not a status, and is corrected by another event**
+
+**Context.** §15 asks the product to record what happened on a procedure day — the patient arrived, the
+consent process was checked at the point of care, the operator began, the operator finished, the
+observation period ended — and to distinguish "completed as planned" from the six other outcomes.
+`appointment_status_history` already existed and already recorded state changes with an actor and a
+time, so the cheapest implementation was to read those rows as the day's events and add two columns
+for the rest.
+
+That would have been wrong in a way that only shows up later. A status is a fact about **now**: it is
+superseded by the next status, and the row that said `ready` is only interesting as history. An event
+is a fact about **a moment**: "the procedure started at 09:22, recorded by the operator" is never
+superseded, cannot be edited, and is the thing an audit asks for. Making one table serve both means a
+correction to a state quietly rewrites what happened.
+
+**Decision.** `procedure_milestones` (0043) is a separate append-only table. Five kinds — arrival,
+consent verified, procedure started, procedure completed, recovery completed — each with a recorder,
+a role, an instant, an optional note and, when recorded out of sequence, the reason why.
+
+Four choices are part of it:
+
+- **Three of the five move the room state, in the same unit of work.** Arrival walks to `checked_in`,
+  started walks `preprocedure_verification → ready → in_progress`, completed walks to `completed`.
+  Every step is an edge `AppointmentStatus::allowedTransitions()` already permits and they are applied
+  one at a time, never jumped. Recording an event and leaving the appointment reading `ready` would
+  put two records in disagreement about the same minute.
+- **"Consent verified" names the consent it verified.** The command reads the referral's current
+  consent and refuses when there is none, when it was declined, or when it has been withdrawn, and
+  stores the consent id beside the event. This is AC-009's position applied to the point of care: a
+  claim the record cannot support is not a record.
+- **Out of sequence is possible; silent is not.** AC-4 asks for exactly this. Without a reason of at
+  least ten characters the command refuses and writes nothing; with one, the reason is stored and the
+  timeline marks the row. A CHECK constraint refuses a short reason as well, so a writer that never
+  read the command cannot store "busy".
+- **The timeline prints each minute once.** A status row is suppressed when a milestone recorded at
+  the same instant produced that same state — the milestone is the event and the row is the machine's
+  receipt. Everything with no milestone behind it (a cancellation, a deferral, a reschedule) stays
+  visible, because otherwise the page would look as if nothing had happened.
+
+**Consequences.**
+
+- The §14 readiness checklist is **not** here, and both screens say so instead of implying readiness.
+  That is BL-D2: its items, owners, versions and stop classifications are a slice of their own, and a
+  second partial checklist would have pre-empted the one that owns the content. When BL-D2 arrives it
+  sits in front of `procedure_started` and refuses while a HARD STOP item is outstanding.
+- Because nothing else in this release writes `preprocedure_verification` or `ready`, the operator's
+  act of starting is the only evidence those two steps happened. That is a temporary shape, recorded
+  here so it is not mistaken for a design: BL-D2 will supply the act.
+- Arrival follows `bookings.manage` and the rest follow `procedure.coordinate`. Reception may see the
+  day and record that somebody is here; "the procedure started" is not a sentence reception writes.
+  The administrator holds neither of the clinical events, per Decision 5.
+- A milestone repeated later in the day is legitimate — a deferred case restarted, a consent
+  discussion repeated against a new consent record — so the duplicate guard refuses only a repeat of
+  the **last** record, and a consent check against a different consent id is a new statement rather
+  than a repeat.
+- BL-C7 (specimens) and BL-D2 both build on this table rather than beside it.
+
+**Status.** Implemented. **Owner.** Architecture, on the approved package §15 and A-20. **Date.**
+2026-11-14. **Supersedes.** —.

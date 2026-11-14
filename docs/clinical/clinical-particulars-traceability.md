@@ -105,9 +105,9 @@ before production and none has been executed.
 
 | Requirement | Status | Evidence / notes |
 |---|---|---|
-| Time-out, milestones, procedure record | Not started | BL-C3 |
+| Milestones of the procedure day | **Implemented** | `procedure_milestones` (migration 0043) records arrival, consent verified, procedure started, procedure completed and recovery completed — append-only, with recorder, role, instant, optional note and a required reason when recorded out of sequence (ADR-025). `/appointments/{reference}` renders the day as one timeline; `/appointments` is the queue. "Consent verified" names the consent record it verified and refuses when the referral has no standing agreement |
 | Specimen dispatch, receipt and follow-up ownership | Partly enabled; the record itself is not started | The laboratory destination is no longer a dependencies item: `laboratory_destinations` (migration 0031) is a serialised catalogue — `PATHOLOGY-LAB-<n>` / `Pathology Lab <n>`, both derived from one serial — administered at `/admin/laboratories`, with closure instead of deletion so an earlier specimen keeps naming where it went. The specimen record itself is BL-C7 and still needs the C-1 field sets and BL-C3's milestones |
-| Outcome and follow-up record | Not started | BL-C3 |
+| Outcome and follow-up record | Not started | BL-C7. The procedure-day log distinguishes nothing about *how* a case finished — §15.3's eight outcomes (completed as planned, completed with modification, not performed, deferred, abandoned, converted, unsuccessful, transferred) are not on the milestone, because choosing between them is a clinical record BL-C7 owns with the specimen and follow-up owner. Recording one here would have been a second vocabulary for the same event |
 
 ### 3.8 Role authority (§16, A-10)
 
@@ -116,7 +116,7 @@ before production and none has been executed.
 | An administrator holds no clinical authority | Implemented | `Role::Admin::permissions()` grants no clinical permission; `ReferralStatus::allowedActors()` refuses an administrative clinical transition |
 | Reception schedules only after clinical approval | Implemented | `ApprovedForScheduling` transition requires the clinical state first; `ApproveForSchedulingTest` |
 | A job title does not activate clinical permission | Implemented | Two separate facts are required: the account's role grants `clinical.approve`, and the practitioner holds a verified, unexpired, procedure-specific privilege (migration 0040, ADR-022). The check reads only dated facts about a named person; it never reads a title, a rota line or the role itself |
-| Twelve-role matrix | Partial | The application now stores all nine internal roles: `TECH`, `NUR` and `LAB` exist as of Decision 5 / migration 0041 (ADR-023). The surgical and anaesthesia columns remain external participants with no login, which Decision 5 confirms rather than defers. The three new roles hold no clinical authority and, for now, one non-clinical permission each — their named surfaces arrive with BL-C3, BL-C7 and BL-D2, and `docs/clinical/role-matrix-mapping.md` records that gap for signature |
+| Twelve-role matrix | Partial | The application now stores all nine internal roles: `TECH`, `NUR` and `LAB` exist as of Decision 5 / migration 0041 (ADR-023). The surgical and anaesthesia columns remain external participants with no login, which Decision 5 confirms rather than defers. The three new roles hold no clinical authority and, for now, one non-clinical permission each — their named surfaces arrive with BL-D2 (readiness) and BL-C7 (specimens). BL-C3's procedure-day log gives them nothing either: it is behind `schedule.manage`, which reception, coordination and the radiologist hold and they do not. `docs/clinical/role-matrix-mapping.md` records that gap for signature |
 
 ### 3.9 Patient-facing content (§17, §11, A-11)
 
