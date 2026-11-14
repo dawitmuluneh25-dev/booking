@@ -44,6 +44,11 @@ final class RoleTest extends TestCase
         self::assertTrue(Role::Radiologist->can(Permission::ClinicalApprove));
         self::assertTrue(Role::Radiologist->isClinical());
 
+        // Decision 6 / AC-009: the register that governs clinical approval is a
+        // clinical act, so the clinical role holds it and the administrator does not.
+        self::assertTrue(Role::Radiologist->can(Permission::ClinicalCredentialManage));
+        self::assertFalse(Role::Admin->can(Permission::ClinicalCredentialManage));
+
         self::assertFalse(Role::Radiologist->can(Permission::UsersManage));
         self::assertFalse(Role::Radiologist->can(Permission::SystemMaintain));
     }

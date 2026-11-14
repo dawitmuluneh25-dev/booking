@@ -48,7 +48,9 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        self::assertSame(83, count($manifest));
+        // 88: the five credential-register routes (Decision 6, AC-009) are
+        // permission-gated and none of them joins the public set above.
+        self::assertSame(88, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);

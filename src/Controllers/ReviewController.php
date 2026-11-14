@@ -8,6 +8,8 @@ use App\Domain\Actor;
 use App\Domain\AuthorisationException;
 use App\Domain\ClinicalDecision;
 use App\Domain\ClinicalDecisionType;
+use App\Domain\ClinicalPrivilegeException;
+use App\Domain\ClinicalPrivileges;
 use App\Domain\Permission;
 use App\Domain\Priority;
 use App\Domain\ProcedureRepository;
@@ -43,6 +45,7 @@ final class ReviewController
         private readonly RecordClinicalDecision $decision,
         private readonly ReferralRepository $referrals,
         private readonly ProcedureRepository $procedures,
+        private readonly ClinicalPrivileges $privileges,
         private readonly string $timezone,
     ) {
     }
@@ -113,6 +116,12 @@ final class ReviewController
             $decided = $this->decision->execute(new Actor($user->id, $user->role), $referral->id, $input);
         } catch (ValidationException $exception) {
             return $this->form($referral, $exception->errors, 422);
+        } catch (ClinicalPrivilegeException $exception) {
+            // AC-009. A field-level refusal rather than a 403: the actor does hold
+            // `clinical.approve`, so "not allowed" would be false. The message names
+            // the missing verification, and the form stays open for the outcomes that
+            // need no privilege.
+            return $this->form($referral, ['credential' => $exception->getMessage()], 422);
         } catch (AuthorisationException) {
             throw HttpException::forbidden('You are not allowed to record a clinical decision.');
         } catch (ReferralTransitionException) {
@@ -141,15 +150,27 @@ final class ReviewController
     /** @param array<string, string> $errors */
     private function form(Referral $referral, array $errors, int $status): Response
     {
+        $user = $this->gate->authenticate();
+        $procedure = $this->procedures->find($referral->procedureCode);
+
         return Response::html($this->view->render('review/show', [
             'title' => 'Review ' . $referral->reference,
             'referral' => $referral,
-            'procedure' => $this->procedures->find($referral->procedureCode),
+            'procedure' => $procedure,
             'decisions' => ClinicalDecisionType::cases(),
             'priorities' => Priority::cases(),
             'history' => $this->history($referral->id),
+            // Shown before the form is filled in, not only after it is refused:
+            // writing a rationale and then being told the verification lapsed is a
+            // worse way to learn it (AC-009).
+            'authority' => $this->privileges->check(
+                $user->id,
+                $referral->procedureCode,
+                gmdate('Y-m-d'),
+                $procedure?->label,
+            ),
             'errors' => $errors,
-            'currentUser' => $this->gate->authenticate(),
+            'currentUser' => $user,
         ]), $status);
     }
 

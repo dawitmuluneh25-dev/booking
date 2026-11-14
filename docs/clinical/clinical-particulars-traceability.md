@@ -77,7 +77,7 @@ before production and none has been executed.
 | Decision options: approve, defer, decline, alternative pathway, redirect, more information | Implemented | `ClinicalDecisionType`; `RecordClinicalDecisionTest` |
 | A decision requires a rationale | Implemented | `clinical_decisions.rationale NOT NULL` plus a required field; `RecordClinicalDecisionTest` |
 | Only a privileged clinical role may decide | Implemented | `Permission::ClinicalApprove`, checked in the command and again in the repository |
-| Approval available only to a verified, privileged practitioner | Not started | AC-009 requires clinical approval to be unavailable until credential and privilege verification is recorded (LP-003, §16.3). Today `Role::Radiologist` grants it on the role alone. There is no credential register to check against, so there is nothing to verify yet; this stays a release gate rather than a claim |
+| Approval available only to a verified, privileged practitioner | Implemented | Product Owner Decision 6 (14 November 2026) refused to defer this. `practitioner_credentials` and `practitioner_privileges` (migration 0040) record the verification and its procedure-specific scope; `RecordClinicalDecision` asks `ClinicalPrivileges` before it validates the form, and refuses approval when there is no record, the credential is suspended or revoked, the window does not cover the day, or no privilege names the referral's procedure — naming which of those applies. Administered at `/practitioners` behind `clinical.credential.manage`, held by `Role::Radiologist` and deliberately not by `Role::Admin` (Decision 5, Decision 6). ADR-022. **Boundary:** decline, defer, ask-for-information and redirect are not gated, because those outcomes release nothing into the elective queue and Decision 6 names approval. **Open with Clinical Governance:** whether an existing institutional register is the authoritative source (Decision 6's first determination), and whether a self-recorded verification — permitted so a single-clinician clinic is not deadlocked, and marked *Self-recorded* — is acceptable |
 | A superseded decision is visible and cannot be acted on | Implemented | `supersedes_decision_id` with a unique key; `ApproveForSchedulingTest` |
 | Clinical priority assigned by a clinician with a reason | Implemented | `RecordClinicalDecision` requires a category on approval and stores it on the decision (migration 0025) and on the referral in one unit of work; `RecordClinicalDecisionTest::testAnApprovalRecordsTheCategoryOnBothTheDecisionAndTheReferral` |
 | The assigned category is the clinician's, never the submitter's | Implemented | `referrals.requested_urgency` and `referrals.clinical_priority` are written by different commands and neither copies the other (AC-010); `RecordClinicalDecisionTest::testARequestedUrgencyDoesNotBecomeTheClinicalPriority` |
@@ -115,7 +115,7 @@ before production and none has been executed.
 |---|---|---|
 | An administrator holds no clinical authority | Implemented | `Role::Admin::permissions()` grants no clinical permission; `ReferralStatus::allowedActors()` refuses an administrative clinical transition |
 | Reception schedules only after clinical approval | Implemented | `ApprovedForScheduling` transition requires the clinical state first; `ApproveForSchedulingTest` |
-| A job title does not activate clinical permission | Partial | Roles grant permissions; credential and privilege verification (LP-003) has no record |
+| A job title does not activate clinical permission | Implemented | Two separate facts are required: the account's role grants `clinical.approve`, and the practitioner holds a verified, unexpired, procedure-specific privilege (migration 0040, ADR-022). The check reads only dated facts about a named person; it never reads a title, a rota line or the role itself |
 | Twelve-role matrix | Partial | The application has six roles. Document roles `TECH`, `NUR`, `LAB` and the surgical/anaesthesia columns have no counterpart — see §4.4 |
 
 ### 3.9 Patient-facing content (§17, §11, A-11)
@@ -308,8 +308,12 @@ went in a form that can be counted and audited.
   starts at "not stated" (§12.4).
 - Do not claim the reassignment action of §13.1 exists until it has a command, a rationale
   requirement and an audit event.
-- Do not describe role-based clinical approval as privilege-verified approval. AC-009 and LP-003
-  require a credential record this release does not have.
+- Do not describe clinical approval as privilege-verified merely because the route is gated on
+  `clinical.approve`. Since ADR-022 the distinction is real — the command checks a dated,
+  procedure-scoped verification — but it is only real for *approval*. Decline, defer, redirect and
+  request-information are not privilege-checked, and no report may imply they are. Nor may any
+  report claim the register is the institution's authoritative credential source: which register
+  that is has not been determined (Decision 6, BL-G5).
 - Do not let a recorded urgent case read as acknowledged, accepted or booked. The confirmation says
   it is none of those (§10.5), the board says so again, and the status vocabulary keeps the clinical
   and coordination axes separate so neither can imply the other.
@@ -338,8 +342,9 @@ went in a form that can be counted and audited.
    territory and needs the resource engine rather than a status.
 2. Readiness checklists, which begin by adding `TECH`, `NUR` and `LAB` with their permissions
    (BL-D2, see §4.4), then BL-C3 and BL-C7.
-3. Credential and privilege verification, so that clinical approval stops resting on a role name
-   (AC-009, LP-003, BL-C6).
+3. ~~Credential and privilege verification~~ — **done** (BL-C6, ADR-022). Clinical approval no
+   longer rests on a role name. What remains is governance rather than code: the authoritative
+   source determination, and whether a self-recorded verification is acceptable (BL-G5).
 4. Public service, urgent and policy pages against the approved copy (BL-A1, BL-A3, BL-A6, BL-A7).
 5. Specimen, follow-up and outcome records (BL-C7), now that the laboratory destination scheme is
    answered: a specimen names a configured lab row, and receipt is separate from dispatch.

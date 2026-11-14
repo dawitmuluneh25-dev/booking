@@ -19,6 +19,10 @@ enum AuditAction: string
     case PhysicianVerified = 'physician.verified';
     case PhysicianRejected = 'physician.rejected';
     case PhysicianSuspended = 'physician.suspended';
+    case PractitionerCredentialRecorded = 'practitioner.credential_recorded';
+    case PractitionerCredentialStatusChanged = 'practitioner.credential_status_changed';
+    case PractitionerPrivilegeGranted = 'practitioner.privilege_granted';
+    case PractitionerPrivilegeEnded = 'practitioner.privilege_ended';
     case LoginSucceeded = 'auth.login_succeeded';
     case LoginFailed = 'auth.login_failed';
     case LoginThrottled = 'auth.login_throttled';
@@ -33,6 +37,10 @@ enum AuditAction: string
             self::PhysicianVerified => 'Physician verified',
             self::PhysicianRejected => 'Physician rejected',
             self::PhysicianSuspended => 'Physician suspended',
+            self::PractitionerCredentialRecorded => 'Practitioner credential recorded',
+            self::PractitionerCredentialStatusChanged => 'Practitioner credential status changed',
+            self::PractitionerPrivilegeGranted => 'Procedure privilege granted',
+            self::PractitionerPrivilegeEnded => 'Procedure privilege ended',
             self::LoginSucceeded => 'Sign-in succeeded',
             self::LoginFailed => 'Sign-in failed',
             self::LoginThrottled => 'Sign-in throttled',

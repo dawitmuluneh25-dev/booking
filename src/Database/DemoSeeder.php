@@ -99,6 +99,7 @@ final class DemoSeeder
             $this->requireProcedureCatalogue();
 
             $people = $this->createPeople($hash);
+            $this->credentialTheRadiologist($people['radiologist']);
             $rooms = $this->createResources();
 
             $referrals = $this->createReferrals($people);
@@ -207,6 +208,40 @@ final class DemoSeeder
         }
 
         return $actors;
+    }
+
+    /**
+     * The verification the demo's approvals rest on (AC-009, Decision 6).
+     *
+     * Without it every seeded approval would be refused, because the rule applies to
+     * demo data exactly as it applies to a real one — which is the point of seeding
+     * it through the same command rather than writing the rows directly. The
+     * registration number is marked `DEMO` so it cannot be mistaken for a real one,
+     * and the evidence reference says where it came from. It is recorded by the
+     * radiologist themselves and the register marks that as self-recorded.
+     */
+    private function credentialTheRadiologist(Actor $radiologist): void
+    {
+        $credential = $this->app->recordPractitionerCredential()->execute(
+            $radiologist,
+            $radiologist->userId,
+            [
+                'credential_type' => 'Specialist registration (demo)',
+                'registration_number' => 'DEMO-REG-1',
+                'qualifications' => 'Demo dataset: no real qualification is represented.',
+                'evidence_reference' => 'Demo dataset — recorded so the approval path has a '
+                    . 'verification to check against.',
+                'effective_from' => '2026-01-01',
+            ],
+        );
+
+        foreach (self::PROCEDURES as $code) {
+            $this->app->grantPractitionerPrivilege()->execute($radiologist, $credential->id, [
+                'procedure_code' => $code,
+                'basis' => 'own',
+                'effective_from' => '2026-01-01',
+            ]);
+        }
     }
 
     /** @return array<string, int> resource ids keyed by a short name */

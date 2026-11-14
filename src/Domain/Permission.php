@@ -32,6 +32,23 @@ enum Permission: string
     case ReferralTriage = 'referral.triage';
     case ClinicalReview = 'clinical.review';
     case ClinicalApprove = 'clinical.approve';
+
+    /**
+     * Recording and ending the verification a clinical approval depends on
+     * (Decision 6, AC-009).
+     *
+     * Held by the clinical role and deliberately not by the administrator. The
+     * Product Owner's Decision 5 leaves the system administrator technical
+     * authority only, and Decision 6 says administrators must not be able to bypass
+     * the verification requirement; an account that can write the register can
+     * satisfy it for itself, so the separation is the control.
+     *
+     * It is a governance act rather than an administrative one, and it grants no
+     * approval: recording that somebody is credentialed does not make the recorder
+     * able to approve a procedure.
+     */
+    case ClinicalCredentialManage = 'clinical.credential.manage';
+
     case ProcedureCoordinate = 'procedure.coordinate';
 
     /**

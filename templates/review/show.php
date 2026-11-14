@@ -5,6 +5,7 @@
  * @var list<\App\Domain\ClinicalDecisionType> $decisions
  * @var list<\App\Domain\Priority>      $priorities
  * @var list<array{decision: \App\Domain\ClinicalDecision, reviewer: string, decidedAt: string, superseded: bool}> $history
+ * @var \App\Domain\ClinicalPrivilegeCheck    $authority
  * @var array<string, string>           $errors
  */
 ?>
@@ -98,6 +99,27 @@
     <?php endif; ?>
 
     <?php if ($currentUser->can(\App\Domain\Permission::ClinicalApprove)): ?>
+        <h2 class="section-title">Approval authority</h2>
+        <?php if ($authority->allowed): ?>
+            <p>
+                Your verified credential covers
+                <strong><?= e($procedure?->label ?? 'this procedure') ?></strong>.
+                <?php if ($authority->expiresOn() !== null): ?>
+                    It is in force until <?= e((string) $authority->expiresOn()) ?>.
+                <?php endif; ?>
+            </p>
+        <?php else: ?>
+            <div class="alert alert-warning" role="status">
+                <p><strong>Approval would be refused for you on this procedure.</strong></p>
+                <p><?= e((string) $authority->reason) ?></p>
+                <p class="muted">
+                    The other outcomes remain available: declining, deferring and asking for
+                    information release nothing into the scheduling queue, so they need no
+                    procedure privilege.
+                </p>
+            </div>
+        <?php endif; ?>
+
         <h2 class="section-title">Decision</h2>
         <p class="muted">
             A rationale is required. The decision is recorded against your name and cannot

@@ -7,6 +7,7 @@ namespace Tests\Unit;
 use App\Controllers\ReviewController;
 use App\Domain\Actor;
 use App\Domain\ClinicalDecisionType;
+use App\Domain\ClinicalPrivileges;
 use App\Domain\Procedure;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\Referral;
@@ -21,6 +22,7 @@ use App\Security\Gate;
 use App\Security\PasswordHasher;
 use App\Support\View;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\InMemoryPractitionerCredentialRepository;
 use Tests\Support\InMemoryProcedureRepository;
 use Tests\Support\InMemoryReferralRepository;
 use Tests\Support\InlineTransaction;
@@ -40,6 +42,12 @@ final class ReviewPageTest extends TestCase
     private ReviewController $controller;
 
     private InMemoryReferralRepository $referrals;
+
+    private InMemoryPractitionerCredentialRepository $credentials;
+
+    private Auth $auth;
+
+    private InMemoryProcedureRepository $procedures;
 
     private int $radiologistId = 0;
 
@@ -68,12 +76,35 @@ final class ReviewPageTest extends TestCase
             self::NOW,
         );
 
-        $this->controller = new ReviewController(
+        // AC-009: the radiologist holds a verified privilege for the procedure this
+        // referral is for, so this class exercises the page rather than the gate.
+        // The gate has its own case below.
+        $this->credentials = new InMemoryPractitionerCredentialRepository();
+        $this->credentials->seedApprover($this->radiologistId, 'image_guided_fnac', '2026-01-01');
+
+        $this->auth = $auth;
+        $this->procedures = $procedures;
+        $this->controller = $this->controllerWith($this->credentials);
+    }
+
+    /**
+     * The same page behind a different register, so a test can ask what a
+     * practitioner without a verification sees (AC-009).
+     */
+    private function controllerWith(InMemoryPractitionerCredentialRepository $credentials): ReviewController
+    {
+        return new ReviewController(
             new View(dirname(__DIR__, 2) . '/templates'),
-            new Gate($auth),
-            new RecordClinicalDecision($this->referrals, new Validator(), new InlineTransaction()),
+            new Gate($this->auth),
+            new RecordClinicalDecision(
+                $this->referrals,
+                new Validator(),
+                new InlineTransaction(),
+                new ClinicalPrivileges($credentials),
+            ),
             $this->referrals,
-            $procedures,
+            $this->procedures,
+            new ClinicalPrivileges($credentials),
             'Africa/Addis_Ababa',
         );
     }
@@ -204,6 +235,44 @@ final class ReviewPageTest extends TestCase
         self::assertStringNotContainsString('06:10', $body);
         self::assertStringContainsString('Superseded', $body);
         self::assertStringContainsString('In force', $body);
+    }
+
+    /**
+     * AC-009: the page says approval would be refused before the clinician writes a
+     * rationale, and says which part is missing.
+     */
+    public function testThePageSaysApprovalWouldBeRefusedBeforeTheFormIsFilledIn(): void
+    {
+        $page = $this->body(
+            $this->controllerWith(new InMemoryPractitionerCredentialRepository())
+                ->show(Request::create('GET', '/review/RF-REV-0001'), ['reference' => 'RF-REV-0001']),
+        );
+
+        self::assertStringContainsString('Approval would be refused for you on this procedure.', $page);
+        self::assertStringContainsString('No credential verification is recorded', $page);
+        // The outcomes that release nothing stay reachable, and the page says so.
+        self::assertStringContainsString('declining, deferring and asking for', $page);
+    }
+
+    public function testAnApprovalWithoutAVerificationIsRefusedOnThePageAndNothingIsWritten(): void
+    {
+        $response = $this->controllerWith(new InMemoryPractitionerCredentialRepository())->decide(
+            Request::create('POST', '/referrals/RF-REV-0001/decision', [], [
+                'decision_type' => ClinicalDecisionType::Approved->value,
+                'rationale' => 'Lesion is accessible and the indication is clear.',
+                'clinical_priority' => 'routine',
+                Csrf::FIELD => Csrf::token(),
+            ]),
+            ['reference' => 'RF-REV-0001'],
+        );
+
+        self::assertSame(422, $response->status);
+        self::assertStringContainsString('No credential verification is recorded', $this->body($response));
+        self::assertSame(ReferralStatus::ClinicalReview, $this->statusOf('RF-REV-0001'));
+
+        $referral = $this->referrals->findByReference('RF-REV-0001');
+        self::assertInstanceOf(Referral::class, $referral);
+        self::assertNull($this->referrals->currentDecision($referral->id));
     }
 
     private function decision(

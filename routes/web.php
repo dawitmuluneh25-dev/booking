@@ -29,6 +29,7 @@ use App\Controllers\HomeController;
 use App\Controllers\MyReferralsController;
 use App\Controllers\NotificationController;
 use App\Controllers\PasswordResetController;
+use App\Controllers\PractitionerRegisterController;
 use App\Controllers\ReferralController;
 use App\Controllers\ReviewController;
 use App\Controllers\UrgentController;
@@ -103,6 +104,23 @@ return static function (Application $app): void {
         $app->gate(),
         $app->laboratories(),
         $app->addLaboratoryDestination(),
+    );
+
+    // The credential register a clinical approval is checked against (Decision 6,
+    // AC-009). Read it as "what a verification is made of": who, against what
+    // evidence, in force from when, until when, covering which procedures.
+    $practitioners = new PractitionerRegisterController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->users(),
+        $app->practitionerCredentials(),
+        $app->procedures(),
+        $app->recordPractitionerCredential(),
+        $app->changeCredentialStatus(),
+        $app->grantPractitionerPrivilege(),
+        $app->endPractitionerPrivilege(),
+        $app->config()->timezone(),
     );
 
     $content = new AdminContentController(
@@ -332,6 +350,42 @@ return static function (Application $app): void {
         RouteAccess::permission(Permission::ClinicConfigure),
     );
 
+    // The credential register (Decision 6, AC-009). Not under /admin, and not behind
+    // an administrative permission: Decision 5 leaves the system administrator
+    // technical authority only, and Decision 6 says administrators must not be able
+    // to bypass the verification requirement. An account that can write this table
+    // can satisfy it for itself, so the separation is the control.
+    $router->get(
+        '/practitioners',
+        static fn (Request $request) => $practitioners->index($request),
+        RouteAccess::permission(Permission::ClinicalCredentialManage),
+    );
+    $router->post(
+        '/practitioners/credentials',
+        static fn (Request $request) => $practitioners->recordCredential($request),
+        RouteAccess::permission(Permission::ClinicalCredentialManage),
+    );
+    // Suspension is reversible and revocation is not, so state changes are one
+    // action with the target state in the body rather than three routes that would
+    // have to be kept in step with the enum.
+    $router->post(
+        '/practitioners/credentials/{credentialId}/status',
+        static fn (Request $request, array $params) => $practitioners->changeStatus($request, $params),
+        RouteAccess::permission(Permission::ClinicalCredentialManage),
+    );
+    $router->post(
+        '/practitioners/credentials/{credentialId}/privileges',
+        static fn (Request $request, array $params) => $practitioners->grantPrivilege($request, $params),
+        RouteAccess::permission(Permission::ClinicalCredentialManage),
+    );
+    // Ending a privilege is a date, not a deletion: the row stays and says when the
+    // authority stopped, so decisions taken while it was open stay explainable.
+    $router->post(
+        '/practitioners/privileges/{privilegeId}/end',
+        static fn (Request $request, array $params) => $practitioners->endPrivilege($request, $params),
+        RouteAccess::permission(Permission::ClinicalCredentialManage),
+    );
+
     // §17.5: publishing is a named, dated act, and the screen that performs it is
     // also the screen that says why a page is not showing.
     $router->get(
@@ -526,6 +580,7 @@ return static function (Application $app): void {
         $app->recordClinicalDecision(),
         $app->referrals(),
         $app->procedures(),
+        $app->clinicalPrivileges(),
         $app->config()->timezone(),
     );
 

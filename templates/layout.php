@@ -20,6 +20,12 @@ if ($signedIn) {
         $navItems[] = ['href' => '/review', 'label' => 'Review'];
     }
 
+    // The register the review screen depends on (AC-009). Only the clinical role
+    // holds this, so the link appears for the people whose approvals it gates.
+    if ($currentUser->can(\App\Domain\Permission::ClinicalCredentialManage)) {
+        $navItems[] = ['href' => '/practitioners', 'label' => 'Credentials'];
+    }
+
     if ($currentUser->can(\App\Domain\Permission::UrgentAcknowledge)) {
         $navItems[] = ['href' => '/urgent-cases', 'label' => 'Urgent'];
     }

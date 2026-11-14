@@ -82,6 +82,10 @@ enum Role: string
             self::Radiologist => [
                 Permission::ClinicalReview,
                 Permission::ClinicalApprove,
+                // Clinical governance act, not administration: the clinical role
+                // records the verification its own approvals depend on, and the
+                // administrator cannot (Decision 5, Decision 6, AC-009).
+                Permission::ClinicalCredentialManage,
                 Permission::ProcedureCoordinate,
                 Permission::UrgentAcknowledge,
                 Permission::UrgentCoordinate,

@@ -12,15 +12,19 @@ use App\Validation\Validator;
  * This is the command the prototype did not have, and the reason is worth stating:
  * in the redesign an administrator could move a referral to "approved" because
  * approval was just a status the dashboard wrote. Here the authority is checked
- * three times —
+ * four times —
  *
  *   1. the actor must hold clinical.approve,
- *   2. the current state must list the actor's role as able to perform the
+ *   2. for an approval, the actor must hold a current, procedure-specific privilege
+ *      recorded in the credential register (AC-009, Decision 6),
+ *   3. the current state must list the actor's role as able to perform the
  *      transition to the resulting state,
- *   3. the repository repeats (2) before it writes.
+ *   4. the repository repeats (3) before it writes.
  *
- * Only the radiologist role satisfies all three, so a misconfigured route cannot
- * produce a clinical decision on behalf of reception (WF-03, WF-11).
+ * The radiologist role satisfies the first and third, and a misconfigured route
+ * cannot produce a clinical decision on behalf of reception (WF-03, WF-11). The
+ * second is not a role at all: it is a dated fact about a named practitioner, which
+ * is why suspension, expiry and scope mismatch are refusals rather than settings.
  *
  * A decision and the referral's new state are written in one unit of work: there
  * is no window in which a decision exists on a referral that still reads
@@ -32,6 +36,12 @@ final class RecordClinicalDecision
         private readonly ReferralRepository $repository,
         private readonly Validator $validator,
         private readonly Transaction $transaction,
+        /**
+         * The credential register (AC-009). Required, not optional: an optional
+         * authority check is a bypass with a parameter, and Decision 6 says the
+         * requirement may not be deferred.
+         */
+        private readonly ClinicalPrivileges $privileges,
     ) {
     }
 
@@ -39,6 +49,7 @@ final class RecordClinicalDecision
      * @param array<string, mixed> $input
      *
      * @throws AuthorisationException      the actor is not a clinician
+     * @throws ClinicalPrivilegeException  approval is outside the actor's verified privilege
      * @throws ReferralNotFoundException   the referral does not exist
      * @throws ValidationException         the decision is incomplete
      * @throws ReferralTransitionException the referral is not awaiting a decision
@@ -62,6 +73,26 @@ final class RecordClinicalDecision
             // Refuse before writing anything: a decision recorded against a referral
             // in triage would silently skip review.
             throw new ReferralTransitionException($referral->status, $target);
+        }
+
+        $decidedAtUtc = $nowUtc ?? gmdate('Y-m-d H:i:s');
+
+        // AC-009 / Decision 6. Approval is a procedure-specific act, so it is
+        // refused before the form is examined: a practitioner whose verification has
+        // lapsed is told that, rather than being asked to write a rationale and then
+        // refused. The other outcomes release nothing into a queue and are not gated
+        // here — declining a referral needs no privilege, and gating it would have
+        // meant inventing a rule the decision does not state.
+        if ($type === ClinicalDecisionType::Approved) {
+            $check = $this->privileges->check(
+                $actor->userId,
+                $referral->procedureCode,
+                substr($decidedAtUtc, 0, 10),
+            );
+
+            if (!$check->allowed) {
+                throw new ClinicalPrivilegeException((string) $check->reason);
+            }
         }
 
         $data = [
@@ -109,7 +140,6 @@ final class RecordClinicalDecision
             throw new ValidationException($errors);
         }
 
-        $decidedAtUtc = $nowUtc ?? gmdate('Y-m-d H:i:s');
         $current = $this->repository->currentDecision($referral->id);
 
         $decision = new ClinicalDecision(

@@ -54,7 +54,13 @@ use App\Domain\RecordClinicalAssessment;
 use App\Domain\VerifyGuardianAuthority;
 use App\Domain\AddLaboratoryDestination;
 use App\Domain\LaboratoryDestinationRepository;
+use App\Domain\ChangePractitionerCredentialStatus;
+use App\Domain\ClinicalPrivileges;
+use App\Domain\EndPractitionerPrivilege;
+use App\Domain\GrantPractitionerPrivilege;
+use App\Domain\PractitionerCredentialRepository;
 use App\Domain\RecordClinicalDecision;
+use App\Domain\RecordPractitionerCredential;
 use App\Domain\RecordProcedureConsent;
 use App\Domain\WithdrawConsent;
 use App\Domain\ContentRepository;
@@ -106,6 +112,7 @@ use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoPatientRelationshipRepository;
 use App\Repositories\PdoPhysicianProfileRepository;
+use App\Repositories\PdoPractitionerCredentialRepository;
 use App\Repositories\PdoProcedureRepository;
 use App\Repositories\PdoUrgentCaseRepository;
 use App\Domain\ResourceAdminRepository;
@@ -162,6 +169,18 @@ final class Application
     private ?VerifyGuardianAuthority $verifyGuardian = null;
 
     private ?LaboratoryDestinationRepository $laboratories = null;
+
+    private ?PractitionerCredentialRepository $practitionerCredentials = null;
+
+    private ?ClinicalPrivileges $clinicalPrivileges = null;
+
+    private ?RecordPractitionerCredential $recordPractitionerCredential = null;
+
+    private ?ChangePractitionerCredentialStatus $changeCredentialStatus = null;
+
+    private ?GrantPractitionerPrivilege $grantPrivilege = null;
+
+    private ?EndPractitionerPrivilege $endPrivilege = null;
 
     private ?AddLaboratoryDestination $addLaboratory = null;
 
@@ -377,6 +396,7 @@ final class Application
             $this->referrals(),
             new Validator(),
             $this->transaction(),
+            $this->clinicalPrivileges(),
         );
     }
 
@@ -457,6 +477,63 @@ final class Application
     public function addLaboratoryDestination(): AddLaboratoryDestination
     {
         return $this->addLaboratory ??= new AddLaboratoryDestination($this->laboratories());
+    }
+
+    /**
+     * The credential register (Decision 6, AC-009).
+     *
+     * One instance per request, shared by the approval check and the screen that
+     * writes it — the check reads it on every clinical approval.
+     */
+    public function practitionerCredentials(): PractitionerCredentialRepository
+    {
+        return $this->practitionerCredentials ??= new PdoPractitionerCredentialRepository($this->pdo());
+    }
+
+    public function clinicalPrivileges(): ClinicalPrivileges
+    {
+        return $this->clinicalPrivileges ??= new ClinicalPrivileges($this->practitionerCredentials());
+    }
+
+    public function recordPractitionerCredential(): RecordPractitionerCredential
+    {
+        return $this->recordPractitionerCredential ??= new RecordPractitionerCredential(
+            $this->practitionerCredentials(),
+            $this->users(),
+            new Validator(),
+            $this->transaction(),
+            $this->auditTrail(),
+        );
+    }
+
+    public function changeCredentialStatus(): ChangePractitionerCredentialStatus
+    {
+        return $this->changeCredentialStatus ??= new ChangePractitionerCredentialStatus(
+            $this->practitionerCredentials(),
+            $this->transaction(),
+            $this->auditTrail(),
+        );
+    }
+
+    public function grantPractitionerPrivilege(): GrantPractitionerPrivilege
+    {
+        return $this->grantPrivilege ??= new GrantPractitionerPrivilege(
+            $this->practitionerCredentials(),
+            $this->procedures(),
+            $this->users(),
+            new Validator(),
+            $this->transaction(),
+            $this->auditTrail(),
+        );
+    }
+
+    public function endPractitionerPrivilege(): EndPractitionerPrivilege
+    {
+        return $this->endPrivilege ??= new EndPractitionerPrivilege(
+            $this->practitionerCredentials(),
+            $this->transaction(),
+            $this->auditTrail(),
+        );
     }
 
     public function recordProcedureConsent(): RecordProcedureConsent

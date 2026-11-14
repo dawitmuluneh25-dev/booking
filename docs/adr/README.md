@@ -44,6 +44,7 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-019](#adr-019) | Two identifiers per service: the catalogue code stays, the approved code is recorded beside it | Implemented | Architecture, on the approved catalogue in HR-IR-CLIN-R1-001 §3.1 | 2026-11-12 | — |
 | [ADR-020](#adr-020) | Claiming an urgent case and closing one are different permissions | Implemented | Architecture, against the two-axis urgent aggregate (WF-05) | 2026-11-12 | — |
 | [ADR-021](#adr-021) | A notification body that is a credential does not outlive its send | Implemented | Architecture + Operations | 2026-11-13 | — |
+| [ADR-022](#adr-022) | Clinical approval is gated on a dated, procedure-scoped verification | Implemented | Architecture, on Product Owner Decision 6 | 2026-11-14 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -619,3 +620,79 @@ the notification list.
   and a reset would hand it exactly the sign-in the model says it does not have.
 - A referring physician does not hold `notification.read`. The list is the clinic's traffic, not
   theirs.
+
+## ADR-022
+
+**Clinical approval is gated on a dated, procedure-scoped verification**
+
+**Context.** AC-009 requires clinical approval to be unavailable until verification is recorded,
+LP-003 names the register that verification would live in, and §16.3 requires delegation and
+temporary coverage to be verifiable rather than implied. The traceability record listed AC-009 as
+*not started*, and it was right: `RecordClinicalDecision` checked `clinical.approve` and the state
+machine, and nothing else. A permission is a role grant, and a role grant cannot expire, cannot be
+suspended for one practitioner while their colleagues carry on, and cannot name a procedure. A
+practitioner whose registration had lapsed approved exactly as readily as one whose had not.
+
+The Product Owner's Decision 6 (14 November 2026) closed the question and refused to defer it:
+implement a minimal verification register in Release 1, and enforce the check that the register
+exists for. It also left one thing open — whether an existing institutional register is the
+authoritative source — so this decision records a register that carries what a verifier saw without
+claiming to be that source.
+
+**Decision.** Two tables and one rule.
+
+`practitioner_credentials` records a verification: the linked account, the credential type and
+registration number, qualifications, the evidence the verifier checked, the institutional privilege
+status where one applies, any supervision or delegation restriction, the state, who verified it and
+when, and the window it is in force for. `practitioner_privileges` records the procedure-specific
+scope as a reference to `procedures.code`, with a window of its own, a basis (`own`, `delegated`,
+`temporary_coverage`), and the practitioner whose authority a delegated or coverage privilege
+borrows.
+
+`RecordClinicalDecision` asks `ClinicalPrivileges` before it validates the form. Approval is
+refused unless a credential is verified, its window covers the day of the decision, and a privilege
+for the referral's procedure is inside its window. Everything else — decline, defer, ask for
+information, redirect — is not gated, because Decision 6 names approval and those outcomes release
+nothing into the elective queue.
+
+Three implementation choices are part of the decision rather than details:
+
+- **Expiry is computed, never stored.** There is no `expired` status and no job that would set one.
+  A credential that ran out is a verified credential whose window closed, and the comparison happens
+  when the decision is taken.
+- **Revocation is final; suspension is not.** Reinstating a revoked credential would erase the
+  finding that it should not have been relied on, so a practitioner is credentialed again by a new
+  record with its own evidence.
+- **The register is a clinical act, not an administrative one.** `clinical.credential.manage` is
+  held by `Role::Radiologist` and deliberately not by `Role::Admin`, which Decision 5 confines to
+  technical authority. An account that can write the register can satisfy it for itself, so the
+  separation *is* the control Decision 6 asked for.
+
+**Consequences.**
+
+- Every approval now depends on a row that did not exist before this change. A fresh deployment
+  cannot approve anything until a verification is recorded, which is the requirement rather than a
+  defect; the demo seed records one through the same command the screen uses, so the demo does not
+  paper over the gate.
+- A practitioner can record their own verification, and the register marks it **Self-recorded**.
+  Refusing self-verification would have made a single-clinician clinic unable to approve anything,
+  and independence of verification is a governance control the decision does not state. Whether
+  Clinical Governance accepts a self-recorded verification belongs to BL-G5, and the row makes the
+  question visible instead of answering it in code.
+- The register does not claim to be the authoritative credential source. Decision 6 asks Clinical
+  Governance first whether an institutional register exists; `evidence_reference` and
+  `institutional_privilege_status` carry what the verifier consulted, so a later decision to
+  reference an external register adds a field, not a migration of meaning.
+- Supervision text is recorded and displayed, never interpreted. What a supervision condition
+  permits is a clinical rule the approved package does not state, so the check refuses on scope and
+  dates only.
+- The administrator cannot write the register. If no clinical account is available, credential
+  changes wait, which is an operational dependency worth naming rather than a gap to be closed by
+  widening the grant.
+- Urgent clinical decisions (`RecordUrgentDecision`) are not gated by this rule: the urgent axis has
+  its own decision record, and Decision 6 speaks of the procedure approval that releases an elective
+  referral. Extending it is a separate decision with its own consequences, recorded here so it is a
+  known boundary rather than an oversight.
+
+**Status.** Implemented. **Owner.** Architecture, on Product Owner Decision 6 (C-6), against AC-009,
+LP-003 and §16.3. **Date.** 2026-11-14. **Supersedes.** —.

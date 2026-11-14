@@ -46,6 +46,8 @@ final class MigrationIntegrityTest extends TestCase
         'consent_records',
         'patient_relationships',
         'physician_profiles',
+        'practitioner_credentials',
+        'practitioner_privileges',
         'clinic_hours',
         'idempotency_keys',
         'laboratory_destinations',

@@ -7,6 +7,9 @@ namespace Tests\Unit;
 use App\Domain\Actor;
 use App\Domain\AuthorisationException;
 use App\Domain\ClinicalDecisionType;
+use App\Domain\ClinicalPrivilegeException;
+use App\Domain\ClinicalPrivileges;
+use App\Domain\PractitionerCredentialStatus;
 use App\Domain\RecordClinicalDecision;
 use App\Domain\Referral;
 use App\Domain\ReferralNotFoundException;
@@ -17,6 +20,7 @@ use App\Domain\Transaction;
 use App\Domain\ValidationException;
 use App\Validation\Validator;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\InMemoryPractitionerCredentialRepository;
 use Tests\Support\InMemoryReferralRepository;
 
 final class RecordClinicalDecisionTest extends TestCase
@@ -25,6 +29,8 @@ final class RecordClinicalDecisionTest extends TestCase
 
     private InMemoryReferralRepository $repository;
 
+    private InMemoryPractitionerCredentialRepository $credentials;
+
     private RecordClinicalDecision $command;
 
     private int $nextId = 1;
@@ -32,10 +38,18 @@ final class RecordClinicalDecisionTest extends TestCase
     protected function setUp(): void
     {
         $this->repository = new InMemoryReferralRepository();
+        $this->credentials = new InMemoryPractitionerCredentialRepository();
+
+        // AC-009: the radiologist whose decisions the rest of this class exercises
+        // holds a verified privilege for the procedure these referrals are for. The
+        // refusals below seed their own registers so the gate is proven, not assumed.
+        $this->credentials->seedApprover(2, 'image_guided_biopsy', '2026-01-01');
+
         $this->command = new RecordClinicalDecision(
             $this->repository,
             new Validator(),
             $this->passthroughTransaction(),
+            new ClinicalPrivileges($this->credentials),
         );
     }
 
@@ -385,6 +399,128 @@ final class RecordClinicalDecisionTest extends TestCase
 
         self::assertSame('expedited', $updated->requestedUrgency);
         self::assertSame('routine', $updated->clinicalPriority);
+    }
+
+    /**
+     * AC-009 / Decision 6: no verification, no approval — and the refusal says what
+     * is missing rather than "forbidden".
+     */
+    public function testAnApprovalWithoutARecordedVerificationIsRefused(): void
+    {
+        $referral = $this->referralInReview();
+        $unverified = $this->commandWith(new InMemoryPractitionerCredentialRepository());
+
+        try {
+            $unverified->execute(new Actor(2, Role::Radiologist), $referral->id, $this->approval(), self::NOW);
+            self::fail('An approval was recorded with no credential on the register.');
+        } catch (ClinicalPrivilegeException $exception) {
+            self::assertStringContainsString('No credential verification is recorded', $exception->getMessage());
+            self::assertStringContainsString('AC-009', $exception->getMessage());
+        }
+
+        self::assertSame(ReferralStatus::ClinicalReview, $this->statusOf($referral->id));
+        self::assertNull($this->repository->currentDecision($referral->id));
+    }
+
+    /** A credential is not a licence for every procedure. */
+    public function testAnApprovalOutsideTheVerifiedProcedureIsRefused(): void
+    {
+        $referral = $this->referralInReview();
+        $otherProcedure = new InMemoryPractitionerCredentialRepository();
+        $otherProcedure->seedApprover(2, 'image_guided_abscess_drainage', '2026-01-01');
+
+        try {
+            $this->commandWith($otherProcedure)->execute(
+                new Actor(2, Role::Radiologist),
+                $referral->id,
+                $this->approval(),
+                self::NOW,
+            );
+            self::fail('A privilege for one procedure authorised another.');
+        } catch (ClinicalPrivilegeException $exception) {
+            self::assertStringContainsString('no privilege for this procedure', $exception->getMessage());
+        }
+
+        self::assertSame(ReferralStatus::ClinicalReview, $this->statusOf($referral->id));
+    }
+
+    public function testAnExpiredVerificationRefusesApprovalAndNamesTheDate(): void
+    {
+        $referral = $this->referralInReview();
+        $expired = new InMemoryPractitionerCredentialRepository();
+        $expired->seedApprover(2, 'image_guided_biopsy', '2026-01-01', '2026-11-01');
+
+        try {
+            $this->commandWith($expired)->execute(
+                new Actor(2, Role::Radiologist),
+                $referral->id,
+                $this->approval(),
+                self::NOW,
+            );
+            self::fail('An expired verification authorised an approval.');
+        } catch (ClinicalPrivilegeException $exception) {
+            self::assertStringContainsString('expired on 2026-11-01', $exception->getMessage());
+        }
+
+        self::assertSame(ReferralStatus::ClinicalReview, $this->statusOf($referral->id));
+    }
+
+    public function testASuspendedVerificationRefusesApproval(): void
+    {
+        $referral = $this->referralInReview();
+        $suspended = new InMemoryPractitionerCredentialRepository();
+        $suspended->seedApprover(
+            2,
+            'image_guided_biopsy',
+            '2026-01-01',
+            null,
+            PractitionerCredentialStatus::Suspended,
+        );
+
+        try {
+            $this->commandWith($suspended)->execute(
+                new Actor(2, Role::Radiologist),
+                $referral->id,
+                $this->approval(),
+                self::NOW,
+            );
+            self::fail('A suspended credential authorised an approval.');
+        } catch (ClinicalPrivilegeException $exception) {
+            self::assertStringContainsString('suspended', $exception->getMessage());
+        }
+
+        self::assertSame(ReferralStatus::ClinicalReview, $this->statusOf($referral->id));
+    }
+
+    /**
+     * The gate is on approval, not on having a credential at all: declining a
+     * referral releases nothing into a queue, and Decision 6 names approval.
+     */
+    public function testDecliningNeedsNoCredential(): void
+    {
+        $referral = $this->referralInReview();
+
+        $updated = $this->commandWith(new InMemoryPractitionerCredentialRepository())->execute(
+            new Actor(2, Role::Radiologist),
+            $referral->id,
+            [
+                'decision_type' => 'declined',
+                'rationale' => 'Lesion is too small to characterise safely; repeat imaging in six months.',
+            ],
+            self::NOW,
+        );
+
+        self::assertSame(ReferralStatus::Declined, $updated->status);
+    }
+
+    private function commandWith(InMemoryPractitionerCredentialRepository $credentials): RecordClinicalDecision
+    {
+        return new RecordClinicalDecision(
+            $this->repository,
+            new Validator(),
+            $this->passthroughTransaction(),
+            new ClinicalPrivileges($credentials),
+        );
     }
 
     /** @return array<string, string> */
