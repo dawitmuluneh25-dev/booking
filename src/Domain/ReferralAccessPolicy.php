@@ -19,7 +19,13 @@ namespace App\Domain;
  *   the one it was submitted under, and an unverified or suspended profile sees
  *   none (AUTH-02);
  * - a patient sees the referrals they submitted, and a recorded guardian with
- *   acting authority sees the same set.
+ *   acting authority sees the same set;
+ * - the clinical support roles see none. `TECH`, `NUR` and `LAB` prepare a room,
+ *   prepare a patient and handle a specimen; a referral carries the patient's name,
+ *   telephone number, clinical summary and target site, none of which any of those
+ *   tasks requires. When a readiness or specimen surface eventually needs to name the
+ *   referral a specimen came from, it will need an identifier and a scoped rule of its
+ *   own — not this one widened (Decision 5, ADR-023).
  *
  * Institution is not part of this decision anywhere, and must not become part of
  * it: it is free text on the profile, so treating it as a boundary would mean
@@ -40,6 +46,11 @@ final class ReferralAccessPolicy
             Role::Admin, Role::Staff, Role::Radiologist, Role::Coordinator => true,
             Role::Physician => $this->isTheirOwnReferral($referral, $profile),
             Role::Patient => $referral->submittedByUserId === $user->id || $isActingGuardian,
+            // No referral permission is granted to these three, so this is the second
+            // gate agreeing with the first rather than a rule of its own. Writing it
+            // out means the match cannot silently fall through for a role nobody
+            // considered — which is how a new role acquires access it was never given.
+            Role::Technician, Role::Nurse, Role::Laboratory => false,
         };
     }
 

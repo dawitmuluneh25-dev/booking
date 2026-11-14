@@ -45,6 +45,7 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-020](#adr-020) | Claiming an urgent case and closing one are different permissions | Implemented | Architecture, against the two-axis urgent aggregate (WF-05) | 2026-11-12 | — |
 | [ADR-021](#adr-021) | A notification body that is a credential does not outlive its send | Implemented | Architecture + Operations | 2026-11-13 | — |
 | [ADR-022](#adr-022) | Clinical approval is gated on a dated, procedure-scoped verification | Implemented | Architecture, on Product Owner Decision 6 | 2026-11-14 | — |
+| [ADR-023](#adr-023) | Three clinical support roles hold no clinical authority and start with one non-clinical permission | Implemented | Architecture, on Product Owner Decision 5 | 2026-11-14 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -696,3 +697,53 @@ Three implementation choices are part of the decision rather than details:
 
 **Status.** Implemented. **Owner.** Architecture, on Product Owner Decision 6 (C-6), against AC-009,
 LP-003 and §16.3. **Date.** 2026-11-14. **Supersedes.** —.
+
+## ADR-023
+
+**Three clinical support roles hold no clinical authority and start with one non-clinical permission**
+
+**Context.** The approved role matrix names nine internal roles; the application could store
+six. `TECH`, `NUR` and `LAB` had no counterpart, so a readiness item could not be assigned to a
+technician and a specimen could not be received by a laboratory officer — there was nobody to be.
+Product Owner Decision 5 (14 November 2026) approved all three as distinct Release 1 permission
+roles, stated each one's authority, and stated each one's restrictions: no independent clinical
+review, priority or procedure approval; no unauthorised consent decisions; specimen-related access
+for `LAB` and nothing wider.
+
+The difficulty is that the surfaces those roles are named for do not exist yet. Readiness
+checklists are BL-D2, the appointment and milestone surface is BL-C3, and specimen records are
+BL-C7. The role model could either grant what the decision *describes* — producing permissions no
+route exercises — or grant only what a screen can reach.
+
+**Decision.** The enum, the database constraint and the labels are added now; the grants are not.
+Each of the three holds exactly one permission: `notification.read`, the in-app list that carries a
+reference and a time and nothing else. Their real authority arrives with the screens that need it,
+as new permissions introduced with those screens. `isClinical()` stays false for all three, and the
+test for it in this codebase is holding `clinical.review` or `clinical.approve`.
+
+The role values are the matrix's own abbreviations — `tech`, `nur`, `lab` — so that a governance
+document and a `users.role` column cannot end up naming the same person differently.
+
+**Consequences.**
+
+- Provisioning can begin before the surfaces exist, which is what Operations needs in order to
+  confirm staffing (Decision 5). An account that can sign in and see its own notification list is
+  a testable account; an account that cannot be created is not.
+- The gap between the approved authority and the implemented grants is a table in
+  `docs/clinical/role-matrix-mapping.md`, not an omission. BL-G5 signs that document, and it says
+  what each role may do *today* rather than what it will eventually do.
+- `RoleTest` asserts the exact permission set for the three roles, so granting one of them anything
+  later fails the build. A role that quietly accumulates authority as screens are built is how a
+  matrix stops describing the system.
+- Widening `ck_users_role` (0041) makes a role name storable and grants nothing. The two
+  vocabularies — enum and CHECK — are widened together because a role the domain knows and the
+  database refuses is an account that cannot be created.
+- Nursing documentation is not clinical approval (Decision 5, explicit). `NUR` therefore holds
+  neither `clinical.review` nor `clinical.approve`, and the nursing record it will write is a
+  separate artefact from the clinician's decision.
+- The three roles do not appear in the demo seed. An account whose only page is an empty
+  notification list teaches a demonstrator nothing, and the constraint is already proven by the
+  migration test.
+
+**Status.** Implemented. **Owner.** Architecture, on Product Owner Decision 5 (C-4).
+**Date.** 2026-11-14. **Supersedes.** —.

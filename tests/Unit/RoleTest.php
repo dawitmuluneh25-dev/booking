@@ -121,6 +121,40 @@ final class RoleTest extends TestCase
         self::assertSame([], Role::Patient->permissions());
     }
 
+    /**
+     * Decision 5 approves three clinical support roles and states what each may
+     * *not* do. The test asserts the whole permission set rather than the absences,
+     * so a future grant to one of these roles fails here and has to be argued for
+     * instead of slipping in beside a screen.
+     */
+    public function testTheClinicalSupportRolesHoldNoClinicalAuthority(): void
+    {
+        $mustNotHold = [
+            Permission::ClinicalReview,
+            Permission::ClinicalApprove,
+            Permission::ClinicalCredentialManage,
+            Permission::ReferralTriage,
+            Permission::ScheduleManage,
+            Permission::ProcedureCoordinate,
+            Permission::UrgentCoordinate,
+            Permission::UsersManage,
+            Permission::ClinicConfigure,
+        ];
+
+        foreach ([Role::Technician, Role::Nurse, Role::Laboratory] as $role) {
+            self::assertSame([Permission::NotificationRead], $role->permissions(), $role->value);
+            self::assertTrue($role->canSignIn(), $role->value);
+            self::assertFalse($role->isClinical(), $role->value);
+
+            foreach ($mustNotHold as $permission) {
+                self::assertFalse(
+                    $role->can($permission),
+                    $role->value . ' must not hold ' . $permission->value,
+                );
+            }
+        }
+    }
+
     public function testEverySigningInRoleHasALabelAndAStatedReason(): void
     {
         foreach (Role::cases() as $role) {

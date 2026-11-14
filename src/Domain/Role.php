@@ -23,6 +23,19 @@ enum Role: string
     case Radiologist = 'radiologist';
     case Physician = 'physician';
     case Coordinator = 'coordinator';
+
+    /**
+     * The three clinical support roles the approved matrix names, added under
+     * Product Owner Decision 5 (14 November 2026).
+     *
+     * The values are the matrix's own abbreviations (`TECH`, `NUR`, `LAB`) rather
+     * than paraphrases, so a governance document and a `users.role` column cannot
+     * drift into saying different things about the same person.
+     */
+    case Technician = 'tech';
+    case Nurse = 'nur';
+    case Laboratory = 'lab';
+
     case Patient = 'patient';
 
     public function label(): string
@@ -33,6 +46,9 @@ enum Role: string
             self::Radiologist => 'Interventional radiologist',
             self::Physician => 'Referring physician',
             self::Coordinator => 'Procedure coordinator',
+            self::Technician => 'Radiology technician (TECH)',
+            self::Nurse => 'Nurse (NUR)',
+            self::Laboratory => 'Laboratory officer (LAB)',
             self::Patient => 'Patient or guardian',
         };
     }
@@ -115,6 +131,26 @@ enum Role: string
                 Permission::DocumentDownload,
                 Permission::NotificationRead,
             ],
+            // The three clinical support roles hold one capability and no clinical
+            // authority (Decision 5, ADR-023).
+            //
+            // Decision 5 gives each of them an area of work — assigned modality,
+            // equipment and technical readiness tasks; nursing readiness and nursing
+            // documentation; specimen receipt, handling, processing and receipt
+            // status — and none of those surfaces exists yet. Granting a permission
+            // for a screen that has not been built would put a claim in the role
+            // matrix that the product cannot honour, and BL-E1 was closed for exactly
+            // that: a policy nobody can exercise is not a control.
+            //
+            // So each starts with the only surface that exists, is reachable, and
+            // carries no clinical content: the in-app notification list, which shows a
+            // reference and a time and nothing else. It is what makes the account
+            // usable the day it is provisioned. Their real grants arrive with BL-C3
+            // (readiness) and BL-C7 (specimens), as new permissions — never by
+            // widening one of these.
+            self::Technician, self::Nurse, self::Laboratory => [
+                Permission::NotificationRead,
+            ],
             // A record-only identity (ADR-016): the patient a referral was submitted
             // for, and the identity a guardian relationship points at. It holds no
             // capability, because a grant nothing can reach is a permission waiting
@@ -141,7 +177,16 @@ enum Role: string
         return in_array($permission, $this->permissions(), true);
     }
 
-    /** Roles that may hold clinical authority. Keeps administration out of it. */
+    /**
+     * Roles that may hold clinical authority. Keeps administration out of it.
+     *
+     * `NUR` prepares a patient and documents what they did; `TECH` prepares the
+     * machine and the room; `LAB` handles the specimen. None of that is a clinical
+     * decision, and Decision 5 says so explicitly — nursing documentation is not
+     * approval, and a role that prepares is not a role that decides. The test for
+     * this flag in this codebase is holding `clinical.review` or
+     * `clinical.approve`, which none of the three does.
+     */
     public function isClinical(): bool
     {
         return $this === self::Radiologist;

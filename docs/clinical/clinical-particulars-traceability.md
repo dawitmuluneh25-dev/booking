@@ -116,7 +116,7 @@ before production and none has been executed.
 | An administrator holds no clinical authority | Implemented | `Role::Admin::permissions()` grants no clinical permission; `ReferralStatus::allowedActors()` refuses an administrative clinical transition |
 | Reception schedules only after clinical approval | Implemented | `ApprovedForScheduling` transition requires the clinical state first; `ApproveForSchedulingTest` |
 | A job title does not activate clinical permission | Implemented | Two separate facts are required: the account's role grants `clinical.approve`, and the practitioner holds a verified, unexpired, procedure-specific privilege (migration 0040, ADR-022). The check reads only dated facts about a named person; it never reads a title, a rota line or the role itself |
-| Twelve-role matrix | Partial | The application has six roles. Document roles `TECH`, `NUR`, `LAB` and the surgical/anaesthesia columns have no counterpart — see §4.4 |
+| Twelve-role matrix | Partial | The application now stores all nine internal roles: `TECH`, `NUR` and `LAB` exist as of Decision 5 / migration 0041 (ADR-023). The surgical and anaesthesia columns remain external participants with no login, which Decision 5 confirms rather than defers. The three new roles hold no clinical authority and, for now, one non-clinical permission each — their named surfaces arrive with BL-C3, BL-C7 and BL-D2, and `docs/clinical/role-matrix-mapping.md` records that gap for signature |
 
 ### 3.9 Patient-facing content (§17, §11, A-11)
 

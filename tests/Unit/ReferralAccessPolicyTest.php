@@ -77,6 +77,23 @@ final class ReferralAccessPolicyTest extends TestCase
         }
     }
 
+    /**
+     * Decision 5 gives the clinical support roles a room, a patient and a specimen —
+     * none of which needs the patient's name, telephone number, clinical summary or
+     * target site. A referral carries all four, so none of them sees one.
+     */
+    public function testTheClinicalSupportRolesSeeNoReferral(): void
+    {
+        $referral = $this->referral(1);
+
+        foreach ([Role::Technician, Role::Nurse, Role::Laboratory] as $role) {
+            self::assertFalse(
+                $this->policy->canView($this->user(4, $role), $referral),
+                $role->value . ' must not see a referral',
+            );
+        }
+    }
+
     public function testAPatientSeesOnlyWhatTheySubmitted(): void
     {
         $referral = $this->referral(1);
