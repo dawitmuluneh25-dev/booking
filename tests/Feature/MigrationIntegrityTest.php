@@ -46,6 +46,7 @@ final class MigrationIntegrityTest extends TestCase
         'consent_records',
         'patient_relationships',
         'physician_profiles',
+        'procedure_milestones',
         'practitioner_credentials',
         'practitioner_privileges',
         'escalation_routes',
@@ -250,6 +251,9 @@ final class MigrationIntegrityTest extends TestCase
             'urgent_escalations',
             'urgent_events',
             'appointment_status_history',
+            // A procedure-day event is history the same way a status change is: the
+            // appointment it describes must not be able to take it down with it.
+            'procedure_milestones',
             'audit_events',
         ];
 

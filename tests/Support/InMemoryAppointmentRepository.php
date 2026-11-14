@@ -37,6 +37,25 @@ final class InMemoryAppointmentRepository implements AppointmentRepository
     /** @var list<int> */
     private array $locks = [];
 
+    /**
+     * @var array<int, list<array{
+     *     from: string|null,
+     *     to: string,
+     *     actorRole: string,
+     *     actorName: string|null,
+     *     reason: string|null,
+     *     occurredAtUtc: string
+     * }>>
+     */
+    private array $history = [];
+
+    /**
+     * @param array<int, string> $resourceNames id => name, for the detail page
+     */
+    public function __construct(private readonly array $resourceNames = [])
+    {
+    }
+
     public function book(
         Appointment $appointment,
         int $resourceId,
@@ -229,6 +248,17 @@ final class InMemoryAppointmentRepository implements AppointmentRepository
 
         $this->appointments[$moved->id] = $moved;
 
+        $this->history[$moved->id][] = [
+            'from' => $stored->status->value,
+            'to' => $target->value,
+            'actorRole' => $actor->role->value,
+            // The in-memory double carries no user table; the name is resolved from
+            // `users` only against MySQL (`PdoAppointmentRepository::historyFor`).
+            'actorName' => null,
+            'reason' => $reason,
+            'occurredAtUtc' => $occurredAtUtc,
+        ];
+
         if (!$target->holdsResources()) {
             foreach ($this->occupancy as $key => $appointmentId) {
                 if ($appointmentId === $moved->id) {
@@ -238,6 +268,53 @@ final class InMemoryAppointmentRepository implements AppointmentRepository
         }
 
         return $moved;
+    }
+
+    public function historyFor(int $appointmentId): array
+    {
+        return $this->history[$appointmentId] ?? [];
+    }
+
+    public function resourcesFor(int $appointmentId): array
+    {
+        $resourceId = $this->resourceOf[$appointmentId] ?? null;
+
+        if ($resourceId === null) {
+            return [];
+        }
+
+        return [[
+            'name' => $this->resourceNames[$resourceId] ?? ('Resource ' . $resourceId),
+            'modality' => null,
+            'role' => 'primary',
+        ]];
+    }
+
+    public function forDay(string $fromUtc, string $toUtc): array
+    {
+        $matching = [];
+
+        foreach ($this->appointments as $appointment) {
+            if ($appointment->startsAtUtc < $fromUtc || $appointment->startsAtUtc >= $toUtc) {
+                continue;
+            }
+
+            if (
+                $appointment->status === AppointmentStatus::Cancelled
+                || $appointment->status === AppointmentStatus::NoShow
+            ) {
+                continue;
+            }
+
+            $matching[] = $appointment;
+        }
+
+        usort(
+            $matching,
+            static fn (Appointment $left, Appointment $right): int => strcmp($left->startsAtUtc, $right->startsAtUtc),
+        );
+
+        return $matching;
     }
 
     /** @return list<string> */

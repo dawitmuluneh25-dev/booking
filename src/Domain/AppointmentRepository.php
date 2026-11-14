@@ -69,6 +69,43 @@ interface AppointmentRepository
     public function findById(int $id): ?Appointment;
 
     /**
+     * The appointment's own state changes, oldest first, with who made each one.
+     *
+     * The name is resolved at read time rather than stored on the row: a
+     * practitioner who changes their name has not changed what they did, and the
+     * history is a record of the act.
+     *
+     * @return list<array{
+     *     from: string|null,
+     *     to: string,
+     *     actorRole: string,
+     *     actorName: string|null,
+     *     reason: string|null,
+     *     occurredAtUtc: string
+     * }>
+     */
+    public function historyFor(int $appointmentId): array;
+
+    /**
+     * The rooms, suites and people committed to an appointment.
+     *
+     * @return list<array{name: string, modality: string|null, role: string}>
+     */
+    public function resourcesFor(int $appointmentId): array;
+
+    /**
+     * Appointments starting inside the window that still happened or still will.
+     *
+     * Cancelled and missed cases are excluded because a coordination queue is a
+     * list of work, and a cancelled case is not work. Completed ones are included:
+     * by the afternoon most of the day's list is behind the team, and hiding it
+     * would make the queue look emptier than the day was.
+     *
+     * @return list<Appointment> ordered by start
+     */
+    public function forDay(string $fromUtc, string $toUtc): array;
+
+    /**
      * Move an appointment through its own lifecycle, guarded by the version and by
      * the appointment's transition table — never by the referral's (WF-15).
      *

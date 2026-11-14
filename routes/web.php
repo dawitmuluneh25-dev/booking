@@ -17,6 +17,7 @@ use App\Controllers\AdminHoursController;
 use App\Controllers\AdminPhysicianController;
 use App\Controllers\AdminResourceController;
 use App\Controllers\AdminUserController;
+use App\Controllers\AppointmentController;
 use App\Controllers\AuthController;
 use App\Controllers\AvailabilityController;
 use App\Controllers\BookingController;
@@ -488,6 +489,37 @@ return static function (Application $app): void {
         '/schedule/{reference}/cancel',
         static fn (Request $request, array $params) => $schedule->cancel($request, $params),
         RouteAccess::permission(Permission::BookingsManage),
+    );
+
+    $appointments = new AppointmentController(
+        $app->view(),
+        $app->gate(),
+        $app->appointments(),
+        $app->procedureMilestones(),
+        $app->referrals(),
+        $app->consents(),
+        $app->documents(),
+        $app->recordProcedureMilestone(),
+        $app->config()->timezone(),
+    );
+
+    // The day's list and one appointment are the same audience: the four roles that
+    // hold `schedule.manage` are the ones in the room. Which event each of them may
+    // *record* is asked per kind inside the page and again in the command.
+    $router->get(
+        '/appointments',
+        static fn (Request $request) => $appointments->index($request),
+        RouteAccess::permission(Permission::ScheduleManage),
+    );
+    $router->get(
+        '/appointments/{reference}',
+        static fn (Request $request, array $params) => $appointments->show($request, $params),
+        RouteAccess::permission(Permission::ScheduleManage),
+    );
+    $router->post(
+        '/appointments/{reference}/milestones',
+        static fn (Request $request, array $params) => $appointments->recordMilestone($request, $params),
+        RouteAccess::permission(Permission::ScheduleManage),
     );
     $referrals = static fn (): ReferralController => new ReferralController(
         $app->view(),

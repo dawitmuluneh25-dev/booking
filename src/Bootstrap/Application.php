@@ -78,7 +78,9 @@ use App\Domain\RescheduleAppointment;
 use App\Storage\FileSignatureScanner;
 use App\Storage\FilesystemDocumentStorage;
 use App\Domain\RegisterUrgentCase;
+use App\Domain\ProcedureMilestoneRepository;
 use App\Domain\ProcedureRepository;
+use App\Domain\RecordProcedureMilestone;
 use App\Domain\ReferralRepository;
 use App\Domain\SaveReferralDraft;
 use App\Domain\SubmitDraft;
@@ -119,6 +121,7 @@ use App\Repositories\PdoPatientRelationshipRepository;
 use App\Repositories\PdoPhysicianProfileRepository;
 use App\Repositories\PdoEscalationRouteRepository;
 use App\Repositories\PdoPractitionerCredentialRepository;
+use App\Repositories\PdoProcedureMilestoneRepository;
 use App\Repositories\PdoProcedureRepository;
 use App\Repositories\PdoUrgentCaseRepository;
 use App\Domain\ResourceAdminRepository;
@@ -231,6 +234,10 @@ final class Application
     private ?CancelAppointment $cancelAppointment = null;
 
     private ?BookAppointment $bookAppointment = null;
+
+    private ?ProcedureMilestoneRepository $procedureMilestones = null;
+
+    private ?RecordProcedureMilestone $recordProcedureMilestone = null;
 
     private ?RecordPatientArrival $recordArrival = null;
 
@@ -745,6 +752,26 @@ final class Application
             $this->appointments(),
             $this->transaction(),
             $this->outbox(),
+        );
+    }
+
+    public function procedureMilestones(): ProcedureMilestoneRepository
+    {
+        return $this->procedureMilestones ??= new PdoProcedureMilestoneRepository($this->pdo());
+    }
+
+    public function recordProcedureMilestone(): RecordProcedureMilestone
+    {
+        // The consent boundary is passed in because "consent verified" has to name
+        // the record it verified; without one there is nothing to assert, and the
+        // command refuses rather than storing a claim the record cannot support.
+        return $this->recordProcedureMilestone ??= new RecordProcedureMilestone(
+            $this->appointments(),
+            $this->procedureMilestones(),
+            $this->consents(),
+            new Validator(),
+            $this->transaction(),
+            $this->auditTrail(),
         );
     }
 

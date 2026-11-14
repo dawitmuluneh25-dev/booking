@@ -48,10 +48,11 @@ final class RouteAccessManifestTest extends TestCase
     {
         $manifest = $this->manifest();
 
-        // 92: 88 plus the four escalation-roster routes (Decision 4). Every one of
-        // them is permission-gated, and none joins the public set above: the roster is
-        // a staff screen, and the public urgent notice is a separate page.
-        self::assertSame(92, count($manifest));
+        // 95: 92 plus the procedure-day routes (BL-C3) — today's queue, one
+        // appointment, and the milestone it records. Every one of them is
+        // permission-gated, and none joins the public set above: a procedure day
+        // carries the patient's name and what happened to them.
+        self::assertSame(95, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);
@@ -126,6 +127,13 @@ final class RouteAccessManifestTest extends TestCase
         // Intake follows who may submit a referral into the service (§10.3 step 1).
         self::assertSame('referral.submit', $guarded['GET /urgent-cases/new'] ?? null);
         self::assertSame('referral.submit', $guarded['POST /urgent-cases'] ?? null);
+
+        // The procedure day (BL-C3). The page is admitted by the permission the four
+        // roles who work the day already hold; which *event* each may record is a
+        // second question, asked in the command per kind.
+        self::assertSame('schedule.manage', $guarded['GET /appointments'] ?? null);
+        self::assertSame('schedule.manage', $guarded['GET /appointments/{reference}'] ?? null);
+        self::assertSame('schedule.manage', $guarded['POST /appointments/{reference}/milestones'] ?? null);
     }
 
     /**

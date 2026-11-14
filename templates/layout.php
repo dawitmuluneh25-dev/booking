@@ -30,6 +30,12 @@ if ($signedIn) {
         $navItems[] = ['href' => '/urgent-cases', 'label' => 'Urgent'];
     }
 
+    // The day's list, for the roles that work it. Same permission as the room
+    // schedule above it, because it is the same audience on the same day.
+    if ($currentUser->can(\App\Domain\Permission::ScheduleManage)) {
+        $navItems[] = ['href' => '/appointments', 'label' => 'Procedure day'];
+    }
+
     if ($currentUser->can(\App\Domain\Permission::NotificationRead)) {
         $navItems[] = ['href' => '/notifications', 'label' => 'Notifications'];
     }

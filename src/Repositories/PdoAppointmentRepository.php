@@ -319,6 +319,89 @@ final class PdoAppointmentRepository implements AppointmentRepository
         return $row === false ? null : Appointment::fromRow($row);
     }
 
+    public function historyFor(int $appointmentId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT h.from_status, h.to_status, h.actor_role, h.reason, h.occurred_at, u.name AS actor_name
+               FROM appointment_status_history h
+               LEFT JOIN users u ON u.id = h.actor_user_id
+              WHERE h.appointment_id = :id
+              ORDER BY h.occurred_at ASC, h.id ASC'
+        );
+        $statement->execute(['id' => $appointmentId]);
+
+        $history = [];
+
+        foreach ($statement->fetchAll() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $history[] = [
+                'from' => is_scalar($row['from_status'] ?? null) ? (string) $row['from_status'] : null,
+                'to' => is_scalar($row['to_status'] ?? null) ? (string) $row['to_status'] : '',
+                'actorRole' => is_scalar($row['actor_role'] ?? null) ? (string) $row['actor_role'] : '',
+                'actorName' => is_scalar($row['actor_name'] ?? null) ? (string) $row['actor_name'] : null,
+                'reason' => is_scalar($row['reason'] ?? null) ? (string) $row['reason'] : null,
+                'occurredAtUtc' => is_scalar($row['occurred_at'] ?? null) ? (string) $row['occurred_at'] : '',
+            ];
+        }
+
+        return $history;
+    }
+
+    public function resourcesFor(int $appointmentId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT r.name, r.modality, ar.role
+               FROM appointment_resources ar
+               JOIN resources r ON r.id = ar.resource_id
+              WHERE ar.appointment_id = :id
+              ORDER BY ar.role ASC, r.name ASC'
+        );
+        $statement->execute(['id' => $appointmentId]);
+
+        $resources = [];
+
+        foreach ($statement->fetchAll() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $resources[] = [
+                'name' => is_scalar($row['name'] ?? null) ? (string) $row['name'] : '',
+                'modality' => is_scalar($row['modality'] ?? null) ? (string) $row['modality'] : null,
+                'role' => is_scalar($row['role'] ?? null) ? (string) $row['role'] : 'primary',
+            ];
+        }
+
+        return $resources;
+    }
+
+    public function forDay(string $fromUtc, string $toUtc): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT id, reference, referral_id, status, version, starts_at, ends_at,
+                    duration_minutes, patient_name, patient_phone, created_by_user_id, created_at
+               FROM appointments
+              WHERE starts_at >= :from_date AND starts_at < :to_date
+                AND status NOT IN ('cancelled', 'no_show')
+              ORDER BY starts_at ASC, id ASC"
+        );
+        $statement->execute(['from_date' => $fromUtc, 'to_date' => $toUtc]);
+
+        $appointments = [];
+
+        foreach ($statement->fetchAll() as $row) {
+            if (is_array($row)) {
+                /** @var array<string, mixed> $row */
+                $appointments[] = Appointment::fromRow($row);
+            }
+        }
+
+        return $appointments;
+    }
+
     public function transition(
         Appointment $appointment,
         AppointmentStatus $target,

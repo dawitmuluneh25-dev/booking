@@ -98,7 +98,11 @@ $clinicTime = static function (string $utc) use ($clinicZone): string {
                             <td>
                                 <?= e($clinicTime($appointment->startsAtUtc)) ?>–<?= e($clinicTime($appointment->endsAtUtc)) ?>
                             </td>
-                            <td><?= e($appointment->reference) ?></td>
+                            <td>
+                                <a class="link" href="/appointments/<?= e(rawurlencode($appointment->reference)) ?>">
+                                    <?= e($appointment->reference) ?>
+                                </a>
+                            </td>
                             <td><?= e($appointment->patientName) ?></td>
                             <td><?= e($appointment->status->label()) ?></td>
                             <td>

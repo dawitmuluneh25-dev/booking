@@ -26,6 +26,11 @@ enum AuditAction: string
     case EscalationRouteRecorded = 'escalation.route_recorded';
     case EscalationRouteVerified = 'escalation.route_verified';
     case EscalationRouteRetired = 'escalation.route_retired';
+    // A procedure-day event (§15) is a statement about a patient at a moment, so
+    // it leaves the workflow table and a copy in the audit trail. The audit row
+    // carries the kind, the time and the state it produced — never the note, which
+    // can hold clinical free text (BL-B2 criterion 3).
+    case ProcedureMilestoneRecorded = 'procedure.milestone_recorded';
     case LoginSucceeded = 'auth.login_succeeded';
     case LoginFailed = 'auth.login_failed';
     case LoginThrottled = 'auth.login_throttled';
@@ -47,6 +52,7 @@ enum AuditAction: string
             self::EscalationRouteRecorded => 'Escalation route recorded',
             self::EscalationRouteVerified => 'Escalation route verified',
             self::EscalationRouteRetired => 'Escalation route retired',
+            self::ProcedureMilestoneRecorded => 'Procedure milestone recorded',
             self::LoginSucceeded => 'Sign-in succeeded',
             self::LoginFailed => 'Sign-in failed',
             self::LoginThrottled => 'Sign-in throttled',
