@@ -10,6 +10,8 @@ use App\Domain\AcknowledgeUrgentCase;
 use App\Domain\AuthorisationException;
 use App\Domain\CloseUrgentCase;
 use App\Domain\EscalateUrgentCase;
+use App\Domain\EscalationReadiness;
+use App\Domain\EscalationRouteRepository;
 use App\Domain\Permission;
 use App\Domain\RecordUrgentContactAttempt;
 use App\Domain\RecordUrgentDecision;
@@ -91,6 +93,12 @@ final class UrgentController
         private readonly RecordUrgentDecision $decideCase,
         private readonly AdvanceUrgentCoordination $advanceCoordination,
         private readonly OpenUrgentReview $openReviewCase,
+        /**
+         * Decision 4: escalation is disabled until the arrangements are recorded and
+         * verified. Required rather than optional — a nullable gate is a bypass.
+         */
+        private readonly EscalationReadiness $escalationReadiness,
+        private readonly EscalationRouteRepository $escalationRoutes,
         private readonly string $timezone,
     ) {
     }
@@ -113,6 +121,9 @@ final class UrgentController
             'title' => 'Urgent coordination',
             'rows' => $rows,
             'canRegister' => $this->gate->allows(Permission::ReferralSubmit),
+            // The board says whether escalation can be used, because a coordinator
+            // reading it needs to know before they pick up the telephone.
+            'escalationReadiness' => $this->escalationReadiness->assess(),
             'notice' => Session::pullFlash('notice'),
             'currentUser' => $this->gate->authenticate(),
         ]));
@@ -234,6 +245,17 @@ final class UrgentController
         $case = $this->find((string) ($params['reference'] ?? ''));
         $level = (int) (string) $request->input('level', '0');
         $reason = (string) $request->input('reason', '');
+
+        // Decision 4: escalation needs a roster somebody has checked. A case
+        // escalated to a number that rings out has been escalated nowhere, and the
+        // coordinator would have no way of knowing. Registration, acknowledgement and
+        // closure stay available — refusing those would leave a suspected
+        // intussusception with no record at all.
+        $readiness = $this->escalationReadiness->assess();
+
+        if (!$readiness->activated) {
+            return $this->detail($case, ['escalation' => $readiness->message()], null, 422);
+        }
 
         try {
             $this->escalate->execute($this->actor(), $case->id, $level, $reason);
@@ -472,6 +494,11 @@ final class UrgentController
             'values' => self::DEFAULTS,
             // Asked of the same tables the domain refuses with, so a form is hidden
             // exactly when submitting it would be refused.
+            // The roster the escalation form sits under (Decision 4). The board is
+            // told whether escalation is usable and, when it is not, what Operations
+            // has still to confirm — never a bare "unavailable".
+            'escalationReadiness' => $this->escalationReadiness->assess(),
+            'escalationRoutes' => $this->escalationRoutes->active(),
             'mayAcknowledge' => in_array(
                 $user->role,
                 $case->coordination->allowedActors(UrgentCoordination::Acknowledged),

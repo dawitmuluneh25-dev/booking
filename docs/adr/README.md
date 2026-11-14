@@ -46,6 +46,7 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-021](#adr-021) | A notification body that is a credential does not outlive its send | Implemented | Architecture + Operations | 2026-11-13 | — |
 | [ADR-022](#adr-022) | Clinical approval is gated on a dated, procedure-scoped verification | Implemented | Architecture, on Product Owner Decision 6 | 2026-11-14 | — |
 | [ADR-023](#adr-023) | Three clinical support roles hold no clinical authority and start with one non-clinical permission | Implemented | Architecture, on Product Owner Decision 5 | 2026-11-14 | — |
+| [ADR-024](#adr-024) | Escalation is a roster somebody has verified, and nothing else | Implemented | Architecture + Operations, on Product Owner Decision 4 | 2026-11-14 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -746,4 +747,62 @@ document and a `users.role` column cannot end up naming the same person differen
   migration test.
 
 **Status.** Implemented. **Owner.** Architecture, on Product Owner Decision 5 (C-4).
+**Date.** 2026-11-14. **Supersedes.** —.
+
+## ADR-024
+
+**Escalation is a roster somebody has verified, and nothing else**
+
+**Context.** LP-020 was open for the whole build: there was no acknowledgement interval, no level
+ladder and no after-hours route, and `UrgentController` said so on every urgent case. That was the
+honest state, but it left a coordinator with a board and a telephone and no record of which number
+to try. Product Owner Decision 4 (14 November 2026) answered the question by refusing it in the form
+it was asked: escalation is event-driven and manual, there is no numerical acknowledgement interval
+and no automated time-based escalation.
+
+What the decision *does* require is that the arrangements be real. Primary contact, secondary
+escalation, receiving surgical team, after-hours only where cover genuinely exists, and a technical
+fallback that can never stand in for a clinical acknowledgement. Contact attempts must be recordable,
+acknowledgement must name a person, a role and a time, and — the operative sentence — until the
+arrangements are supplied **and verified**, urgent coordination remains disabled.
+
+**Decision.** `escalation_routes` (0042) records a contact arrangement: kind, label, who answers, the
+number, whether it is genuinely staffed, and a verification with its own author, date and note.
+Recording and verifying are separate commands, because they are separate acts and only one of them
+is evidence. `EscalationReadiness` activates escalation when an active, verified route exists for
+each of primary, secondary and receiving team; after-hours and the technical fallback never activate
+it. `UrgentController::escalate()` refuses while the roster is unverified and names what is missing.
+
+Three choices are part of the decision:
+
+- **No timing column exists.** Not "defaulted to empty" — absent, with no interval, deadline,
+  countdown or scheduled job anywhere near it. A field is the easiest way to reintroduce a thing the
+  decision refused.
+- **An unstaffed after-hours route cannot be recorded at all**, not merely cannot be verified. A
+  number that rings an empty office is worse than no number, because the caller believes the case
+  has been handed on. The command and the schema both refuse it.
+- **The board stays open.** Registration, acknowledgement, contact attempts and closure do not depend
+  on the roster. Disabling them would leave a suspected intussusception with no record at all —
+  less safe, not more.
+
+**Consequences.**
+
+- Escalation is now unavailable by default, in a fresh deployment and in the demo, until somebody
+  records and verifies three routes. That is the decision's own condition rather than a defect, and
+  the board says which of the three is missing so the gap is actionable.
+- Recording the routes is an operational configuration act behind `clinic.configure`, not a clinical
+  permission: nothing on the roster decides anything about a patient, and Decision 5 keeps clinical
+  authority with credentialed practitioners.
+- "No escalation policy is configured" has left the product. The board now reports the roster's real
+  state, and the sentence that remains — an unverified arrangement, named — is internal only.
+  Decision 4 forbids showing an unconfigured coordination capability on a patient-facing page, which
+  is why the public urgent page (BL-A6) carries a hospital-emergency instruction and no roster.
+- Linking a contact attempt to the route it used is **not** in this slice. `urgent_contact_attempts`
+  still records role, name and number as free text, so the roster is not yet joined to the log. That
+  is recorded as BL-D5 rather than left to be discovered during an audit.
+- The level on an escalation remains the coordinator's judgement (1–5) with a required reason.
+  Nothing ranks the levels for them, because ranking them is a clinical policy the decision declined
+  to supply.
+
+**Status.** Implemented. **Owner.** Architecture + Operations, on Product Owner Decision 4 (C-2).
 **Date.** 2026-11-14. **Supersedes.** —.

@@ -56,6 +56,11 @@ use App\Domain\AddLaboratoryDestination;
 use App\Domain\LaboratoryDestinationRepository;
 use App\Domain\ChangePractitionerCredentialStatus;
 use App\Domain\ClinicalPrivileges;
+use App\Domain\EscalationReadiness;
+use App\Domain\EscalationRouteRepository;
+use App\Domain\RecordEscalationRoute;
+use App\Domain\RetireEscalationRoute;
+use App\Domain\VerifyEscalationRoute;
 use App\Domain\EndPractitionerPrivilege;
 use App\Domain\GrantPractitionerPrivilege;
 use App\Domain\PractitionerCredentialRepository;
@@ -112,6 +117,7 @@ use App\Repositories\PdoIdempotencyStore;
 use App\Repositories\PdoOutboxRepository;
 use App\Repositories\PdoPatientRelationshipRepository;
 use App\Repositories\PdoPhysicianProfileRepository;
+use App\Repositories\PdoEscalationRouteRepository;
 use App\Repositories\PdoPractitionerCredentialRepository;
 use App\Repositories\PdoProcedureRepository;
 use App\Repositories\PdoUrgentCaseRepository;
@@ -181,6 +187,16 @@ final class Application
     private ?GrantPractitionerPrivilege $grantPrivilege = null;
 
     private ?EndPractitionerPrivilege $endPrivilege = null;
+
+    private ?EscalationRouteRepository $escalationRoutes = null;
+
+    private ?EscalationReadiness $escalationReadiness = null;
+
+    private ?RecordEscalationRoute $recordEscalationRoute = null;
+
+    private ?VerifyEscalationRoute $verifyEscalationRoute = null;
+
+    private ?RetireEscalationRoute $retireEscalationRoute = null;
 
     private ?AddLaboratoryDestination $addLaboratory = null;
 
@@ -531,6 +547,51 @@ final class Application
     {
         return $this->endPrivilege ??= new EndPractitionerPrivilege(
             $this->practitionerCredentials(),
+            $this->transaction(),
+            $this->auditTrail(),
+        );
+    }
+
+    /**
+     * The escalation roster (Decision 4).
+     *
+     * One instance per request: the board asks it whether escalation is usable, and
+     * the refusals ask it the same question through the same object rather than
+     * re-deciding from the rows.
+     */
+    public function escalationRoutes(): EscalationRouteRepository
+    {
+        return $this->escalationRoutes ??= new PdoEscalationRouteRepository($this->pdo());
+    }
+
+    public function escalationReadiness(): EscalationReadiness
+    {
+        return $this->escalationReadiness ??= new EscalationReadiness($this->escalationRoutes());
+    }
+
+    public function recordEscalationRoute(): RecordEscalationRoute
+    {
+        return $this->recordEscalationRoute ??= new RecordEscalationRoute(
+            $this->escalationRoutes(),
+            new Validator(),
+            $this->transaction(),
+            $this->auditTrail(),
+        );
+    }
+
+    public function verifyEscalationRoute(): VerifyEscalationRoute
+    {
+        return $this->verifyEscalationRoute ??= new VerifyEscalationRoute(
+            $this->escalationRoutes(),
+            $this->transaction(),
+            $this->auditTrail(),
+        );
+    }
+
+    public function retireEscalationRoute(): RetireEscalationRoute
+    {
+        return $this->retireEscalationRoute ??= new RetireEscalationRoute(
+            $this->escalationRoutes(),
             $this->transaction(),
             $this->auditTrail(),
         );

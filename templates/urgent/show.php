@@ -367,12 +367,48 @@ $closed = $case->urgency === \App\Domain\UrgentStatus::Closed;
     <?php endif; ?>
 
     <h2 class="section-title">Escalation</h2>
-    <p class="muted">
-        <strong>No escalation policy is configured.</strong> No interval, level ladder or
-        after-hours route has been approved (<span class="mono">LP-020</span>), so the level below
-        is your judgement and is stored with your name and your reason — not chosen by the system.
-    </p>
-    <?php if ($mayEscalate && !$resolved && !$closed): ?>
+    <?php if ($escalationReadiness->activated): ?>
+        <p class="muted">
+            <strong>Escalation routes are recorded and verified.</strong> Contact attempts and the
+            escalation itself are recorded against your name. There is no interval, countdown or
+            automatic escalation: the level and the reason below are your judgement, and they are
+            stored as such. A notification reaching somebody is not an acknowledgement — only the
+            receiving team saying so is.
+        </p>
+        <?php if ($escalationRoutes !== []): ?>
+            <div class="table-wrap">
+                <table>
+                    <caption class="visually-hidden">Verified escalation routes</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Route</th>
+                            <th scope="col">Who answers</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($escalationRoutes as $route): ?>
+                            <?php if (!$route->isVerified()) {
+                                continue;
+                            } ?>
+                            <tr>
+                                <th scope="row"><?= e($route->kind->label()) ?></th>
+                                <td>
+                                    <?= e($route->contactName) ?>
+                                    <span class="muted block mono"><?= e($route->contactPhone) ?></span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    <?php else: ?>
+        <p class="alert alert-warning" role="status">
+            <strong>Escalation is disabled.</strong> <?= e($escalationReadiness->message()) ?>
+            Recording contact attempts, acknowledging and closing this case remain available.
+        </p>
+    <?php endif; ?>
+    <?php if ($mayEscalate && !$resolved && !$closed && $escalationReadiness->activated): ?>
         <form method="post" action="/urgent-cases/<?= e(rawurlencode($case->reference)) ?>/escalate" class="stack">
             <?= \App\Security\Csrf::field() ?>
             <div class="grid">
@@ -389,8 +425,16 @@ $closed = $case->urgency === \App\Domain\UrgentStatus::Closed;
                 <button class="button button-secondary" type="submit">Escalate</button>
             </div>
         </form>
-    <?php else: ?>
+    <?php elseif (!$mayEscalate): ?>
         <p class="muted">You can see this case but not escalate it.</p>
+    <?php elseif (!$escalationReadiness->activated): ?>
+        <p class="muted">
+            The escalation form is unavailable while the roster is unverified, whatever your role.
+            An escalation to a number nobody answers is worse than none, because the case looks
+            handed on when it is not.
+        </p>
+    <?php else: ?>
+        <p class="muted">This case is already resolved or closed, so there is nothing to escalate.</p>
     <?php endif; ?>
 
     <?php if ($mayClose): ?>

@@ -37,11 +37,21 @@
         for you.
     </p>
 
-    <p class="muted">
-        <strong>Escalation policy: not configured.</strong> No interval, level ladder or
-        after-hours route has been approved (<span class="mono">LP-020</span>). Escalating is
-        a person's judgement recorded against their name; the system does not decide when.
-    </p>
+    <?php if ($escalationReadiness->activated): ?>
+        <p class="muted">
+            <strong>Escalation routes: configured and verified.</strong> The primary, secondary and
+            receiving-team arrangements exist and somebody has confirmed they are answered. Still
+            no interval and no ladder: escalating is a person's judgement recorded against their
+            name, and the system does not decide when.
+        </p>
+    <?php else: ?>
+        <p class="alert alert-warning" role="status">
+            <strong>Escalation is disabled.</strong> <?= e($escalationReadiness->message()) ?>
+            No interval or ladder has been approved either (<span class="mono">LP-020</span>), so
+            nothing here is labelled overdue. Acknowledging, closing and recording contact attempts
+            do not depend on the roster.
+        </p>
+    <?php endif; ?>
 
     <?php if ($rows === []): ?>
         <p class="empty">No urgent case is waiting.</p>

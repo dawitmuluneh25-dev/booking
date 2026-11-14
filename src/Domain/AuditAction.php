@@ -23,6 +23,9 @@ enum AuditAction: string
     case PractitionerCredentialStatusChanged = 'practitioner.credential_status_changed';
     case PractitionerPrivilegeGranted = 'practitioner.privilege_granted';
     case PractitionerPrivilegeEnded = 'practitioner.privilege_ended';
+    case EscalationRouteRecorded = 'escalation.route_recorded';
+    case EscalationRouteVerified = 'escalation.route_verified';
+    case EscalationRouteRetired = 'escalation.route_retired';
     case LoginSucceeded = 'auth.login_succeeded';
     case LoginFailed = 'auth.login_failed';
     case LoginThrottled = 'auth.login_throttled';
@@ -41,6 +44,9 @@ enum AuditAction: string
             self::PractitionerCredentialStatusChanged => 'Practitioner credential status changed',
             self::PractitionerPrivilegeGranted => 'Procedure privilege granted',
             self::PractitionerPrivilegeEnded => 'Procedure privilege ended',
+            self::EscalationRouteRecorded => 'Escalation route recorded',
+            self::EscalationRouteVerified => 'Escalation route verified',
+            self::EscalationRouteRetired => 'Escalation route retired',
             self::LoginSucceeded => 'Sign-in succeeded',
             self::LoginFailed => 'Sign-in failed',
             self::LoginThrottled => 'Sign-in throttled',

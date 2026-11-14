@@ -29,7 +29,10 @@ use App\Security\Session;
 use App\Support\View;
 use App\Validation\Validator;
 use PHPUnit\Framework\TestCase;
+use App\Domain\EscalationReadiness;
+use App\Domain\EscalationRouteKind;
 use Tests\Support\InlineTransaction;
+use Tests\Support\InMemoryEscalationRouteRepository;
 use Tests\Support\InMemoryUrgentCaseRepository;
 use Tests\Support\InMemoryUserRepository;
 
@@ -52,6 +55,8 @@ final class UrgentBoardPageTest extends TestCase
     private InMemoryUserRepository $users;
 
     private RegisterUrgentCase $register;
+
+    private InMemoryEscalationRouteRepository $escalationRoutes;
 
     private int $coordinatorId = 0;
 
@@ -76,6 +81,7 @@ final class UrgentBoardPageTest extends TestCase
             $this->staffId => 'Meseret Alem',
         ]);
         $this->register = new RegisterUrgentCase($this->cases, new Validator());
+        $this->escalationRoutes = new InMemoryEscalationRouteRepository();
 
         // The board is a coordinator's screen by default; individual tests sign in
         // as reception to check what reception may not do.
@@ -108,6 +114,10 @@ final class UrgentBoardPageTest extends TestCase
             new RecordUrgentDecision($this->cases, new Validator(), new InlineTransaction()),
             new AdvanceUrgentCoordination($this->cases),
             new OpenUrgentReview($this->cases),
+            // Decision 4: escalation is gated on a verified roster. The default here is
+            // an empty roster, so every test that escalates has to say why it may.
+            new EscalationReadiness($this->escalationRoutes),
+            $this->escalationRoutes,
             'Africa/Addis_Ababa',
         );
     }
@@ -133,17 +143,113 @@ final class UrgentBoardPageTest extends TestCase
      * LP-020 is open, so no interval exists. A page that called a case overdue would
      * be enacting a clinical response time nobody approved.
      */
-    public function testTheBoardStatesThatNoEscalationPolicyIsConfigured(): void
+    public function testTheBoardSaysEscalationIsDisabledAndNamesWhatIsMissing(): void
     {
         $this->registerCase('Bereket Tesfaye', self::NOW);
 
         $body = $this->body($this->controller->index(Request::create('GET', '/urgent-cases')));
 
-        self::assertStringContainsString('Escalation policy: not configured', $body);
+        self::assertStringContainsString('Escalation is disabled', $body);
+        // Named, not counted: the reader has to know which arrangement to go and
+        // confirm (Decision 4).
+        self::assertStringContainsString('no verified primary contact', $body);
+        self::assertStringContainsString('receiving surgical team', $body);
         self::assertStringContainsString('LP-020', $body);
         // The page states the absence rather than substituting a threshold: elapsed
         // time is reported, and nothing is labelled late.
-        self::assertStringContainsString('does not call a case overdue', $body);
+        self::assertStringContainsString('labelled overdue', $body);
+    }
+
+    public function testTheBoardSaysEscalationIsConfiguredOnceTheRequiredRoutesAreVerified(): void
+    {
+        $this->escalationRoutes->seedVerified(EscalationRouteKind::Primary, 'On-call IR');
+        $this->escalationRoutes->seedVerified(EscalationRouteKind::Secondary, 'Radiology lead');
+        $this->escalationRoutes->seedVerified(EscalationRouteKind::ReceivingTeam, 'Surgical team');
+        $this->controller = $this->controllerFor('coordinator@example.test');
+
+        $body = $this->body($this->controller->index(Request::create('GET', '/urgent-cases')));
+
+        self::assertStringContainsString('Escalation routes: configured and verified', $body);
+        self::assertStringNotContainsString('Escalation is disabled', $body);
+    }
+
+    /**
+     * Decision 4: until the arrangements are supplied *and verified*, urgent
+     * coordination remains disabled. An escalation to a number nobody answers is
+     * worse than none, because the case looks handed on when it is not.
+     */
+    public function testEscalationIsRefusedWhileTheRosterIsUnverified(): void
+    {
+        $case = $this->registerCase('Bereket Tesfaye', self::NOW);
+
+        $response = $this->controller->escalate(
+            $this->post('/urgent-cases/' . $case->reference . '/escalate', [
+                'level' => '1',
+                'reason' => 'No answer from the on-call number after several attempts.',
+            ]),
+            ['reference' => $case->reference],
+        );
+
+        self::assertSame(422, $response->status);
+        self::assertStringContainsString('Escalation is disabled', $this->body($response));
+    }
+
+    public function testEscalationIsAllowedOnceTheRosterIsVerified(): void
+    {
+        $this->escalationRoutes->seedVerified(EscalationRouteKind::Primary, 'On-call IR');
+        $this->escalationRoutes->seedVerified(EscalationRouteKind::Secondary, 'Radiology lead');
+        $this->escalationRoutes->seedVerified(EscalationRouteKind::ReceivingTeam, 'Surgical team');
+        $this->controller = $this->controllerFor('coordinator@example.test');
+
+        $case = $this->registerCase('Bereket Tesfaye', self::NOW);
+
+        // Escalation is a coordination act on a case somebody has already picked up:
+        // the state machine allows it from `acknowledged`, not from the moment of
+        // registration. That ordering is older than this gate and is unchanged by it.
+        $this->cases->acknowledge(
+            $case,
+            new Actor($this->coordinatorId, Role::Coordinator),
+            'phone',
+            'Picked up by the coordinator.',
+            self::NOW,
+        );
+
+        $response = $this->controller->escalate(
+            $this->post('/urgent-cases/' . $case->reference . '/escalate', [
+                'level' => '2',
+                'reason' => 'On-call radiologist unreachable; escalating to the lead.',
+            ]),
+            ['reference' => $case->reference],
+        );
+
+        self::assertSame(303, $response->status);
+    }
+
+    /**
+     * A roster of numbers nobody has checked is not an arrangement, and an
+     * after-hours route is optional even when it exists (Decision 4: "where
+     * generally available only").
+     */
+    public function testAnUnverifiedRosterStillLeavesEscalationDisabled(): void
+    {
+        $this->escalationRoutes->create(new \App\Domain\EscalationRoute(
+            id: 0,
+            kind: EscalationRouteKind::Primary,
+            label: 'On-call IR',
+            contactName: 'Duty radiologist',
+            contactPhone: '+251911000222',
+            isStaffed: true,
+            isActive: true,
+            verifiedByUserId: null,
+            verifiedAtUtc: null,
+            verificationNote: null,
+            createdAtUtc: self::NOW,
+        ));
+        $this->controller = $this->controllerFor('coordinator@example.test');
+
+        $body = $this->body($this->controller->index(Request::create('GET', '/urgent-cases')));
+
+        self::assertStringContainsString('Escalation is disabled', $body);
     }
 
     public function testAnUnacknowledgedCaseIsListedBeforeAnOlderAcknowledgedOne(): void

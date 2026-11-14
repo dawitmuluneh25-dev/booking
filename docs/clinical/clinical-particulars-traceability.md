@@ -91,7 +91,7 @@ before production and none has been executed.
 | Submitters may request routine or expedited only | Implemented | `SubmitElectiveReferral` validates against `Priority::requestableValues()`; `SaveReferralDraft` refuses an unrequestable value rather than letting the CHECK become a 500 |
 | Urgent direct coordination leaves the ordinary queue | Implemented as a guard | An approval cannot carry it: approval is what releases a referral into the elective queue, and the category exists to say that queue is the wrong route. It is recorded with a redirect instead (`Priority::leavesTheOrdinaryQueue`, `assignableOnApproval`) |
 | Changing an assigned category | Implemented | `ReassignClinicalPriority` with `referral_priority_changes` (migration 0028) keeping both values, the reason, the actor and the time; available only while the referral is `clinically_approved` or `approved_for_scheduling`, refused once an appointment exists, refused same-to-same, and refused for "urgent direct coordination" because leaving the queue is a redirect rather than a change of position; `ReassignClinicalPriorityTest` |
-| Escalation levels and acknowledgement intervals | Implemented as a person's judgement, no policy | Escalating records a level, a reason and an actor, and the board states "Escalation policy: not configured" and names LP-020. No interval, ladder or after-hours route exists, and elapsed time carries no "overdue" label (`UrgentBoardPageTest`) |
+| Escalation levels and acknowledgement intervals | Implemented; the interval was refused, not deferred | Product Owner Decision 4 (14 November 2026) approved event-driven manual escalation and refused every numeric interval, level ladder and automatic time-based escalation. A configurable roster now exists (migration 0042, ADR-024): primary, secondary, receiving surgical team, after-hours only where genuinely staffed, and a technical fallback that never counts as a clinical acknowledgement. Recording and verifying are separate acts with separate authors and dates, and the board reports which arrangement is still unverified. Escalation itself stays a person's judgement recorded with their name and reason — the level is theirs, and nothing is labelled overdue because the interval that would justify the label does not exist |
 
 ### 3.6 Readiness checklists (§14, A-09)
 
@@ -295,8 +295,10 @@ went in a form that can be counted and audited.
 
 - Do not add a laboratory threshold, fasting duration, medication hold, sedation rule, observation
   period or discharge criterion. Every one is `LOCAL POLICY REQUIRED` (§22, LP-007 – LP-012).
-- Do not give escalation a default interval. LP-020 is open; the panel must keep reading "no policy
-  configured".
+- Do not give escalation a default interval. Decision 4 refused one outright; the roster holds
+  contacts and verification dates and no timing fields, and no countdown, deadline or automatic
+  escalation may be added. Nor may an unverified roster be presented as usable: escalation stays
+  disabled until the primary, secondary and receiving-team arrangements are recorded and verified.
 - Do not mark a service bookable because a catalogue row exists. LP-001, LP-002 and LP-019 are
   unconfirmed.
 - Do not let a completed checklist, a delivered email or an opened notification stand in for a

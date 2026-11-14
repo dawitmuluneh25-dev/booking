@@ -35,6 +35,15 @@
         </article>
 
         <article class="card">
+            <h3>Escalation routes</h3>
+            <p>
+                Who to telephone during an urgent case, and whether anybody has confirmed that the
+                number is answered.
+            </p>
+            <a class="link" href="/admin/escalation-routes">Manage the roster</a>
+        </article>
+
+        <article class="card">
             <h3>Patient content</h3>
             <p>The words patients read, with §17.5's reviewer, approver and review date.</p>
             <a class="link" href="/admin/content">Review and publish</a>

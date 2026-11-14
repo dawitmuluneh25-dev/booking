@@ -11,6 +11,7 @@ use App\Bootstrap\Application;
 use App\Controllers\AdminAuditController;
 use App\Controllers\AdminController;
 use App\Controllers\AdminDiagnosticsController;
+use App\Controllers\AdminEscalationRouteController;
 use App\Controllers\AdminLaboratoryController;
 use App\Controllers\AdminHoursController;
 use App\Controllers\AdminPhysicianController;
@@ -350,6 +351,46 @@ return static function (Application $app): void {
         RouteAccess::permission(Permission::ClinicConfigure),
     );
 
+    $escalationRoutesAdmin = new AdminEscalationRouteController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->escalationRoutes(),
+        $app->escalationReadiness(),
+        $app->users(),
+        $app->recordEscalationRoute(),
+        $app->verifyEscalationRoute(),
+        $app->retireEscalationRoute(),
+        $app->config()->timezone(),
+    );
+
+    // The escalation roster (Decision 4). Operational configuration, so it sits with
+    // the other operational settings rather than behind a clinical permission: the
+    // decision says Operations verifies the arrangements, and nothing here decides
+    // anything about a patient. There is no interval route, because there is no
+    // interval.
+    $router->get(
+        '/admin/escalation-routes',
+        static fn (Request $request) => $escalationRoutesAdmin->index($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/escalation-routes',
+        static fn (Request $request) => $escalationRoutesAdmin->store($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    // Verifying is a separate act from recording: it names who checked, when, and how.
+    $router->post(
+        '/admin/escalation-routes/{id}/verify',
+        static fn (Request $request, array $params) => $escalationRoutesAdmin->verify($request, $params),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/escalation-routes/{id}/retire',
+        static fn (Request $request, array $params) => $escalationRoutesAdmin->retire($request, $params),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+
     // The credential register (Decision 6, AC-009). Not under /admin, and not behind
     // an administrative permission: Decision 5 leaves the system administrator
     // technical authority only, and Decision 6 says administrators must not be able
@@ -611,6 +652,10 @@ return static function (Application $app): void {
         $app->recordUrgentDecision(),
         $app->advanceUrgentCoordination(),
         $app->openUrgentReview(),
+        // Decision 4: escalation is gated on a verified roster, so the board reads
+        // the same assessment the commands refuse with.
+        $app->escalationReadiness(),
+        $app->escalationRoutes(),
         $app->config()->timezone(),
     );
 

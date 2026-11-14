@@ -48,6 +48,7 @@ final class MigrationIntegrityTest extends TestCase
         'physician_profiles',
         'practitioner_credentials',
         'practitioner_privileges',
+        'escalation_routes',
         'clinic_hours',
         'idempotency_keys',
         'laboratory_destinations',
