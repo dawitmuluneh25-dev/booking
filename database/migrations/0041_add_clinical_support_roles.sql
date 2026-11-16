@@ -15,7 +15,7 @@
 -- vocabulary makes the role name storable; what a role may do lives in
 -- `Role::permissions()`, where Decision 5's restrictions are visible and testable.
 
-ALTER TABLE users DROP CHECK ck_users_role;
+ALTER TABLE users DROP CONSTRAINT ck_users_role;
 
 ALTER TABLE users ADD CONSTRAINT ck_users_role CHECK (
     role IN ('admin', 'staff', 'radiologist', 'physician', 'coordinator', 'tech', 'nur', 'lab', 'patient')

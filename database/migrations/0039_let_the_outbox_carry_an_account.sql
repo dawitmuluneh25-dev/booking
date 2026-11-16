@@ -23,6 +23,6 @@ ALTER TABLE notification_outbox
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
 
 ALTER TABLE notification_outbox
-    DROP CHECK ck_outbox_subject,
+    DROP CONSTRAINT ck_outbox_subject,
     ADD CONSTRAINT ck_outbox_subject
         CHECK (booking_id IS NOT NULL OR referral_id IS NOT NULL OR user_id IS NOT NULL);

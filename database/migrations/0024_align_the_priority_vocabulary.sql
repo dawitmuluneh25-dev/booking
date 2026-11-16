@@ -26,9 +26,9 @@
 -- have one meaning each in the approved model, and the mapping is exact. No row
 -- is deleted and no other column is touched.
 
-ALTER TABLE referrals DROP CHECK ck_referrals_urgency;
+ALTER TABLE referrals DROP CONSTRAINT ck_referrals_urgency;
 
-ALTER TABLE referrals DROP CHECK ck_referrals_priority;
+ALTER TABLE referrals DROP CONSTRAINT ck_referrals_priority;
 
 UPDATE referrals SET requested_urgency = 'expedited' WHERE requested_urgency = 'priority';
 

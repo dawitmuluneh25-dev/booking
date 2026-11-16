@@ -146,7 +146,7 @@ CREATE TABLE referral_documents (
 -- Roles used by the referral workflow must be assignable before Phase 3 adds
 -- physician verification. Widening the CHECK now keeps the domain enum and the
 -- database in agreement instead of leaving a role that cannot be stored.
-ALTER TABLE users DROP CHECK ck_users_role;
+ALTER TABLE users DROP CONSTRAINT ck_users_role;
 
 ALTER TABLE users ADD CONSTRAINT ck_users_role CHECK (
     role IN ('admin', 'staff', 'radiologist', 'physician', 'coordinator', 'patient')

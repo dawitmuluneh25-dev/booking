@@ -93,3 +93,80 @@ jobs:
       # must not carry a green build.
       - name: Tests (a skipped test fails the build)
         run: composer test -- --fail-on-skipped
+
+  # The production host runs MariaDB 10.11, not MySQL 8. The two engines disagree on
+  # real DDL: `ALTER TABLE ... DROP CHECK` is MySQL-only and MariaDB requires
+  # `DROP CONSTRAINT`. That divergence reached a staging deployment because only the
+  # MySQL 8.4 job existed. This job runs the same migrations and the same suite against
+  # the engine the clinic actually uses, so a drift fails here instead of on the host.
+  database-parity:
+    name: Database parity (MariaDB 10.11)
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: booking_app
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --protocol=tcp -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_mysql, mbstring, json, openssl, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Configure environment
+        run: |
+          cp .env.example .env
+          sed -i 's/^DB_HOST=.*/DB_HOST=127.0.0.1/' .env
+          sed -i 's/^DB_PORT=.*/DB_PORT=3306/' .env
+          sed -i 's/^DB_NAME=.*/DB_NAME=booking_app/' .env
+          sed -i 's/^DB_USER=.*/DB_USER=root/' .env
+          sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=root/' .env
+
+      - name: Wait for MariaDB
+        run: |
+          for attempt in $(seq 1 30); do
+            if mysqladmin ping --protocol=tcp -h 127.0.0.1 -P 3306 -uroot -proot --silent; then
+              echo "MariaDB is accepting connections after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MariaDB did not become reachable." >&2
+          exit 1
+
+      - name: Record engine version
+        run: |
+          mysql --protocol=tcp -h 127.0.0.1 -P 3306 -uroot -proot -N -e 'SELECT VERSION();'
+
+      - name: Apply migrations
+        run: php bin/console migrate
+
+      - name: Assert every migration is applied and its checksum matches
+        run: |
+          php bin/console migrate:status | awk '
+            NR > 1 && NF >= 4 && ($3 != "yes" || $4 != "ok") {
+              print "not applied or drifted: " $0
+              bad = 1
+            }
+            END { exit bad }'
+
+      - name: Tests on MariaDB (a skipped test fails the build)
+        run: composer test -- --fail-on-skipped

@@ -29,7 +29,7 @@ SET active = 0,
     updated_at = UTC_TIMESTAMP()
 WHERE code = 'image_guided_biopsy';
 
-ALTER TABLE referrals DROP CHECK ck_referrals_status;
+ALTER TABLE referrals DROP CONSTRAINT ck_referrals_status;
 
 ALTER TABLE referrals ADD CONSTRAINT ck_referrals_status CHECK (status IN (
     'draft', 'submitted', 'received', 'administrative_review', 'awaiting_information',
