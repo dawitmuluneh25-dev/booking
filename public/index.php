@@ -20,7 +20,15 @@ if (PHP_SAPI === 'cli-server') {
     }
 }
 
-$root = dirname(__DIR__);
+// The document root on the shared host is fixed at public_html, so the application may
+// live in a release directory beside it rather than in its parent. APP_ROOT names that
+// directory; without it the layout is the repository's own.
+$configuredRoot = getenv('APP_ROOT');
+
+$root = is_string($configuredRoot) && $configuredRoot !== ''
+    ? rtrim($configuredRoot, '/\\')
+    : dirname(__DIR__);
+
 $autoload = $root . '/vendor/autoload.php';
 
 if (!is_file($autoload)) {

@@ -388,7 +388,7 @@ merely **implemented**, and it records ADR-013, the accepted boundary between th
 | ID | Decision | Status |
 |---|---|---|
 | ADR-001 … ADR-012 | Foundation, storage, workflow and operations decisions | Implemented, unapproved |
-| ADR-013 | Public intake model: referrals, bookings, or both | Proposed — blocked on product owner |
+| ADR-013 | Public intake model: referrals only; `bookings` stays a staff record with no public route | **Accepted** — Product Owner, 2026-11-17. No anonymous referral submission in Release 1: `/referrals/new` and `POST /referrals` require `Permission::ReferralSubmit`. Referrer accounts are created through a request-and-approve flow. `/request` therefore redirects to `/login` until that flow ships. |
 
 ### Security posture in the baseline
 

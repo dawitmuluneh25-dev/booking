@@ -1,0 +1,49 @@
+# Production document root — booking.hakimerad.com
+#
+# Environment-owned file: the release artifact does not overwrite it. deploy.sh preserves
+# whatever .htaccess is in public_html and republishes only the application files.
+#
+# Legacy paths are redirected here because the live site this replaces served them, and
+# referrers hold printed links and bookmarks. Keep the order: redirects, then the front
+# controller.
+
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # ADR-013 (accepted 2026-11-17): referrals are the clinical intake, `bookings` has no
+    # public route, and there is no anonymous submission. `/request` used to accept one,
+    # so it now sends the visitor to sign-in until the request-and-approve account flow
+    # ships. At that point this line becomes /referrals/request-access.
+    RewriteRule ^request/?$                      /login [R=301,L]
+
+    RewriteRule ^referrers/?$                    /my-referrals [R=301,L]
+    RewriteRule ^procedures/biopsy-fnac/?$       /services/fnac [R=301,L]
+    RewriteRule ^procedures/abscess-drainage/?$  /services/abscess_drainage [R=301,L]
+
+    # The build has no contact route; the institutional site owns that page.
+    RewriteRule ^contact/?$                      https://hakimerad.com/contact.html [R=301,L]
+
+    # Do not rewrite real files (assets, manifest, service worker).
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+# Never serve dotfiles or backup/editor leftovers.
+<FilesMatch "(^\.|\.(env|ini|log|sql|bak|swp|old)$)">
+    Require all denied
+</FilesMatch>
+
+AddType application/manifest+json .webmanifest
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>

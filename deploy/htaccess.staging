@@ -1,0 +1,45 @@
+# Staging document root — staging-booking.hakimerad.com
+#
+# Environment-owned file: the release artifact does not overwrite it. What is actually
+# running was configured in place; this file is the record so a rebuild reproduces it.
+#
+# Two differences from production, both deliberate:
+#   * HTTP basic auth, so staging is not a public copy of a clinical workflow
+#   * X-Robots-Tag, so a crawler that finds the hostname indexes nothing
+#
+# AuthUserFile must sit inside the domain directory. Pointing it at the account home
+# (/home/hakimevx/.htpasswd-staging) fails every credential on this host even when the
+# path is readable — the working configuration is beside public_html.
+#
+# Hash format: {SHA} only. bcrypt ($2y$) was rejected here, which cost an hour to find.
+
+AuthType Basic
+AuthName "HakimeRAD staging"
+AuthUserFile /home/hakimevx/domains/staging-booking.hakimerad.com/.htpasswd
+Require valid-user
+
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+<FilesMatch "(^\.|\.(env|ini|log|sql|bak|swp|old)$)">
+    Require all denied
+</FilesMatch>
+
+AddType application/manifest+json .webmanifest
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set X-Robots-Tag "noindex, nofollow, noarchive"
+</IfModule>
