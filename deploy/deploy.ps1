@@ -56,7 +56,34 @@ foreach ($file in @('composer.json', 'composer.lock')) {
 
 Write-Host "== 2/4 archive"
 if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path (Get-ChildItem $stage).FullName -DestinationPath $zip -CompressionLevel Optimal
+
+# Compress-Archive writes entry names with backslashes, and `unzip` on the host refuses
+# such an archive ("appears to use backslashes as path separators"). Build the entries
+# explicitly, normalised to forward slashes, and assert it before uploading.
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$archive = [System.IO.Compression.ZipFile]::Open($zip, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    Get-ChildItem -Path $stage -Recurse -File -Force | ForEach-Object {
+        $relative = $_.FullName.Substring($stage.Length + 1).Replace('\', '/')
+        [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $archive, $_.FullName, $relative, [System.IO.Compression.CompressionLevel]::Optimal)
+    }
+}
+finally {
+    $archive.Dispose()
+}
+
+$check = [System.IO.Compression.ZipFile]::OpenRead($zip)
+try {
+    $bad = @($check.Entries | Where-Object { $_.FullName.Contains('\') })
+    if ($bad.Count -gt 0) { throw "$($bad.Count) archive entries still use backslashes" }
+    Write-Host "  $($check.Entries.Count) entries, all forward-slash"
+}
+finally {
+    $check.Dispose()
+}
 
 $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 $size = [math]::Round((Get-Item $zip).Length / 1MB, 2)
