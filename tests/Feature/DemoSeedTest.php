@@ -93,9 +93,13 @@ final class DemoSeedTest extends TestCase
         }
 
         if (self::$scratchRoot !== '') {
-            // A junction is removed with rmdir, which deletes the link and not the
-            // real routes directory behind it.
-            exec('cmd /c rmdir "' . self::$scratchRoot . '\routes" 2>&1');
+            // A junction is removed with rmdir and a symlink with unlink; both delete the
+            // link itself and leave the real routes directory behind.
+            if (PHP_OS_FAMILY === 'Windows') {
+                exec('cmd /c rmdir "' . self::$scratchRoot . '\routes" 2>&1');
+            } else {
+                @unlink(self::$scratchRoot . DIRECTORY_SEPARATOR . 'routes');
+            }
             @rmdir(self::$scratchRoot);
         }
 
@@ -463,7 +467,17 @@ final class DemoSeedTest extends TestCase
 
         file_put_contents($root . DIRECTORY_SEPARATOR . 'scratch.env', $replaced);
 
-        exec('cmd /c mklink /J "' . $root . '\routes" "' . self::$root . '\routes" 2>&1', $output, $status);
+        // A junction on Windows, a directory symlink anywhere else. CI runs this suite on
+        // Linux, where `cmd` does not exist, so shelling out to mklink unconditionally made
+        // the whole class error out before a single test could run.
+        $link = $root . DIRECTORY_SEPARATOR . 'routes';
+        $target = self::$root . DIRECTORY_SEPARATOR . 'routes';
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            exec('cmd /c mklink /J "' . $link . '" "' . $target . '" 2>&1', $output, $status);
+        } else {
+            $status = @symlink($target, $link) ? 0 : 1;
+        }
 
         if ($status !== 0) {
             throw new RuntimeException('The routes directory could not be linked into the scratch root.');
