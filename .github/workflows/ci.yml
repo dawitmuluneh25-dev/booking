@@ -70,6 +70,19 @@ jobs:
           echo "MySQL did not become reachable." >&2
           exit 1
 
+      # DemoSeedTest and MigrationIntegrityTest build their own tables in this scratch
+      # schema, because a migration or a seed proven on a ready-made database proves
+      # nothing. Until now the schema was provisioned only by the developer-local
+      # `.tools/bootstrap.sql`, which CI never ran, so every DemoSeedTest test skipped and
+      # `--fail-on-skipped` turned that into a red build.
+      #
+      # No COLLATE on purpose: `.tools/bootstrap.sql` pins utf8mb4_0900_ai_ci, which exists
+      # on MySQL 8 and not on MariaDB 10.11. The server default is correct for both.
+      - name: Provision the scratch schema
+        run: |
+          mysql --protocol=tcp -h 127.0.0.1 -P 3306 -uroot -proot \
+            -e 'CREATE DATABASE IF NOT EXISTS booking_app_migration_test CHARACTER SET utf8mb4'
+
       - name: Apply migrations
         run: php bin/console migrate
 
@@ -151,6 +164,15 @@ jobs:
           done
           echo "MariaDB did not become reachable." >&2
           exit 1
+
+      # Same scratch schema as the MySQL job. Without it the seed and migration tests skip
+      # here too, and this job exists precisely to run them against the clinic's engine.
+      #
+      # No COLLATE on purpose: utf8mb4_0900_ai_ci does not exist on MariaDB.
+      - name: Provision the scratch schema
+        run: |
+          mysql --protocol=tcp -h 127.0.0.1 -P 3306 -uroot -proot \
+            -e 'CREATE DATABASE IF NOT EXISTS booking_app_migration_test CHARACTER SET utf8mb4'
 
       - name: Record engine version
         run: |
