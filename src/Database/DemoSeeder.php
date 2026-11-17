@@ -141,7 +141,7 @@ final class DemoSeeder
         $users = $this->count('users');
 
         if ($referrals > 0 || $appointments > 0 || $users > 0) {
-            throw DemoSeedRefused::databaseNotEmpty($referrals, $appointments);
+            throw DemoSeedRefused::databaseNotEmpty($referrals, $appointments, $users);
         }
     }
 

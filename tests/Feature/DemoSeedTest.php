@@ -292,6 +292,13 @@ final class DemoSeedTest extends TestCase
             self::fail('The seed wrote to a database that already held records.');
         } catch (DemoSeedRefused $refusal) {
             self::assertStringContainsString('already contains', $refusal->getMessage());
+
+            // The trap this message used to set: only a user account is present, so the
+            // refusal must not report "0 referral(s) and 0 appointment(s)" and read as a bug.
+            self::assertStringContainsString(
+                '0 referral(s), 0 appointment(s) and 1 user account(s)',
+                $refusal->getMessage(),
+            );
         }
 
         self::assertSame(0, self::counts()['referrals'], 'A refused seed must leave nothing behind.');

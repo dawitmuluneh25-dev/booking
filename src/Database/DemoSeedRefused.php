@@ -47,15 +47,22 @@ final class DemoSeedRefused extends RuntimeException
      * The seed can create patients, but it must never be the thing that lets
      * fictional ones sit beside real ones. A database with any referral already in
      * it is somebody's record, and mixing is not reversible by eye.
+     *
+     * Users are counted too, and named in the message. On a database that holds only an
+     * administrator the first two counts are zero, so a message that omitted users read
+     * as "0 referral(s) and 0 appointment(s)" — a refusal that looked like a bug and sent
+     * the operator looking in the wrong place. The account is what stopped the seed, so
+     * the account is what the message has to name.
      */
-    public static function databaseNotEmpty(int $referrals, int $appointments): self
+    public static function databaseNotEmpty(int $referrals, int $appointments, int $users): self
     {
         return new self(sprintf(
-            'Refusing to seed demo data: this database already contains %d referral(s) and '
-            . '%d appointment(s) that the seed did not create. Seeding here would place '
-            . 'fictional patients among real records.',
+            'Refusing to seed demo data: this database already contains %d referral(s), '
+            . '%d appointment(s) and %d user account(s) that the seed did not create. '
+            . 'Seeding here would place fictional patients among real records.',
             $referrals,
             $appointments,
+            $users,
         ));
     }
 }
