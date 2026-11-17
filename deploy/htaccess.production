@@ -20,6 +20,12 @@ DirectoryIndex index.php
     RewriteRule ^request/?$                      /login [R=301,L]
 
     RewriteRule ^referrers/?$                    /my-referrals [R=301,L]
+
+    # `/procedures` was the live index of the procedure pages and is listed in the live
+    # sitemap at booking.hakimerad.com. Release 1 serves that list at /services, so the
+    # indexed URL goes there rather than 404ing. The two slug rules below cover the only
+    # procedure pages the live site published.
+    RewriteRule ^procedures/?$                   /services [R=301,L]
     RewriteRule ^procedures/biopsy-fnac/?$       /services/fnac [R=301,L]
     RewriteRule ^procedures/abscess-drainage/?$  /services/abscess_drainage [R=301,L]
 
