@@ -22,6 +22,7 @@ use App\Controllers\AuthController;
 use App\Controllers\AvailabilityController;
 use App\Controllers\BookingController;
 use App\Controllers\AdminContentController;
+use App\Controllers\PolicyController;
 use App\Controllers\ServiceController;
 use App\Controllers\DocumentController;
 use App\Controllers\HealthController;
@@ -172,6 +173,27 @@ return static function (Application $app): void {
         '/services/{slug}',
         static fn (Request $request, array $params) => $services->show($request, $params),
         RouteAccess::public('public service page'),
+    );
+
+    $policy = new PolicyController($app->view(), $app->auth(), $app->content());
+
+    // HR-WEB-CONTENT-R1-001. Each path names its content key explicitly rather than
+    // deriving it from the URL, so a page cannot be reached under a key it is not.
+    // Until a version is published with an approver and a review date these return 404.
+    $router->get(
+        '/privacy',
+        static fn (Request $request) => $policy->show($request, 'policy.privacy'),
+        RouteAccess::public('privacy notice'),
+    );
+    $router->get(
+        '/booking-policy',
+        static fn (Request $request) => $policy->show($request, 'policy.booking'),
+        RouteAccess::public('booking policy'),
+    );
+    $router->get(
+        '/referral-guidance',
+        static fn (Request $request) => $policy->show($request, 'policy.referral'),
+        RouteAccess::public('referral guidance'),
     );
 
     $router->get(

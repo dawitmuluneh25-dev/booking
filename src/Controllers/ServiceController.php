@@ -44,7 +44,12 @@ final class ServiceController
 
     public function index(Request $request): Response
     {
-        $pages = $this->content->servable($this->today());
+        // Only service pages. The content store also holds the policy pages, and a
+        // privacy notice has no business appearing in a list of procedures.
+        $pages = array_values(array_filter(
+            $this->content->servable($this->today()),
+            static fn (PublishedContent $page): bool => str_starts_with($page->contentKey, self::PREFIX),
+        ));
 
         return Response::html($this->view->render('services/index', [
             'title' => 'Services',
