@@ -42,17 +42,25 @@ final class RouteAccessManifestTest extends TestCase
         // The token is the credential; the route has to work without a session
         // because that is the entire point of a status link.
         'GET /r/{token}',
+        // HR-WEB-CONTENT-R1-001. A privacy notice that requires a login is not a
+        // privacy notice, and the same goes for the booking policy a patient is
+        // asked to accept. All three return 404 until a version is published with
+        // an approver and a review date, so being reachable is not being readable.
+        'GET /privacy',
+        'GET /booking-policy',
+        'GET /referral-guidance',
     ];
 
     public function testEveryRouteDeclaresItsAccess(): void
     {
         $manifest = $this->manifest();
 
-        // 95: 92 plus the procedure-day routes (BL-C3) — today's queue, one
-        // appointment, and the milestone it records. Every one of them is
-        // permission-gated, and none joins the public set above: a procedure day
-        // carries the patient's name and what happened to them.
-        self::assertSame(95, count($manifest));
+        // 98: 95 plus the three policy pages (HR-WEB-CONTENT-R1-001). The
+        // procedure-day routes added for BL-C3 — today's queue, one appointment,
+        // and the milestone it records — remain permission-gated, and none joins
+        // the public set above: a procedure day carries the patient's name and what
+        // happened to them.
+        self::assertSame(98, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);
