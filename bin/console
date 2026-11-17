@@ -175,6 +175,19 @@ function syncContent(Application $app): int
         return 1;
     }
 
+    // The three public policy pages are a separate document and a separate file. They import
+    // the same way and land as drafts; without approver and dates they cannot be published,
+    // which is deliberate while those values are outstanding.
+    $policySource = dirname(__DIR__) . '/database/content/policy-pages.php';
+
+    if (is_file($policySource)) {
+        $policyPages = require $policySource;
+
+        if (is_array($policyPages)) {
+            $pages = array_merge($pages, $policyPages);
+        }
+    }
+
     $repository = $app->content();
     $contentSource = new ContentSource();
     $now = gmdate('Y-m-d H:i:s');
