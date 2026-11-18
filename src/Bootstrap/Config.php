@@ -12,6 +12,15 @@ use App\Domain\ReferralTrackingLink;
  */
 final class Config
 {
+    /**
+     * The directed retention period, in days: five years.
+     *
+     * Five calendar years are 1826 days, or 1827 when the span holds two leap
+     * days. Taking the larger figure means the window never ends even one day
+     * before the period the privacy notice states.
+     */
+    public const DEFAULT_RETENTION_DAYS = 1827;
+
     public function __construct(private readonly string $root)
     {
     }
@@ -94,10 +103,15 @@ final class Config
         return $this->root('var/backups');
     }
 
-    /** Days after which the personal data of a finished booking is redacted. */
+    /**
+     * Days after which the personal data of a finished booking is redacted.
+     *
+     * The fallback is the directed five years, so an unset variable cannot
+     * silently shorten a period the privacy notice states.
+     */
     public function retentionDays(): int
     {
-        return max(1, Env::int('RETENTION_DAYS', 730));
+        return max(1, Env::int('RETENTION_DAYS', self::DEFAULT_RETENTION_DAYS));
     }
 
     /**
