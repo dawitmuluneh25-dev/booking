@@ -16,6 +16,12 @@ if ($signedIn) {
         $navItems[] = ['href' => '/my-referrals', 'label' => 'My referrals'];
     }
 
+    // The public application form's queue (ADR-013). Separate from /admin because
+    // reception triages it without holding any administrative permission.
+    if ($currentUser->can(\App\Domain\Permission::AccountRequestTriage)) {
+        $navItems[] = ['href' => '/admin/account-requests', 'label' => 'Account requests'];
+    }
+
     if ($currentUser->can(\App\Domain\Permission::ClinicalReview)) {
         $navItems[] = ['href' => '/review', 'label' => 'Review'];
     }

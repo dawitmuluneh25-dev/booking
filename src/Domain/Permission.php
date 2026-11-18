@@ -12,6 +12,18 @@ enum Permission: string
 {
     case BookingsManage = 'bookings.manage';
     case UsersManage = 'users.manage';
+
+    /**
+     * Reading the queue of referring-account requests (ADR-013, owner answer Q2,
+     * 18 Nov 2026).
+     *
+     * Separate from `users.manage` on purpose. Reception triages the queue — sees
+     * who is waiting, spots a duplicate, answers the telephone about it — without
+     * holding the right to create an account. One permission would have made
+     * "can see who asked" and "can create staff" the same grant, and the second is
+     * much larger than the first.
+     */
+    case AccountRequestTriage = 'account_requests.triage';
     case ClinicConfigure = 'clinic.configure';
     case SystemMaintain = 'system.maintain';
     case ReferralSubmit = 'referral.submit';

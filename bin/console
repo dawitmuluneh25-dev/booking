@@ -8,6 +8,8 @@ use App\Database\DemoSeedGuard;
 use App\Database\DemoSeedRefused;
 use App\Database\DemoSeeder;
 use App\Database\Migrator;
+use App\Domain\AuditAction;
+use App\Domain\AuditEntry;
 use App\Domain\ContentSource;
 use App\Domain\ValidationException;
 use App\Domain\RetentionPolicy;
@@ -94,6 +96,9 @@ switch ($command) {
     case 'retention:purge':
         exit(retentionPurge($app, $options));
 
+    case 'accounts:requests':
+        exit(listAccountRequests($app, $options));
+
     case 'demo:seed':
         exit(demoSeed($app, $options));
 
@@ -131,6 +136,12 @@ switch ($command) {
 
           php bin/console retention:plan
           php bin/console retention:purge [--days=730] [--yes] [--limit=500]
+
+          php bin/console accounts:requests [--expire]
+
+        accounts:requests lists the referring-account queue and, with --expire,
+        closes anything nobody answered in 60 days. Receiving no answer is not a
+        decision, so it is recorded as expiry rather than approval or refusal.
 
           php bin/console demo:seed [--yes] [--password=…]
           php bin/console content:sync        Import the §17.1–§17.4 service pages as drafts
@@ -966,9 +977,93 @@ function retentionPurge(Application $app, array $options): int
         $documentResult['documents'],
     );
 
+    // The account-request queue is not clinical, so it does not follow the clinical
+    // retention window: an applicant nobody answered is expired after 60 days, and
+    // the counter rows behind the public form's rate cap after one day. Both are
+    // hygiene, and both would otherwise grow without limit on an unattended host.
+    $requestsExpired = $app->accountRequests()->expirePendingOlderThan(
+        gmdate('Y-m-d H:i:s', time() - (60 * 86400)),
+    );
+    $attemptsRemoved = $app->accountRequestAttempts()->purgeOlderThan(
+        gmdate('Y-m-d H:i:s', time() - 86400),
+    );
+
+    printf(
+        "expired %d unanswered account request(s); removed %d rate-limit counter row(s)\n",
+        $requestsExpired,
+        $attemptsRemoved,
+    );
+
+    if ($requestsExpired > 0) {
+        $app->auditTrail()->record(new AuditEntry(
+            action: AuditAction::AccountRequestExpired,
+            objectType: 'account_request',
+            objectRef: 'batch',
+            after: ['expired' => $requestsExpired, 'after_days' => 60],
+        ));
+    }
+
     if ($result['remaining'] || $documentResult['remaining']) {
         echo "More rows remain; run the command again." . PHP_EOL;
     }
+
+    return 0;
+}
+
+/**
+ * The referring-account queue, from the console.
+ *
+ * Exists so the queue is observable from cron's log rather than only in a browser:
+ * an unanswered request is a clinician who cannot refer, and nobody sees a web page
+ * they do not open.
+ */
+function listAccountRequests(Application $app, array $options): int
+{
+    $expire = in_array('--expire', $options, true);
+
+    try {
+        if ($expire) {
+            $expired = $app->accountRequests()->expirePendingOlderThan(
+                gmdate('Y-m-d H:i:s', time() - (60 * 86400)),
+            );
+            printf("expired %d request(s) older than 60 days\n", $expired);
+
+            if ($expired > 0) {
+                $app->auditTrail()->record(new AuditEntry(
+                    action: AuditAction::AccountRequestExpired,
+                    objectType: 'account_request',
+                    objectRef: 'batch',
+                    after: ['expired' => $expired, 'after_days' => 60],
+                ));
+            }
+        }
+
+        $pending = $app->accountRequests()->pending();
+    } catch (Throwable $exception) {
+        fwrite(STDERR, 'Requests unavailable: ' . $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    if ($pending === []) {
+        echo 'No account request is waiting for a decision.' . PHP_EOL;
+
+        return 0;
+    }
+
+    printf("%d request(s) waiting:\n", count($pending));
+
+    foreach ($pending as $request) {
+        printf(
+            "  %s  %-28s %-32s %s\n",
+            $request->reference,
+            $request->fullName,
+            $request->practiceName,
+            $request->createdAtUtc . ' UTC',
+        );
+    }
+
+    echo PHP_EOL . 'Decide them at /admin/account-requests.' . PHP_EOL;
 
     return 0;
 }

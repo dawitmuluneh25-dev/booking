@@ -101,6 +101,30 @@ final class Config
     }
 
     /**
+     * The key that turns a visitor's address into a stored counter hash.
+     *
+     * `APP_SECRET` is the right answer and is set in production. When it is absent the
+     * fallback derives a key from values this installation already holds — the
+     * database password and the base URL — so the counter is not portable between
+     * installations and cannot be reversed by enumerating IPv4 space. It is a weaker
+     * secret than a generated one, which is why it is documented rather than silent:
+     * an empty `APP_SECRET` is a fallback, not a null.
+     */
+    public function appSecret(): string
+    {
+        $secret = trim((string) Env::get('APP_SECRET', ''));
+
+        if ($secret !== '') {
+            return $secret;
+        }
+
+        $database = $this->database();
+        $password = $database['password'] ?? '';
+
+        return hash('sha256', 'account-request-throttle|' . (string) $password . '|' . $this->baseUrl());
+    }
+
+    /**
      * Private document storage, deliberately outside `public/`.
      *
      * A relative value is resolved against the application root so a deployment

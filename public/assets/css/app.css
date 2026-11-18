@@ -777,6 +777,28 @@ tr.is-superseded td {
     border: 0;
 }
 
+/*
+ * The honeypot field on the public account-request form. Moved off-screen rather
+ * than `display: none`, because some bots skip hidden inputs and fill rendered
+ * ones; it must also stay out of the tab order and the accessibility tree, which
+ * the markup handles with tabindex="-1" and aria-hidden.
+ */
+.honeypot {
+    position: absolute;
+    left: -9999px;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+/* The reference a requester must keep: monospaced and selectable. */
+.reference {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
 @media (max-width: 40rem) {
     .header-inner { gap: 0.75rem; }
     .site-nav { width: 100%; }

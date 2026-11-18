@@ -47,6 +47,8 @@ names who must sign, which is why the status column says "unapproved" rather tha
 | [ADR-022](#adr-022) | Clinical approval is gated on a dated, procedure-scoped verification | Implemented | Architecture, on Product Owner Decision 6 | 2026-11-14 | — |
 | [ADR-023](#adr-023) | Three clinical support roles hold no clinical authority and start with one non-clinical permission | Implemented | Architecture, on Product Owner Decision 5 | 2026-11-14 | — |
 | [ADR-024](#adr-024) | Escalation is a roster somebody has verified, and nothing else | Implemented | Architecture + Operations, on Product Owner Decision 4 | 2026-11-14 | — |
+| [ADR-025](#adr-025) | A procedure-day event is not a status, and is corrected by another event | Implemented | Architecture, on the procedure-day requirements (§15) | 2026-11-17 | — |
+| [ADR-026](#adr-026) | A referring account is requested publicly, granted administratively, and authorised clinically | **Accepted** | Product Owner (Q1–Q5), Clinical Lead for the verification half | 2026-11-18 | — |
 
 The 12 migrated entries were recorded in `README.md` §6 during the build. Their original
 decision dates were never captured, and inventing one would make the register look more
@@ -868,3 +870,35 @@ Four choices are part of it:
 
 **Status.** Implemented. **Owner.** Architecture, on the approved package §15 and A-20. **Date.**
 2026-11-14. **Supersedes.** —.
+
+---
+
+## ADR-026
+
+**A referring account is requested publicly, granted administratively, and authorised clinically — three separate acts.**
+
+**Context.** ADR-013 replaced anonymous referral submission with referral accounts "created through a request-and-approve flow". That flow did not exist: there was no table, no form, no route and no way for a clinician without an account to ask for one. `/request` redirected to `/login`, which is a dead end for the person the flow exists for. The Product Owner answered the five open design questions on 18 November 2026, and this entry records the shape those answers produced.
+
+**Decision.** One new table (`account_requests`, migration `0044`), one public form at `/request-account`, and a staff queue at `/admin/account-requests`.
+
+The load-bearing part is that three things that could have been one act are kept apart:
+
+1. **Asking** — unauthenticated, one page, one response. It collects a name, a work address, a practice, an optional registration number and a short note. It collects no clinical content, and it says so on the form.
+2. **Granting an account** — an administrator with `users.manage`. Approval creates the `users` row through `CreateUserAccount` (the only path by which a `Role` enters the system) and a `pending` physician profile, in one transaction.
+3. **Granting referral authority** — a clinical approver, through the existing `VerifyPhysician`. Approval therefore does **not** mean the clinic accepts referrals from that person; the profile is pending until somebody with clinical standing verifies the registration.
+
+Three further decisions are part of the same shape:
+
+- **Reading the queue is its own permission.** `account_requests.triage` is held by reception; deciding needs `users.manage`. The owner's answer to Q2 was that reception may triage without the right to create accounts, and one permission would have made "can see who asked" equal to "can create staff".
+- **Three anti-abuse layers, no third-party processor.** A honeypot field, a per-network cap of 5 an hour and 20 a day, and a self-hosted challenge question. A hosted CAPTCHA was declined for now because it would add a processor to a form that collects personal data before any relationship exists — a privacy decision nobody had taken. The trade-off is stated plainly: the challenge is the weakest of the three and stops naive form fillers, not a determined attacker.
+- **No email on submission, and a reference number instead.** The requester sees `AR-…` on screen and receives nothing else. Nothing an anonymous caller does can cause mail to a third party, and there is no acknowledgement to leak whether an address is already registered. The same page is returned whether a row was written, collapsed as a duplicate, or discarded by the honeypot.
+
+**Consequences.**
+
+- An unattended queue is bounded: pending requests expire after 60 days through `retention:purge` and `accounts:requests --expire`, and are recorded as expired rather than approved or refused, because nobody deciding is not a decision.
+- `physician_profiles.practice_number` is required and unique while the form's registration number is optional, so an approval without one stores `pending-<reference>` — visibly provisional, and the verifier's problem to correct before verification.
+- Rejection requires a reason of at least ten characters: a decision nobody can explain later is not reviewable.
+- The queue's decisions appear in `/admin/audit` with an actor; submissions appear with none, because an unauthenticated act has no identity to record. The stranger's free-text note is never copied into the trail.
+- A CAPTCHA provider, if adopted later, must be added to the Privacy §10 processor inventory before it goes live.
+
+**Status.** Accepted — Product Owner, 18 November 2026 (answers Q1–Q5), implemented the same day. **Owner.** Product Owner for the flow; Clinical Lead for the verification half.

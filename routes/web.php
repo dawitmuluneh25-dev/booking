@@ -16,6 +16,8 @@ use App\Controllers\AdminLaboratoryController;
 use App\Controllers\AdminHoursController;
 use App\Controllers\AdminPhysicianController;
 use App\Controllers\AdminResourceController;
+use App\Controllers\AdminAccountRequestController;
+use App\Controllers\AccountRequestController;
 use App\Controllers\AdminUserController;
 use App\Controllers\AppointmentController;
 use App\Controllers\AuthController;
@@ -64,6 +66,19 @@ return static function (Application $app): void {
         $app->gate(),
         $app->createUserAccount(),
         $app->changeUserRole(),
+    );
+    $accountRequests = new AccountRequestController(
+        $app->view(),
+        $app->requestAccount(),
+        $app->config()->appSecret(),
+    );
+    $adminAccountRequests = new AdminAccountRequestController(
+        $app->view(),
+        $app->accountRequests(),
+        $app->auth(),
+        $app->gate(),
+        $app->approveAccountRequest(),
+        $app->rejectAccountRequest(),
     );
     $admin = new AdminController($app->view(), $app->auth(), $app->gate());
 
@@ -196,6 +211,21 @@ return static function (Application $app): void {
         RouteAccess::public('referral guidance'),
     );
 
+    // ADR-013 / owner decision 17-18 Nov 2026. Public because the person who needs it
+    // has no account — that is the premise of the page. It accepts no clinical
+    // content, emails nobody on submission, and answers identically whether or not
+    // the address already has an account.
+    $router->get(
+        '/request-account',
+        static fn (Request $request) => $accountRequests->show($request),
+        RouteAccess::public('referring account request form'),
+    );
+    $router->post(
+        '/request-account',
+        static fn (Request $request) => $accountRequests->store($request),
+        RouteAccess::public('referring account request submission'),
+    );
+
     $router->get(
         '/login',
         static fn (Request $request) => $auth->showLogin($request),
@@ -293,6 +323,25 @@ return static function (Application $app): void {
     $router->post(
         '/admin/users/role',
         static fn (Request $request) => $adminUsers->changeRole($request),
+        RouteAccess::permission(Permission::UsersManage),
+    );
+
+    // ADR-013: the queue the public application form feeds. Reading it is a triage
+    // permission; deciding it creates an account and therefore needs `users.manage`,
+    // which each handler checks again rather than trusting the route.
+    $router->get(
+        '/admin/account-requests',
+        static fn (Request $request) => $adminAccountRequests->index($request),
+        RouteAccess::permission(Permission::AccountRequestTriage),
+    );
+    $router->post(
+        '/admin/account-requests/{id}/approve',
+        static fn (Request $request, array $params) => $adminAccountRequests->approve($request, $params),
+        RouteAccess::permission(Permission::UsersManage),
+    );
+    $router->post(
+        '/admin/account-requests/{id}/reject',
+        static fn (Request $request, array $params) => $adminAccountRequests->reject($request, $params),
         RouteAccess::permission(Permission::UsersManage),
     );
     $router->get(

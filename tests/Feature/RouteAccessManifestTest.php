@@ -49,18 +49,27 @@ final class RouteAccessManifestTest extends TestCase
         'GET /privacy',
         'GET /booking-policy',
         'GET /referral-guidance',
+        // ADR-013: the person who needs a referring account has no account, so the
+        // form cannot require a session. It collects no clinical content and answers
+        // identically whether or not an address is already registered.
+        'GET /request-account',
+        'POST /request-account',
     ];
 
     public function testEveryRouteDeclaresItsAccess(): void
     {
         $manifest = $this->manifest();
 
-        // 98: 95 plus the three policy pages (HR-WEB-CONTENT-R1-001). The
-        // procedure-day routes added for BL-C3 — today's queue, one appointment,
-        // and the milestone it records — remain permission-gated, and none joins
-        // the public set above: a procedure day carries the patient's name and what
+        // 103: 98 plus the five account-request routes (ADR-013) — the form's GET and
+        // POST, which are public and listed above, and the queue plus its two decision
+        // handlers. The queue is gated by `account_requests.triage` and the decisions by
+        // `users.manage`, because deciding creates an account while reading does not.
+        //
+        // The procedure-day routes added for BL-C3 — today's queue, one appointment,
+        // and the milestone it records — remain permission-gated, and none joins the
+        // public set above: a procedure day carries the patient's name and what
         // happened to them.
-        self::assertSame(98, count($manifest));
+        self::assertSame(103, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);

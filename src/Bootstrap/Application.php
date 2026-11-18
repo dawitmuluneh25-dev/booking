@@ -9,8 +9,15 @@ use App\Database\DatabaseBackup;
 use App\Database\Migrator;
 use App\Database\PdoTransaction;
 use LogicException;
+use App\Domain\AccountRequestAttempts;
+use App\Domain\AccountRequestRepository;
+use App\Domain\AccountRequestThrottle;
+use App\Domain\ApproveAccountRequest;
 use App\Domain\AuditRepository;
 use App\Domain\AuditTrail;
+use App\Domain\RejectAccountRequest;
+use App\Domain\RequestAccount;
+use App\Domain\SessionHumanCheck;
 use App\Domain\BookingService;
 use App\Domain\ClinicCalendar;
 use App\Domain\OpenUrgentReview;
@@ -112,6 +119,8 @@ use App\Repositories\PdoReferralRetentionRepository;
 use App\Repositories\PdoTrackingTokenRepository;
 use App\Repositories\PdoClinicalAssessmentRepository;
 use App\Repositories\PdoConsentRepository;
+use App\Repositories\PdoAccountRequestAttempts;
+use App\Repositories\PdoAccountRequestRepository;
 use App\Repositories\PdoContentRepository;
 use App\Repositories\PdoLaboratoryDestinationRepository;
 use App\Repositories\PdoNotificationFeed;
@@ -216,6 +225,18 @@ final class Application
     private ?ChangeUserRole $changeUserRole = null;
 
     private ?CreateUserAccount $createUserAccount = null;
+
+    private ?AccountRequestRepository $accountRequests = null;
+
+    private ?AccountRequestAttempts $accountRequestAttempts = null;
+
+    private ?AccountRequestThrottle $accountRequestThrottle = null;
+
+    private ?RequestAccount $requestAccount = null;
+
+    private ?ApproveAccountRequest $approveAccountRequest = null;
+
+    private ?RejectAccountRequest $rejectAccountRequest = null;
 
     private ?VerifyPhysician $verifyPhysician = null;
 
@@ -837,6 +858,50 @@ final class Application
     public function users(): UserRepository
     {
         return $this->users ??= new PdoUserRepository($this->pdo());
+    }
+
+    public function accountRequests(): AccountRequestRepository
+    {
+        return $this->accountRequests ??= new PdoAccountRequestRepository($this->pdo());
+    }
+
+    public function accountRequestAttempts(): AccountRequestAttempts
+    {
+        return $this->accountRequestAttempts ??= new PdoAccountRequestAttempts($this->pdo());
+    }
+
+    public function accountRequestThrottle(): AccountRequestThrottle
+    {
+        return $this->accountRequestThrottle ??= new AccountRequestThrottle($this->accountRequestAttempts());
+    }
+
+    public function requestAccount(): RequestAccount
+    {
+        return $this->requestAccount ??= new RequestAccount(
+            $this->accountRequests(),
+            $this->accountRequestThrottle(),
+            new SessionHumanCheck(),
+            $this->auditTrail(),
+        );
+    }
+
+    public function approveAccountRequest(): ApproveAccountRequest
+    {
+        return $this->approveAccountRequest ??= new ApproveAccountRequest(
+            $this->accountRequests(),
+            $this->createUserAccount(),
+            $this->physicians(),
+            $this->auditTrail(),
+            $this->transaction(),
+        );
+    }
+
+    public function rejectAccountRequest(): RejectAccountRequest
+    {
+        return $this->rejectAccountRequest ??= new RejectAccountRequest(
+            $this->accountRequests(),
+            $this->auditTrail(),
+        );
     }
 
     public function auth(): Auth

@@ -36,6 +36,13 @@ enum AuditAction: string
     case LoginThrottled = 'auth.login_throttled';
     case DocumentReleased = 'document.released';
     case DocumentWithheld = 'document.withheld';
+    // The public account-request queue (ADR-013). Submission is recorded without the
+    // stranger's free-text note: the trail is readable by administrators, and that
+    // note is the one field an unauthenticated visitor wrote.
+    case AccountRequested = 'account.requested';
+    case AccountRequestApproved = 'account.request_approved';
+    case AccountRequestRejected = 'account.request_rejected';
+    case AccountRequestExpired = 'account.request_expired';
 
     public function label(): string
     {
@@ -58,6 +65,10 @@ enum AuditAction: string
             self::LoginThrottled => 'Sign-in throttled',
             self::DocumentReleased => 'Document released',
             self::DocumentWithheld => 'Document withheld',
+            self::AccountRequested => 'Referring account requested',
+            self::AccountRequestApproved => 'Referring account approved',
+            self::AccountRequestRejected => 'Referring account refused',
+            self::AccountRequestExpired => 'Referring account request expired',
         };
     }
 }

@@ -27,6 +27,7 @@ Verified on PHP 8.3.36 and MySQL 8.4.9 Community (InnoDB, `utf8mb4_0900_ai_ci`).
 | One booking per 30-minute slot, enforced by the database | `booking_slots` primary key, `PdoBookingRepository::create()` |
 | Lifecycle transitions with an append-only event log | `src/Domain/BookingStatus.php`, `booking_events` |
 | Staff accounts, roles, login throttling, password reset | `src/Security/Auth.php`, `users`, `login_attempts`, `password_resets` |
+| Referring accounts by public request, then administrative approval, then clinical verification (ADR-026) | `/request-account`, `/admin/account-requests`, `account_requests`, `src/Domain/ApproveAccountRequest.php` |
 | Read-only availability calendar built from claimed slots | `/availability`, `src/Domain/DaySchedule.php` |
 | Transactional notification outbox with retries | `src/Notifications/`, `notification_outbox` |
 | Configurable opening hours and one-off closures | `clinic_hours`, `clinic_closures`, `/admin/hours` |
@@ -36,7 +37,7 @@ Verified on PHP 8.3.36 and MySQL 8.4.9 Community (InnoDB, `utf8mb4_0900_ai_ci`).
 | Logical backup and restore drill without `mysqldump` | `src/Database/DatabaseBackup.php`, `db:*` commands |
 | Prepared statements only | `src/Repositories/PdoBookingRepository.php` |
 | Forward-only migrations with checksum ledger | `src/Database/Migrator.php` |
-| CLI: doctor, migrate, bookings, users, outbox, backup, retention | `bin/console` |
+| CLI: doctor, migrate, bookings, users, accounts, outbox, backup, retention | `bin/console` |
 | PWA: manifest, service worker, offline page | `public/manifest.webmanifest`, `public/sw.js` |
 | Unit + feature tests | `tests/` |
 

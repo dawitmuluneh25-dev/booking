@@ -60,6 +60,9 @@ enum Role: string
             self::Admin => [
                 Permission::BookingsManage,
                 Permission::UsersManage,
+                // Approving a request creates an account; reading the queue does not,
+                // and reception holds only the reading half (owner answer Q2).
+                Permission::AccountRequestTriage,
                 Permission::ClinicConfigure,
                 Permission::SystemMaintain,
                 Permission::ReferralTriage,
@@ -83,6 +86,7 @@ enum Role: string
             ],
             self::Staff => [
                 Permission::BookingsManage,
+                Permission::AccountRequestTriage,
                 Permission::ReferralSubmit,
                 Permission::ReferralTriage,
                 Permission::ScheduleManage,

@@ -22,6 +22,16 @@
         </article>
 
         <article class="card">
+            <h3>Referring account requests</h3>
+            <p>
+                Clinicians who asked for an account through the public form. Approving one
+                creates the account; referral authority is granted separately by a clinical
+                approver.
+            </p>
+            <a class="link" href="/admin/account-requests">Open the queue</a>
+        </article>
+
+        <article class="card">
             <h3>Opening hours</h3>
             <p>Weekly opening hours and one-off closed days.</p>
             <a class="link" href="/admin/hours">Edit hours</a>
