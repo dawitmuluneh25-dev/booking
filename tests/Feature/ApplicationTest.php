@@ -21,7 +21,10 @@ final class ApplicationTest extends TestCase
         $response = $app->handle(Request::create('GET', '/'));
 
         self::assertSame(200, $response->status);
-        self::assertStringContainsString('Request an appointment', $response->body());
+        // The landing page describes the intake ADR-013 actually ships: referrals
+        // from registered clinicians. See PublicFunnelTest for the reachability
+        // assertions that this page previously failed.
+        self::assertStringContainsString('Refer a patient', $response->body());
         self::assertStringContainsString('<html lang="en">', $response->body());
     }
 

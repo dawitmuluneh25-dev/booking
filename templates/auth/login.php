@@ -7,9 +7,9 @@
  */
 ?>
 <section class="auth-card">
-    <p class="eyebrow">Staff access</p>
+    <p class="eyebrow">Account</p>
     <h1>Sign in</h1>
-    <p class="muted">Managing bookings requires an account.</p>
+    <p class="muted">Referrals and bookings both need an account.</p>
 
     <?php if ($notice !== null): ?>
         <div class="alert alert-success" role="status"><?= e($notice) ?></div>
@@ -51,4 +51,9 @@
             <button class="button" type="submit">Sign in</button>
         </div>
     </form>
+
+    <?php /* The reverse of the landing page's link. A clinician who followed a
+             bookmark to this page needs the way back to the request form, and
+             there is no other route to it from inside the application. */ ?>
+    <p class="muted">No account yet? <a href="/request-account">Request a referring account</a>.</p>
 </section>

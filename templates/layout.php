@@ -1,8 +1,9 @@
 <?php
 /**
- * @var string $title
- * @var string $content
- * @var string $appName
+ * @var string      $title
+ * @var string      $content
+ * @var string      $appName
+ * @var string|null $description
  */
 $navItems = [];
 $signedIn = ($currentUser ?? null) !== null;
@@ -61,7 +62,9 @@ if ($signedIn) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($title ?? 'Booking') ?> · <?= e($appName ?? 'Booking') ?></title>
-    <meta name="description" content="Request a booking online.">
+    <?php /* A page may name its own description; the fallback describes what this
+             application is now rather than the booking funnel ADR-013 removed. */ ?>
+    <meta name="description" content="<?= e($description ?? 'Interventional radiology referrals for registered clinicians.') ?>">
     <meta name="theme-color" content="#0f4c5c">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png">

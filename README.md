@@ -546,9 +546,12 @@ template registration stay in the bridge; changing provider never touches this a
 
 | Method | Path | Access |
 |---|---|---|
-| GET | `/` | public |
-| GET | `/bookings/new` | public |
-| POST | `/bookings` | public (CSRF required) |
+| GET | `/` | public; the landing page links to the account request, not to the staff form |
+| GET/POST | `/request-account` | public (CSRF required on POST); ADR-026 |
+| GET | `/admin/account-requests` | `account_requests.triage` |
+| POST | `/admin/account-requests/{id}/approve`, `/reject` | `users.manage` (CSRF required) |
+| GET | `/bookings/new` | `bookings.manage` — staff only; not advertised publicly |
+| POST | `/bookings` | `bookings.manage` (CSRF required) |
 | GET | `/bookings` | any signed-in staff |
 | GET | `/bookings/{reference}` | public by reference |
 | POST | `/bookings/{reference}/confirm`, `/cancel` | staff with `bookings.manage` |

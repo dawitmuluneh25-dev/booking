@@ -21,7 +21,9 @@ final class HomeController
     public function index(Request $request): Response
     {
         return Response::html($this->view->render('home', [
-            'title' => 'Book an appointment',
+            'title' => 'Refer a patient',
+            'description' => 'Refer a patient to the interventional radiology service. '
+                . 'Referrals are sent by registered clinicians.',
             'services' => BookingService::SERVICES,
             'currentUser' => $this->auth->user(),
         ]));
