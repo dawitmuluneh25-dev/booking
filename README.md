@@ -544,19 +544,26 @@ template registration stay in the bridge; changing provider never touches this a
 
 ## 12. Routes
 
+This table is curated: it documents the routes somebody needs to know about, not all 103. The
+complete manifest is asserted by `tests/Feature/RouteAccessManifestTest.php`, and
+`tests/Feature/DocumentedRoutesTest.php` fails if any row below names a route that does not exist or
+describes its access differently from the code. Every path is written in full — a shorthand like
+`/cancel` is not a URL and cannot be checked.
+
 | Method | Path | Access |
 |---|---|---|
 | GET | `/` | public; the landing page links to the account request, not to the staff form |
 | GET/POST | `/request-account` | public (CSRF required on POST); ADR-026 |
 | GET | `/admin/account-requests` | `account_requests.triage` |
-| POST | `/admin/account-requests/{id}/approve`, `/reject` | `users.manage` (CSRF required) |
+| POST | `/admin/account-requests/{id}/approve`, `/admin/account-requests/{id}/reject` | `users.manage` (CSRF required) |
 | GET | `/bookings/new` | `bookings.manage` — staff only; not advertised publicly |
 | POST | `/bookings` | `bookings.manage` (CSRF required) |
-| GET | `/bookings` | any signed-in staff |
-| GET | `/bookings/{reference}` | public by reference |
-| POST | `/bookings/{reference}/confirm`, `/cancel` | staff with `bookings.manage` |
-| GET | `/availability` | any signed-in staff |
-| GET/POST | `/login`, `/logout` | public |
+| GET | `/bookings` | `bookings.manage` |
+| GET | `/bookings/{reference}` | `bookings.manage` — staff; the patient-facing path is the status link `/r/{token}` |
+| POST | `/bookings/{reference}/confirm`, `/bookings/{reference}/cancel` | `bookings.manage` (CSRF required) |
+| GET | `/availability` | public; the calendar answers before sign-in and carries no patient detail |
+| GET | `/login` | public |
+| POST | `/logout` | any signed-in user |
 | GET/POST | `/password/reset/{token}` | public with a valid token |
 | GET | `/admin` | `system.maintain` |
 | GET | `/admin/users` | `users.manage` |
