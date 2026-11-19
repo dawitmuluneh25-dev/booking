@@ -44,7 +44,15 @@ final class Kernel
             );
         }
 
-        return $this->withSecurityHeaders($response, $request->isSecure());
+        $response = $this->withSecurityHeaders($response, $request->isSecure());
+
+        // Stripped here rather than in the router so that every response — the
+        // health check, a rendered page, a 404, a 500 — obeys the same rule.
+        if ($request->isHead()) {
+            return $response->withoutBody();
+        }
+
+        return $response;
     }
 
     /** @param array<string, string> $headers */

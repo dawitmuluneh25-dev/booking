@@ -99,7 +99,14 @@ final class Router
                 continue;
             }
 
-            if ($route['method'] !== $request->method) {
+            // RFC 9110 §9.3.2: a GET route answers HEAD, and the Kernel drops the
+            // body afterwards. An explicit HEAD route, if one is ever registered,
+            // still wins. Before this, `Allow: GET, HEAD` was advertised and HEAD
+            // then answered 405 — the header promised what the router refused.
+            $matchesMethod = $route['method'] === $request->method
+                || ($request->isHead() && $route['method'] === 'GET');
+
+            if (!$matchesMethod) {
                 $allowed[$route['method']] = true;
                 continue;
             }

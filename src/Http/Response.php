@@ -98,6 +98,18 @@ final class Response
         return sprintf('%s; filename="%s"; filename*=UTF-8\'\'%s', $type, $ascii, rawurlencode($name));
     }
 
+    /**
+     * The same response without the body, for HEAD.
+     *
+     * Headers are kept as they are, including any Content-Length a download set:
+     * RFC 9110 §9.3.2 wants HEAD to describe the GET response, and a monitor that
+     * reads Content-Length should see the real size rather than zero.
+     */
+    public function withoutBody(): self
+    {
+        return new self($this->status, $this->headers, '');
+    }
+
     public function withHeader(string $name, string $value): self
     {
         $headers = $this->headers;

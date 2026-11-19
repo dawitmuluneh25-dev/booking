@@ -87,6 +87,17 @@ final class Request
     }
 
     /**
+     * RFC 9110 §9.3.2: HEAD is GET without the body.
+     *
+     * Monitors reach for HEAD by default, so a site that answers 405 to HEAD is a
+     * site that reports itself down while it is serving every page normally.
+     */
+    public function isHead(): bool
+    {
+        return $this->method === 'HEAD';
+    }
+
+    /**
      * Read a trimmed string from the body first, then the query string.
      */
     public function input(string $key, ?string $default = null): ?string
