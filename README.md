@@ -645,6 +645,12 @@ leaves an orphaned file behind. `retention:plan` prints both counts without chan
 Back up `var/private-uploads/` with the database. A database-only backup holds document rows whose
 bytes are gone, which is worse than either half on its own.
 
+What the application actually does with personal data — where it is held, who can reach it, what the
+retention sweep redacts, what the backups do not protect — is written down in
+[docs/operations/control-inventory.md](docs/operations/control-inventory.md). It is the input a privacy
+notice is written from, it names the file behind every claim, and the nine numbers it quotes are pinned
+to their constants by `tests/Feature/ControlInventoryTest.php` so the page cannot quietly become wrong.
+
 ## 14. Remaining backlog
 
 The application implements the foundation, the clinical command layer, scheduling and documents;
