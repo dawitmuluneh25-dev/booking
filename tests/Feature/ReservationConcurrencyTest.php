@@ -43,6 +43,16 @@ final class ReservationConcurrencyTest extends TestCase
 
     private string $workDirectory = '';
 
+    /**
+     * This run's fixture suffix.
+     *
+     * The references used to be fixed — `RF-CONC-01`, `BK-CONC-01`…`20` — which made
+     * a killed run poison the next one. `tearDown` never ran, the referral survived,
+     * and the following run died on the unique index before it measured anything. A
+     * reference that names its own run cannot collide with a corpse.
+     */
+    private string $runId = '';
+
     protected function setUp(): void
     {
         if (!function_exists('proc_open')) {
@@ -58,6 +68,18 @@ final class ReservationConcurrencyTest extends TestCase
             self::markTestSkipped('MySQL is not reachable: ' . $exception->getMessage());
         }
 
+        $this->runId = bin2hex(random_bytes(4));
+
+        // Debris from a run killed before tearDown could run. Two things it breaks:
+        // the unique index on `referrals.reference`, which fails loudly, and the
+        // fixed slot — a surviving winner leaves the slot occupied, so the next run
+        // sees zero winners instead of one, which is a quieter and much more
+        // confusing failure than a duplicate key.
+        //
+        // Sweeping every run's rows is safe only because this suite is serial. A
+        // parallel runner would have to scope this to its own id.
+        $this->clearFixtures('%');
+
         $this->actorUserId = $this->insertActor();
         $this->referralId = $this->insertReferral();
         $this->workDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR
@@ -70,19 +92,12 @@ final class ReservationConcurrencyTest extends TestCase
 
     protected function tearDown(): void
     {
-        if ($this->pdo !== null) {
-            // `resource_slots` and `appointment_resources` cascade from the
-            // appointment, so one delete clears the race completely.
-            $this->pdo->exec(
-                "DELETE FROM appointment_status_history
-                  WHERE appointment_id IN (SELECT id FROM appointments WHERE reference LIKE 'BK-CONC-%')"
-            );
-            $this->pdo->exec("DELETE FROM appointments WHERE reference LIKE 'BK-CONC-%'");
-            $this->pdo->exec("DELETE FROM referrals WHERE reference LIKE 'RF-CONC-%'");
+        // Only this run's rows: if the suite is ever run in parallel, a tearDown
+        // that swept everything would delete a neighbour's fixtures mid-measurement.
+        $this->clearFixtures($this->runId);
 
-            if ($this->actorUserId > 0) {
-                $this->pdo->exec('DELETE FROM users WHERE id = ' . $this->actorUserId);
-            }
+        if ($this->pdo !== null && $this->actorUserId > 0) {
+            $this->pdo->exec('DELETE FROM users WHERE id = ' . $this->actorUserId);
         }
 
         $this->removeTree($this->workDirectory);
@@ -90,6 +105,36 @@ final class ReservationConcurrencyTest extends TestCase
         $this->pdo = null;
         $this->actorUserId = 0;
         $this->workDirectory = '';
+        $this->runId = '';
+    }
+
+    /**
+     * Remove this run's fixture rows, or every run's when `$scope` is `%`.
+     *
+     * `resource_slots` and `appointment_resources` cascade from the appointment, so
+     * one delete of the appointment clears the race completely; the history table is
+     * removed first because it does not.
+     */
+    private function clearFixtures(string $scope): void
+    {
+        // An empty scope concatenates into the wildcard, because `'BK-CONC-' . '' . '%'`
+        // is `BK-CONC-%` — every run's rows. A teardown that never had a run id must not
+        // become a global delete, so the guard is on the scope as well as the connection.
+        if ($this->pdo === null || $scope === '') {
+            return;
+        }
+
+        $appointments = 'BK-CONC-' . $scope . '%';
+        $referrals = 'RF-CONC-' . $scope . '%';
+
+        $history = $this->pdo->prepare(
+            'DELETE FROM appointment_status_history
+              WHERE appointment_id IN (SELECT id FROM appointments WHERE reference LIKE ?)'
+        );
+        $history->execute([$appointments]);
+
+        $this->pdo->prepare('DELETE FROM appointments WHERE reference LIKE ?')->execute([$appointments]);
+        $this->pdo->prepare('DELETE FROM referrals WHERE reference LIKE ?')->execute([$referrals]);
     }
 
     public function testTwentyConcurrentClientsProduceExactlyOneBooking(): void
@@ -121,7 +166,7 @@ final class ReservationConcurrencyTest extends TestCase
                 'slot' => self::SLOT,
                 'slot_end' => self::SLOT_END,
                 'actor_id' => $this->actorUserId,
-                'reference' => 'BK-CONC-' . $id,
+                'reference' => 'BK-CONC-' . $this->runId . '-' . $id,
                 'referral_id' => $this->referralId,
                 'start_at' => $startAt,
                 'out' => $out,
@@ -182,10 +227,13 @@ final class ReservationConcurrencyTest extends TestCase
                 (reference, status, patient_name, patient_phone, procedure_code,
                  submitted_by_user_id, submitted_on_behalf_of, created_at, updated_at)
              VALUES
-                ('RF-CONC-01', 'converted_to_appointment', 'Race Fixture', '+251911000000',
+                (:reference, 'converted_to_appointment', 'Race Fixture', '+251911000000',
                  'image_guided_biopsy', :user_id, 'referrer', UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         );
-        $statement->execute(['user_id' => $this->actorUserId]);
+        $statement->execute([
+            'reference' => 'RF-CONC-' . $this->runId,
+            'user_id' => $this->actorUserId,
+        ]);
 
         return (int) $this->pdo()->lastInsertId();
     }
