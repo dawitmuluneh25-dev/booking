@@ -98,6 +98,22 @@ if ($sha === null || preg_match('/^[0-9a-f]{7,40}$/', $sha) !== 1) {
     exit(2);
 }
 
+// `?head_sha=` is applied by GitHub, not by us: an abbreviated sha returns an empty
+// list, so the parser never sees the run that exists and the command answers "no run"
+// for a green commit. Expand it locally before asking. Every commit a release gate
+// cares about is in this clone, and `^{commit}` also resolves a tag to its commit.
+if (strlen($sha) < 40) {
+    $expanded = gitValue($root, ['rev-parse', '--verify', $sha . '^{commit}']);
+
+    if ($expanded === null || strlen($expanded) !== 40) {
+        fwrite(STDERR, "Cannot resolve $sha to a commit in this repository.\n");
+        fwrite(STDERR, "Pass the full 40-character sha if the commit exists only on the remote.\n");
+        exit(2);
+    }
+
+    $sha = $expanded;
+}
+
 $repo = is_string($options['repo']) && $options['repo'] !== ''
     ? $options['repo']
     : repoFromRemote($root);

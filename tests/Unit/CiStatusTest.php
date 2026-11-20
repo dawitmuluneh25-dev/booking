@@ -34,6 +34,50 @@ final class CiStatusTest extends TestCase
         self::assertStringContainsString('#17', $verdict->describe());
     }
 
+    /**
+     * `git log --oneline` prints seven characters, and that is what gets pasted into
+     * `--sha=`. The first version compared strings exactly, so the abbreviation matched
+     * nothing and the command answered "no run exists" for a commit whose build was
+     * green — the same false negative as reading the newest run, arriving from the other
+     * side. Abbreviated input is therefore resolved against the full `head_sha`.
+     */
+    public function testAnAbbreviatedShaResolvesToTheFullCommit(): void
+    {
+        $runs = [self::fixtureRun(self::SHA, 17, 'completed', 'success')];
+
+        $verdict = CiStatus::fromPayload(self::payload($runs), 'a5c0c1d');
+
+        self::assertSame(CiState::Green, $verdict->state);
+        self::assertSame(17, $verdict->runNumber);
+    }
+
+    /**
+     * An abbreviation is a prefix, not a similarity: a run for `a5c0c1d…` must not be
+     * claimed by `a5c0c1e`, or the tool would confirm the wrong build.
+     */
+    public function testAnAbbreviationDoesNotMatchADifferentCommit(): void
+    {
+        $runs = [self::fixtureRun(self::SHA, 17, 'completed', 'success')];
+
+        $verdict = CiStatus::fromPayload(self::payload($runs), 'a5c0c1e');
+
+        self::assertSame(CiState::Absent, $verdict->state);
+        self::assertSame(2, $verdict->exitCode());
+    }
+
+    /**
+     * Six characters is not an abbreviation anyone uses; it is a typo or a truncated
+     * paste. Treating it as a prefix would let it match a commit it does not name.
+     */
+    public function testAnImplausiblyShortShaMatchesNothing(): void
+    {
+        $runs = [self::fixtureRun(self::SHA, 17, 'completed', 'success')];
+
+        $verdict = CiStatus::fromPayload(self::payload($runs), 'a5c0c1');
+
+        self::assertSame(CiState::Absent, $verdict->state);
+    }
+
     public function testAFailedRunIsRedAndExitsNonZero(): void
     {
         $runs = [self::fixtureRun(self::SHA, 7, 'completed', 'failure')];

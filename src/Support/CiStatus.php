@@ -10,11 +10,19 @@ use InvalidArgumentException;
  * Reads a GitHub Actions runs payload and answers one question about one commit.
  *
  * The rule that matters — and the reason this is a class rather than three lines in a
- * shell script — is that a run only counts if its `head_sha` is **exactly** the commit
- * asked about. Matching "the most recent run" is the natural shortcut and it produces
+ * shell script — is that a run only counts if its `head_sha` is **the** commit asked
+ * about. Matching "the most recent run" is the natural shortcut and it produces
  * the worst possible answer: a green badge for a commit that was never built, quoted
  * in a release note. The API returns the newest first, so that shortcut is always
  * available and always wrong by one push.
+ *
+ * "The commit asked about" may be abbreviated: `git` prints short shas, people paste
+ * short shas, and the first version of this class compared the string exactly — so
+ * `--sha=070610e` answered "no run exists" for a commit whose run was green. That is
+ * the same false negative the class was written to remove, arriving from a different
+ * direction, so a prefix of at least seven hex characters is accepted and compared
+ * against the full `head_sha`. Seven is git's own default abbreviation length and the
+ * shortest GitHub accepts.
  *
  * Re-runs of the same commit are resolved by taking the highest run number, which is
  * the newest attempt rather than whichever row happened to arrive first.
@@ -43,7 +51,7 @@ final class CiStatus
             $runSha = isset($run['head_sha']) && is_string($run['head_sha']) ? $run['head_sha'] : '';
             $runName = isset($run['name']) && is_string($run['name']) ? $run['name'] : '';
 
-            if ($runSha !== $sha || $runName !== $workflow) {
+            if (!self::isSameCommit($runSha, $sha) || $runName !== $workflow) {
                 continue;
             }
 
@@ -91,6 +99,28 @@ final class CiStatus
     private static function stateFor(?string $conclusion): CiState
     {
         return $conclusion === 'success' ? CiState::Green : CiState::Red;
+    }
+
+    /**
+     * A full sha matches itself; an abbreviated one matches when it is a prefix of the
+     * run's `head_sha`. Anything shorter than seven characters is not an abbreviation
+     * but an accident, and is refused rather than allowed to match half the repository.
+     */
+    private static function isSameCommit(string $runSha, string $sha): bool
+    {
+        if ($runSha === '' || $sha === '') {
+            return false;
+        }
+
+        if (strlen($sha) >= 40) {
+            return $runSha === $sha;
+        }
+
+        if (strlen($sha) < 7) {
+            return false;
+        }
+
+        return str_starts_with($runSha, $sha);
     }
 
     /**
