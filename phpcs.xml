@@ -7,6 +7,7 @@
     <file>routes</file>
     <file>public</file>
     <file>bin/console</file>
+    <file>bin/ci-status.php</file>
 
     <arg name="extensions" value="php"/>
     <arg name="colors"/>

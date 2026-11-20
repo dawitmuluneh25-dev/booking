@@ -628,6 +628,7 @@ their reason. Tested by `ReservationConcurrencyTest` (20 operating-system proces
 | Notification delivery | `php bin/console outbox:dispatch --limit=20` | every minute |
 | Retention sweep (bookings, referrals and their files) | `php bin/console retention:purge --yes` | monthly |
 | Log review | `php bin/console logs:review --level=error` | after an incident |
+| CI result for a commit | `php bin/ci-status.php` | after every push |
 
 `db:backup` never calls `mysqldump`: the dump is produced with PDO, so it works where `exec()` is
 disabled. A drill restores into `booking_app_drill` (or the database given with `--database=`) and
@@ -644,6 +645,13 @@ leaves an orphaned file behind. `retention:plan` prints both counts without chan
 
 Back up `var/private-uploads/` with the database. A database-only backup holds document rows whose
 bytes are gone, which is worse than either half on its own.
+
+`bin/ci-status.php` answers "did CI pass for this commit?" with an exit code, and it is the only answer the
+release may rely on: `0` green, `1` red, `2` no run for that commit or the API could not be read, `3`
+still running. After a push, run `php bin/ci-status.php --wait=300` — the local suite passing is not the same
+claim, and a green badge is not evidence unless it belongs to the commit being released. The tool
+matches the exact `head_sha`, so it reports no run rather than the previous commit's success. A token in
+`GITHUB_TOKEN` lifts the 60-per-hour unauthenticated limit to 5,000 and is never printed.
 
 What the application actually does with personal data — where it is held, who can reach it, what the
 retention sweep redacts, what the backups do not protect — is written down in
