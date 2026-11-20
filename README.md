@@ -310,7 +310,8 @@ The full deployment procedure is a separate runbook; the shape is:
 ```text
 booking-app/
 ├── bin/
-│   └── console                  # CLI entry point (doctor, migrate, list)
+│   ├── console                  # CLI entry point — a loader, see note below
+│   └── console.php              # the console itself; this is the file phpcs reads
 ├── .github/workflows/ci.yml      # quality gate on push and pull request
 ├── database/
 │   └── migrations/
@@ -374,6 +375,16 @@ booking-app/
 **Rule that keeps the deployment safe:** nothing outside `public/` is ever
 reachable by URL. `src/`, `templates/`, `database/`, `var/` and `vendor/` sit one
 level above the document root.
+
+**Why the console is two files.** `phpcs` takes a file's extension from its name. A file
+called `console` has none, so it is skipped silently — the gate reports success while
+reading nothing. That is how 1,219 lines of the most-executed code here went unlinted.
+The body therefore lives in `bin/console.php`, which the gate reads, and `bin/console`
+is a loader that requires it. The name `console` stays because `deploy.sh` and five cron
+jobs on the host call it, and a rename that satisfies the linter would stop the outbox
+and the backups. `tests/Feature/StyleGateCoverageTest.php` fails if a path without a
+`.php` extension is added back to `phpcs.xml`, and `ConsoleEntryPointTest` fails if the
+loader grows logic.
 
 ---
 

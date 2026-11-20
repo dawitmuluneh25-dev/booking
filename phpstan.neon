@@ -5,5 +5,10 @@ parameters:
         - tests
         - routes
         - public
+        # Added with the console split: PHPStan read every entry point except the one an
+        # operator runs daily. At level 9 it found three real defects there on the first
+        # pass — a PDOStatement|false that would have fataled, a diagnostic that could
+        # not fail, and an unvalidated JSON boundary.
+        - bin/console.php
     tmpDir: var/cache/phpstan
     treatPhpDocTypesAsCertain: false

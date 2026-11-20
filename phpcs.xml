@@ -6,7 +6,11 @@
     <file>tests</file>
     <file>routes</file>
     <file>public</file>
-    <file>bin/console</file>
+    <!-- `bin/console` is deliberately NOT listed: phpcs takes the extension from the
+         filename, finds none, and skips the file without a word. It is a 22-line loader;
+         the code it loads is bin/console.php, below. Listing `bin/console` here would be
+         a comment pretending to be a check. -->
+    <file>bin/console.php</file>
     <file>bin/ci-status.php</file>
 
     <arg name="extensions" value="php"/>
