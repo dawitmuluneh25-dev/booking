@@ -45,6 +45,9 @@ final class ProcedureMilestoneRepositoryTest extends TestCase
     /** @var list<int> */
     private array $consentIds = [];
 
+    /** This run's fixture identity; see the note in setUp. */
+    private string $runId = '';
+
     protected function setUp(): void
     {
         $root = dirname(__DIR__, 2);
@@ -58,6 +61,18 @@ final class ProcedureMilestoneRepositoryTest extends TestCase
         }
 
         $this->pdo = $pdo;
+
+        // These two identities used to be constants — `milestone-probe@example.test` and
+        // `RF-MILESTONE-1` — and tearDown only ever deletes by id, so a run killed
+        // mid-test left rows the next run could not insert past: first
+        // `users.uq_users_email`, then `referrals.uq_referrals_reference`. Nothing
+        // asserts either string, so they can name their own run instead of colliding
+        // with whatever a previous one left behind. A sweep was the other option and
+        // is the wrong one here: removing the debris would mean deleting through
+        // referrals → appointments → milestones/consents, three RESTRICT edges in a
+        // fixed order, in a test that exists to prove those restricts hold.
+        $this->runId = bin2hex(random_bytes(4));
+
         $this->userId = $this->insertUser();
         $this->referralId = $this->insertReferral();
         $this->appointmentId = $this->insertAppointment($this->referralId);
@@ -245,7 +260,7 @@ final class ProcedureMilestoneRepositoryTest extends TestCase
              VALUES (:email, :name, :role, :hash, 1, :created_at, :updated_at)'
         );
         $statement->execute([
-            'email' => 'milestone-probe@example.test',
+            'email' => 'milestone-' . $this->runId . '@example.test',
             'name' => 'Milestone Probe',
             'role' => 'radiologist',
             'hash' => '$2y$04$notarealhashthecolumnonlyneedswidth',
@@ -265,7 +280,7 @@ final class ProcedureMilestoneRepositoryTest extends TestCase
                 :created_at, :updated_at)'
         );
         $statement->execute([
-            'reference' => 'RF-MILESTONE-1',
+            'reference' => 'RF-MILESTONE-' . $this->runId,
             'status' => 'converted_to_appointment',
             'name' => 'Selamawit Girma',
             'phone' => '+251911000333',

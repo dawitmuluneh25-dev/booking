@@ -42,6 +42,9 @@ final class PractitionerCredentialRepositoryTest extends TestCase
     /** @var list<int> */
     private array $credentialIds = [];
 
+    /** This run's fixture identity; see the note in setUp. */
+    private string $runId = '';
+
     protected function setUp(): void
     {
         $root = dirname(__DIR__, 2);
@@ -55,8 +58,22 @@ final class PractitionerCredentialRepositoryTest extends TestCase
         }
 
         $this->pdo = $pdo;
-        $this->userId = $this->insertUser('credential-probe@example.test', 'Credential Probe');
-        $this->verifierId = $this->insertUser('credential-verifier@example.test', 'Verifier Probe');
+
+        // Both addresses were constants, cleaned up only by id, so a run killed mid-test
+        // left rows the next one could not insert past (`users.uq_users_email`). Neither
+        // is asserted anywhere — they exist to give the credential a holder and a
+        // verifier — so naming them per run costs two concatenations and removes the
+        // whole class of collision.
+        $this->runId = bin2hex(random_bytes(4));
+
+        $this->userId = $this->insertUser(
+            'credential-' . $this->runId . '@example.test',
+            'Credential Probe',
+        );
+        $this->verifierId = $this->insertUser(
+            'credential-verifier-' . $this->runId . '@example.test',
+            'Verifier Probe',
+        );
         $this->repository = new PdoPractitionerCredentialRepository($this->pdo);
     }
 

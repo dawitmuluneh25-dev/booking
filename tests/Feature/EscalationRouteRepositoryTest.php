@@ -35,6 +35,9 @@ final class EscalationRouteRepositoryTest extends TestCase
     /** @var list<int> */
     private array $routeIds = [];
 
+    /** This run's fixture identity; see the note in setUp. */
+    private string $runId = '';
+
     protected function setUp(): void
     {
         $root = dirname(__DIR__, 2);
@@ -48,6 +51,13 @@ final class EscalationRouteRepositoryTest extends TestCase
         }
 
         $this->pdo = $pdo;
+
+        // The probe address was a constant and tearDown deletes only by id, so a run
+        // killed mid-test left a row the next one could not insert past
+        // (`users.uq_users_email`). The address is a fixture, not an assertion, so it
+        // can name its own run. One concatenation, and no sweep to get wrong.
+        $this->runId = bin2hex(random_bytes(4));
+
         $this->userId = $this->insertUser();
         $this->repository = new PdoEscalationRouteRepository($this->pdo);
     }
@@ -177,7 +187,7 @@ final class EscalationRouteRepositoryTest extends TestCase
              VALUES (:email, :name, :role, :hash, 1, :created_at, :updated_at)'
         );
         $statement->execute([
-            'email' => 'escalation-probe@example.test',
+            'email' => 'escalation-' . $this->runId . '@example.test',
             'name' => 'Escalation Probe',
             'role' => 'admin',
             'hash' => '$2y$04$notarealhashthecolumnonlyneedswidth',
