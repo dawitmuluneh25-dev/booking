@@ -130,7 +130,15 @@ while (true) {
         exit(2);
     }
 
-    if ($verdict->state !== CiState::Pending || microtime(true) >= $deadline) {
+    // A run that has not finished is not an answer, and neither is a run that GitHub
+    // has not created yet: `--wait` issued in the same second as the push would
+    // otherwise report "no run" and be believed. Both are retried until the deadline;
+    // everything else — green, red, or a workflow that genuinely does not exist — is
+    // final on the first read.
+    $unfinished = $verdict->state === CiState::Pending
+        || ($verdict->state === CiState::Absent && $wait > 0);
+
+    if (!$unfinished || microtime(true) >= $deadline) {
         break;
     }
 
