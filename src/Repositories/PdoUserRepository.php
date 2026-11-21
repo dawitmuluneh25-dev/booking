@@ -114,6 +114,18 @@ final class PdoUserRepository implements UserRepository
         $statement->execute(['role' => $role->value, 'id' => $userId]);
     }
 
+    public function setActive(int $userId, bool $active): void
+    {
+        // Same reasoning as changeRole(): auth_version is what ends a live session,
+        // and it moves here in the same statement as the flag it belongs to.
+        $statement = $this->pdo->prepare(
+            'UPDATE users
+                SET is_active = :active, auth_version = auth_version + 1, updated_at = UTC_TIMESTAMP()
+              WHERE id = :id'
+        );
+        $statement->execute(['active' => $active ? 1 : 0, 'id' => $userId]);
+    }
+
     public function touchLastLogin(int $userId): void
     {
         $statement = $this->pdo->prepare('UPDATE users SET last_login_at = UTC_TIMESTAMP() WHERE id = :id');

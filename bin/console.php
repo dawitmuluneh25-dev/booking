@@ -24,9 +24,13 @@ use App\Database\DemoSeedGuard;
 use App\Database\DemoSeedRefused;
 use App\Database\DemoSeeder;
 use App\Database\Migrator;
+use App\Domain\Actor;
 use App\Domain\AuditAction;
 use App\Domain\AuditEntry;
+use App\Domain\AuthorisationException;
+use App\Domain\ChangeUserAccess;
 use App\Domain\ContentSource;
+use App\Domain\UserNotFoundException;
 use App\Domain\ValidationException;
 use App\Domain\RetentionPolicy;
 use App\Domain\RetentionService;
@@ -81,6 +85,12 @@ switch ($command) {
 
     case 'user:reset-token':
         exit(issueResetToken($app, $options));
+
+    case 'user:deactivate':
+        exit(changeUserAccess($app, false, $options));
+
+    case 'user:reactivate':
+        exit(changeUserAccess($app, true, $options));
 
     case 'outbox:list':
         exit(listOutbox($app));
@@ -139,6 +149,8 @@ switch ($command) {
           php bin/console user:create <email> <name> <admin|staff> [--password=…]
           php bin/console user:list
           php bin/console user:reset-token <email>
+          php bin/console user:deactivate <email> --actor=<email>
+          php bin/console user:reactivate <email> --actor=<email>
 
           php bin/console outbox:list [--limit=20]
           php bin/console outbox:dispatch [--limit=20]
@@ -765,6 +777,79 @@ function listUsers(Application $app): int
             $user->lastLoginAt ?? 'never',
         );
     }
+
+    return 0;
+}
+
+/**
+ * Suspend or restore an account. `--actor` is required rather than defaulted, because
+ * a suspension has to name the person who decided it — "cli" is not a name an auditor
+ * can follow up.
+ *
+ * @param array<int, string> $options Arguments after the command name.
+ */
+function changeUserAccess(Application $app, bool $active, array $options): int
+{
+    $verb = $active ? 'reactivate' : 'deactivate';
+    $positional = array_values(array_filter(
+        $options,
+        static fn (string $option): bool => !str_starts_with($option, '--'),
+    ));
+
+    if ($positional === []) {
+        fwrite(STDERR, "Usage: user:$verb <email> --actor=<email>\n");
+
+        return 1;
+    }
+
+    $actorEmail = '';
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--actor=')) {
+            $actorEmail = substr($option, 8);
+        }
+    }
+
+    if ($actorEmail === '') {
+        fwrite(STDERR, "--actor=<email> is required: a suspension has to name who decided it.\n");
+
+        return 1;
+    }
+
+    $actorCredentials = $app->users()->findCredentialsByEmail(Auth::normalizeEmail($actorEmail));
+
+    if ($actorCredentials === null) {
+        fwrite(STDERR, "No such actor: $actorEmail\n");
+
+        return 1;
+    }
+
+    if (!$actorCredentials['user']->active) {
+        // A suspended account cannot suspend anybody; that is the point of suspending it.
+        fwrite(STDERR, "The actor account is suspended.\n");
+
+        return 1;
+    }
+
+    $targetCredentials = $app->users()->findCredentialsByEmail(Auth::normalizeEmail($positional[0]));
+
+    if ($targetCredentials === null) {
+        fwrite(STDERR, "No such user: {$positional[0]}\n");
+
+        return 1;
+    }
+
+    $actor = new Actor($actorCredentials['user']->id, $actorCredentials['user']->role);
+    $command = new ChangeUserAccess($app->users(), $app->auditTrail(), $app->transaction());
+
+    try {
+        $user = $command->execute($actor, $targetCredentials['user']->id, $active);
+    } catch (AuthorisationException | UserNotFoundException $exception) {
+        fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    printf("%s  #%d  %s  (%s)\n", $active ? 'restored' : 'suspended', $user->id, $user->email, $user->role->value);
 
     return 0;
 }

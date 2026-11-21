@@ -81,6 +81,24 @@ final class InMemoryUserRepository implements UserRepository
         );
     }
 
+    public function setActive(int $userId, bool $active): void
+    {
+        if (!isset($this->rows[$userId])) {
+            return;
+        }
+
+        $user = $this->rows[$userId]['user'];
+        $this->rows[$userId]['user'] = new User(
+            $user->id,
+            $user->email,
+            $user->name,
+            $user->role,
+            $active,
+            $user->lastLoginAt,
+            $user->authVersion + 1,
+        );
+    }
+
     public function updatePassword(int $userId, string $passwordHash): void
     {
         if (isset($this->rows[$userId])) {

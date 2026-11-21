@@ -293,6 +293,8 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console user:create <email> <name> <admin\|staff>` | Create an account; prints a generated password once |
 | `php bin/console user:list` | List accounts |
 | `php bin/console user:reset-token <email>` | Print a one-time reset path (60 min TTL) |
+| `php bin/console user:deactivate <email> --actor=<email>` | Suspend an account: sign-in refused, live sessions ended, audit row written |
+| `php bin/console user:reactivate <email> --actor=<email>` | Restore a suspended account |
 | `php bin/console outbox:list [--limit=20]` | Inspect queued notifications |
 | `php bin/console outbox:dispatch [--limit=20]` | Deliver due notifications (cron) |
 | `php bin/console diag` | Print the operational checks (exits 1 on a failure) |

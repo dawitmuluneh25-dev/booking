@@ -30,6 +30,14 @@ interface UserRepository
      */
     public function changeRole(int $userId, Role $role): void;
 
+    /**
+     * Suspend or restore an account, revoking its sessions in the same statement.
+     * `is_active` and `auth_version` must move together for the same reason role and
+     * version do: an account that is suspended while its session survives has not
+     * been suspended at all.
+     */
+    public function setActive(int $userId, bool $active): void;
+
     public function touchLastLogin(int $userId): void;
 
     public function recordAttempt(string $email, string $ip, bool $succeeded): void;

@@ -43,12 +43,16 @@ enum AuditAction: string
     case AccountRequestApproved = 'account.request_approved';
     case AccountRequestRejected = 'account.request_rejected';
     case AccountRequestExpired = 'account.request_expired';
+    case UserDeactivated = 'user.deactivated';
+    case UserReactivated = 'user.reactivated';
 
     public function label(): string
     {
         return match ($this) {
             self::UserCreated => 'Account created',
             self::UserRoleChanged => 'Role changed',
+            self::UserDeactivated => 'Access suspended',
+            self::UserReactivated => 'Access restored',
             self::PhysicianVerified => 'Physician verified',
             self::PhysicianRejected => 'Physician rejected',
             self::PhysicianSuspended => 'Physician suspended',
