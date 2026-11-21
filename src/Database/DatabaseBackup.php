@@ -296,14 +296,23 @@ final class DatabaseBackup
         $this->write($handle, 'DROP TABLE IF EXISTS ' . $quoted . ";\n");
         $this->write($handle, $ddl . ";\n");
 
-        $rows = $this->pdo->query('SELECT * FROM ' . $quoted);
+        $columns = $this->writableColumnsFor($table);
+
+        // A table whose every column is generated has nothing to insert; the DDL
+        // written above is the whole of its restore.
+        if ($columns === []) {
+            return 0;
+        }
+
+        $select = 'SELECT ' . implode(', ', array_map(self::quoteIdentifier(...), $columns))
+            . ' FROM ' . $quoted;
+        $rows = $this->pdo->query($select);
         if ($rows === false) {
             throw new RuntimeException('Cannot read table ' . $table . '.');
         }
 
-        /** @var list<string>|null $columns */
-        $columns = null;
-        $header = '';
+        $header = 'INSERT INTO ' . $quoted . ' ('
+            . implode(', ', array_map(self::quoteIdentifier(...), $columns)) . ') VALUES';
         /** @var list<string> $buffer */
         $buffer = [];
         $pending = 0;
@@ -312,15 +321,6 @@ final class DatabaseBackup
         while (($row = $rows->fetch(PDO::FETCH_ASSOC)) !== false) {
             if (!is_array($row)) {
                 continue;
-            }
-
-            if ($columns === null) {
-                $columns = array_map(
-                    static fn (int|string $column): string => (string) $column,
-                    array_keys($row),
-                );
-                $header = 'INSERT INTO ' . $quoted . ' ('
-                    . implode(', ', array_map(self::quoteIdentifier(...), $columns)) . ') VALUES';
             }
 
             $values = [];
@@ -345,6 +345,66 @@ final class DatabaseBackup
         }
 
         return $total;
+    }
+
+    /** @return list<string> */
+    private function writableColumnsFor(string $table): array
+    {
+        $statement = $this->pdo->query('SHOW FULL COLUMNS FROM ' . self::quoteIdentifier($table));
+
+        if ($statement === false) {
+            throw new RuntimeException('Cannot describe table ' . $table . '.');
+        }
+
+        /** @var list<array<string, mixed>> $definition */
+        $definition = $statement->fetchAll(PDO::FETCH_ASSOC);
+
+        return self::writableColumns($definition);
+    }
+
+    /**
+     * The columns an INSERT may name.
+     *
+     * Generated columns are excluded. `published_content.live_key` is
+     * `GENERATED ALWAYS AS (CASE WHEN status = 'published' …) STORED`, and naming it
+     * in an INSERT makes MariaDB refuse the statement outright — `1906 The value
+     * specified for generated column 'live_key' … has been ignored` — which is how a
+     * dump that looked complete turned out to be unrestorable. MySQL raises 3105 for
+     * the same statement. The dump carried the computed value because `SELECT *`
+     * expands to generated columns too, so the fix has to start at the column list,
+     * not at the row.
+     *
+     * @param list<array<string, mixed>> $definition rows from SHOW FULL COLUMNS
+     * @return list<string>
+     */
+    public static function writableColumns(array $definition): array
+    {
+        $columns = [];
+
+        foreach ($definition as $column) {
+            if (!is_array($column)) {
+                continue;
+            }
+
+            $name = $column['Field'] ?? null;
+            $extra = $column['Extra'] ?? '';
+
+            if (!is_string($name) || $name === '') {
+                continue;
+            }
+
+            // `STORED GENERATED` / `VIRTUAL GENERATED` only. A plain substring match
+            // would also throw out `DEFAULT_GENERATED`, which MySQL uses for an
+            // ordinary column with an expression default — a real column that must
+            // stay in the dump, or its values are lost on restore.
+            if (is_string($extra) && preg_match('/(?:STORED|VIRTUAL) GENERATED/i', $extra) === 1) {
+                continue;
+            }
+
+            $columns[] = $name;
+        }
+
+        return $columns;
     }
 
     private function literal(mixed $value): string
