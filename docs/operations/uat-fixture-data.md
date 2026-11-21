@@ -59,6 +59,12 @@ walkthrough requests and no `example.test` identities.
 
 ## Provenance
 
-Recorded from the 18 November 2026 walkthrough. **Not re-verified on 21 November** — the host was not
-queried while writing this file, so the identifiers are carried evidence. The two commands above are the
-check, and they take seconds.
+Recorded from the 18 November 2026 walkthrough. **Verified against the host on 21 November 2026**, from
+the DirectAdmin Terminal: `accounts:requests` reported no pending request (correct — approval is what
+removes one from the queue), `user:list` showed account #3 `uat-walkthrough@example.test` active and
+never signed in, and `physician_profiles` held one row for `user_id` 3 with `practice_number`
+`pending-ar-eauqr66`, status **pending**, `verified_by_user_id` null.
+
+The one thing that pass did **not** observe is the `account_requests` row's own status: the command
+lists pending requests only, so an approved row is invisible to it. Nothing suggests loss; it is simply
+not a fact this environment has produced.
