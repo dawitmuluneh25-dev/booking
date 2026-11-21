@@ -98,9 +98,11 @@ not exist.
 
 ## 5. Retention and redaction
 
-Retention is **1827 days** — five calendar years, counting leap days — from `Config::DEFAULT_RETENTION_DAYS`
-and overridable by `RETENTION_DAYS`. `RetentionPolicy` refuses any value below 30 days, so a mistyped
-environment variable cannot delete the current month.
+Retention is **2557 days** — seven calendar years, counting leap days — from `Config::DEFAULT_RETENTION_DAYS`
+and overridable by `RETENTION_DAYS`. The period is the Ethiopian medical record-keeping directive's seven
+years, approved in DEC-2026-11-20-02; until that decision the code held five (1827 days), which would have
+disposed of clinical records two years early. `RetentionPolicy` refuses any value below 30 days, so a
+mistyped environment variable cannot delete the current month.
 
 What the sweep does, on a **finished** booking (`src/Repositories/PdoRetentionRepository.php`):
 
@@ -225,7 +227,7 @@ the build rather than silently making this page wrong. Add a row only with a con
 
 | Control | Value | Constant |
 |---|---|---|
-| Retention period for a finished booking, in days | 1827 | `App\Bootstrap\Config::DEFAULT_RETENTION_DAYS` |
+| Retention period for a finished booking, in days | 2557 | `App\Bootstrap\Config::DEFAULT_RETENTION_DAYS` |
 | Smallest retention a misconfiguration may set, in days | 30 | `App\Domain\RetentionPolicy::MIN_DAYS` |
 | Failed sign-ins tolerated before a lockout | 5 | `App\Security\Auth::MAX_FAILURES` |
 | Lockout window, in minutes | 15 | `App\Security\Auth::LOCK_MINUTES` |

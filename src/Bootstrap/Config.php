@@ -13,13 +13,17 @@ use App\Domain\ReferralTrackingLink;
 final class Config
 {
     /**
-     * The directed retention period, in days: five years.
+     * The directed retention period, in days: seven years.
      *
-     * Five calendar years are 1826 days, or 1827 when the span holds two leap
+     * Seven calendar years are 2555 days, or 2557 when the span holds two leap
      * days. Taking the larger figure means the window never ends even one day
-     * before the period the privacy notice states.
+     * before the period the privacy notice states. It was 1827 — five years —
+     * until DEC-2026-11-20-02 replaced that number with the Ethiopian medical
+     * record-keeping directive's seven years, which is the figure the notice now
+     * publishes. Shortening it again would dispose of clinical records two years
+     * before the directive allows, so `RetentionWindowTest` pins the value.
      */
-    public const DEFAULT_RETENTION_DAYS = 1827;
+    public const DEFAULT_RETENTION_DAYS = 2557;
 
     public function __construct(private readonly string $root)
     {
@@ -106,7 +110,7 @@ final class Config
     /**
      * Days after which the personal data of a finished booking is redacted.
      *
-     * The fallback is the directed five years, so an unset variable cannot
+     * The fallback is the directed seven years, so an unset variable cannot
      * silently shorten a period the privacy notice states.
      */
     public function retentionDays(): int

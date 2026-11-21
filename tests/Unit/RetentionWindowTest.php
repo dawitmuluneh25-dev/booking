@@ -12,16 +12,20 @@ use PHPUnit\Framework\TestCase;
 /**
  * The retention window is a promise the privacy notice makes on the system's
  * behalf. It is expressed in days because that is what the sweeper takes, but
- * the Product Owner directed it in years, and the two must not drift apart.
+ * the governing period is directed in years, and the two must not drift apart.
  *
  * This test exists because the value sat at two years while the direction said
- * five, and nothing in the suite noticed.
+ * five, and nothing in the suite noticed. It happened a second time in the other
+ * direction: the code held five years while DEC-2026-11-20-02 approved seven,
+ * which would have disposed of clinical records two years before the directive
+ * allows. Both failures are the same failure — a number in code outliving the
+ * decision that set it.
  */
 final class RetentionWindowTest extends TestCase
 {
-    public function testTheDefaultWindowIsFiveYears(): void
+    public function testTheDefaultWindowIsSevenYears(): void
     {
-        self::assertSame(1827, Config::DEFAULT_RETENTION_DAYS);
+        self::assertSame(2557, Config::DEFAULT_RETENTION_DAYS);
     }
 
     public function testTheSampleEnvironmentDeclaresTheSameWindowAsTheCode(): void
@@ -48,24 +52,25 @@ final class RetentionWindowTest extends TestCase
         );
     }
 
-    public function testTheWindowCoversTheLongestFiveYearSpan(): void
+    public function testTheWindowCoversTheLongestSevenYearSpan(): void
     {
-        // 2024 and 2028 both hold a 29 February, so this span is the worst case:
-        // a shorter window would end before five years had passed.
-        $start = new DateTimeImmutable('2024-02-25 00:00:00', new DateTimeZone('UTC'));
-        $end = new DateTimeImmutable('2029-02-25 00:00:00', new DateTimeZone('UTC'));
+        // 2028 and 2032 both hold a 29 February, so this span is the worst case:
+        // a shorter window would end before seven years had passed.
+        $start = new DateTimeImmutable('2027-02-25 00:00:00', new DateTimeZone('UTC'));
+        $end = new DateTimeImmutable('2034-02-25 00:00:00', new DateTimeZone('UTC'));
 
         $days = (int) $start->diff($end)->days;
 
-        self::assertSame(1827, $days, 'This span is the worst case for a five-year window.');
+        self::assertSame(2557, $days, 'This span is the worst case for a seven-year window.');
         self::assertGreaterThanOrEqual(
             $days,
             Config::DEFAULT_RETENTION_DAYS,
-            'The default must not end before the longest five-year span has passed.',
+            'The default must not end before the longest seven-year span has passed.',
         );
 
-        // Five years of 365 days, and the four-year-average 1826, both fall short.
-        self::assertLessThan($days, 5 * 365);
-        self::assertLessThan($days, 1826);
+        // Seven years of 365 days, and the six-year figure with one leap day,
+        // both fall short of the span the notice promises.
+        self::assertLessThan($days, 7 * 365);
+        self::assertLessThan($days, 2556);
     }
 }

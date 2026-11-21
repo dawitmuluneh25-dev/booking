@@ -303,7 +303,7 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console db:restore-drill [--file=…] [--database=…_drill] [--keep]` | Restore into a scratch schema and compare row counts |
 | `php bin/console logs:review [--level=error] [--limit=30]` | Read the JSON-lines application log |
 | `php bin/console retention:plan` | Show the cutoff and how many bookings are eligible |
-| `php bin/console retention:purge [--days=1827] [--yes]` | Redact finished bookings; refuses to act without `--yes` |
+| `php bin/console retention:purge [--days=2557] [--yes]` | Redact finished bookings; refuses to act without `--yes` |
 
 ---
 

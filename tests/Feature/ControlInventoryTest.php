@@ -12,7 +12,7 @@ use ReflectionClassConstant;
  * The control inventory quotes numbers that end up in a privacy notice.
  *
  * `docs/operations/control-inventory.md` is the document the system administrator
- * writes Privacy §5 and §10 from, and every number it quotes — five years, five
+ * writes Privacy §5 and §10 from, and every number it quotes — seven years, five
  * attempts, fifteen minutes, fifteen megabytes — is a constant in this codebase.
  * Nothing held the two together, and this project has already paid for that once:
  * the retention period was written as 1825 in one place and 1827 in another.

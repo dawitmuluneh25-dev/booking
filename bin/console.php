@@ -163,7 +163,7 @@ switch ($command) {
           php bin/console logs:review [--level=error] [--limit=30]
 
           php bin/console retention:plan
-          php bin/console retention:purge [--days=1827] [--yes] [--limit=500]
+          php bin/console retention:purge [--days=2557] [--yes] [--limit=500]
 
           php bin/console accounts:requests [--expire]
 
