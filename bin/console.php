@@ -37,6 +37,7 @@ use App\Domain\RetentionService;
 use App\Domain\Role;
 use App\Security\Auth;
 use App\Security\PasswordHasher;
+use App\Support\BackupAlert;
 use App\Support\BackupCipher;
 
 $root = dirname(__DIR__);
@@ -61,7 +62,26 @@ if ($command === 'db:backup' && in_array('--key', $options, true)) {
     exit(0);
 }
 
-$app = Application::boot($root);
+// A backup that cannot boot is still a scheduled backup that failed. Booting connects to the database
+// and builds the router, so an unreachable database once produced a PHP fatal (exit 255, stack trace,
+// no alert) instead of the exit 1 an operator or a cron wrapper can act on. D-09 asks for the failure
+// to be recorded and alerted; "the process died" satisfies neither.
+try {
+    $app = Application::boot($root);
+} catch (Throwable $bootFailure) {
+    if ($command !== 'db:backup') {
+        throw $bootFailure;
+    }
+
+    BackupAlert::record(
+        (new \App\Bootstrap\Config($root))->backupDirectory(),
+        'boot-failed',
+        $bootFailure->getMessage(),
+    );
+    fwrite(STDERR, 'Backup failed before it could start: ' . $bootFailure->getMessage() . PHP_EOL);
+
+    exit(1);
+}
 
 switch ($command) {
     case 'doctor':
@@ -934,6 +954,14 @@ function createBackup(Application $app, array $options): int
         fwrite(STDERR, "Backup refused: --require-encryption was given but BACKUP_ENCRYPTION_KEY is not set.\n");
         fwrite(STDERR, "No file was written. Generate a key with: php bin/console db:backup --key\n");
 
+        // D-09: a scheduled backup that fails must leave something an operator can act on. The exit
+        // code is for the cron wrapper; this record is for the person who reads `diag` tomorrow.
+        BackupAlert::record(
+            $app->backups()->directory(),
+            'key-missing',
+            '--require-encryption was given but BACKUP_ENCRYPTION_KEY is empty or unset',
+        );
+
         // 2 rather than 1: "refused for want of a key" is a different condition from "the dump
         // failed", and a cron wrapper that only sees an exit code should be able to tell them apart.
         return 2;
@@ -943,6 +971,12 @@ function createBackup(Application $app, array $options): int
         $file = $app->backups()->create();
     } catch (Throwable $exception) {
         fwrite(STDERR, 'Backup failed: ' . $exception->getMessage() . PHP_EOL);
+
+        BackupAlert::record(
+            $app->backups()->directory(),
+            'dump-failed',
+            $exception->getMessage(),
+        );
 
         return 1;
     }

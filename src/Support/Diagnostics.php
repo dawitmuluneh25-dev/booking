@@ -256,16 +256,48 @@ final class Diagnostics
         }
     }
 
-    /** @return array{label: string, value: string, state: string} */
+    /**
+     * The newest archive, and whether a recorded failure is more recent than it.
+     *
+     * An age threshold alone cannot report a failed run: at an hourly cadence a job that has been
+     * failing since this morning still has a backup from this morning, and the age check would say
+     * `ok` for two more days. D-09 asks for the failure itself to be visible, so the failure record
+     * from `BackupAlert` is compared to the newest successful archive and wins when it is newer.
+     *
+     * @return array{label: string, value: string, state: string}
+     */
     private function backupCheck(): array
     {
         $latest = $this->backups->latest();
+        $alert = BackupAlert::latest($this->backups->directory());
 
         if ($latest === null) {
+            if ($alert !== null) {
+                return [
+                    'label' => 'Latest backup',
+                    'value' => 'never — last attempt failed: ' . $alert['reason'],
+                    'state' => 'fail',
+                ];
+            }
+
             return ['label' => 'Latest backup', 'value' => 'never', 'state' => 'fail'];
         }
 
         $age = $latest->ageSeconds();
+
+        if (BackupAlert::outranksSuccess($alert['at'] ?? null, $latest->modifiedAt)) {
+            return [
+                'label' => 'Latest backup',
+                'value' => sprintf(
+                    '%s, %s old — a later attempt failed: %s (%s)',
+                    $latest->name,
+                    self::duration($age),
+                    $alert['reason'] ?? 'unknown',
+                    $alert['at'] ?? 'no time',
+                ),
+                'state' => 'fail',
+            ];
+        }
 
         return [
             'label' => 'Latest backup',

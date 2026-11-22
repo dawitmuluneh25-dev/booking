@@ -47,6 +47,18 @@ final class DatabaseBackup
     }
 
     /**
+     * Where the backups live.
+     *
+     * Exposed so a failure record can be written beside the archives it explains: an operator looking
+     * for a backup finds the reason there is not a new one in the same directory, rather than having to
+     * know a second path.
+     */
+    public function directory(): string
+    {
+        return $this->directory;
+    }
+
+    /**
      * A file in the backup directory that is a finished backup.
      *
      * `.part` is excluded deliberately: a dump that is still being written must never be offered
