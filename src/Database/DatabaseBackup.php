@@ -523,7 +523,22 @@ final class DatabaseBackup
     private function read(BackupFile $file): string
     {
         if (BackupCipher::looksEncrypted($file->path)) {
-            return $this->cipher()->decryptContents($file->path);
+            // Decryption yields the *gzip member* that was encrypted, not SQL. Both branches below
+            // have to end at the same place — the SQL script — because `verify()` splits the return
+            // value into statements. Returning gzip here and SQL on the plaintext path is a bug that
+            // shipped once: the cipher round-trip test passed, the restore path did not, and nothing
+            // noticed until a real server was available to write a real dump.
+            $compressed = $this->cipher()->decryptContents($file->path);
+            $sql = gzdecode($compressed);
+
+            if ($sql === false) {
+                throw new RuntimeException(
+                    'The backup decrypted correctly but is not gzip data, so it is not a dump this '
+                    . 'application wrote. Refusing rather than restoring whatever it is.',
+                );
+            }
+
+            return $sql;
         }
 
         $handle = gzopen($file->path, 'rb');

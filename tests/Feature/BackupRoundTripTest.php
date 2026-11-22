@@ -95,7 +95,11 @@ final class BackupRoundTripTest extends TestCase
         $bytes = (string) file_get_contents($file->path);
         self::assertStringNotContainsString('CREATE TABLE', $bytes, 'The dump is readable without the key.');
 
-        $sql = BackupCipher::fromBase64($key)->decryptContents($file->path);
+        // Decryption yields the gzip member that was encrypted; the SQL is one gunzip further on.
+        // Asserting on the decrypted bytes without this step is what hid a defect in the restore
+        // path: the file decrypted fine and restored to gzip.
+        $sql = gzdecode(BackupCipher::fromBase64($key)->decryptContents($file->path));
+        self::assertIsString($sql, 'The decrypted backup is not gzip data.');
         self::assertStringContainsString('CREATE TABLE', $sql);
         self::assertStringContainsString(sprintf('-- tables: %d, rows: %d', $file->tables, $file->rows), $sql);
 
