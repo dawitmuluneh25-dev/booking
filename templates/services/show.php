@@ -18,6 +18,9 @@ $sections = $page->sections();
      */ ?>
     <p class="muted"><?= e($page->provenance()) ?></p>
 
+    <?php /* The same block the policy template prints, one copy of the markup, one date format. */ ?>
+    <?php require __DIR__ . '/../partials/document-control.php'; ?>
+
     <?php if ($page->supersededVersion !== null): ?>
         <p class="muted">Replaces version <?= e($page->supersededVersion) ?> of this page.</p>
     <?php endif; ?>

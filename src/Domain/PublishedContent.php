@@ -21,6 +21,16 @@ namespace App\Domain;
 final class PublishedContent
 {
     /**
+     * The content-key prefix that marks a page as a policy notice rather than clinical copy.
+     *
+     * This is the classifier the publish gate uses, and it is the key rather than the audience
+     * because `audience` has two values — `patient` and `referrer` — and a privacy notice is
+     * written for patients. The key is stable, it is what the route and the decision records use,
+     * and a page cannot be accidentally re-classified by editing a label.
+     */
+    public const POLICY_PREFIX = 'policy.';
+
+    /**
      * §17.5's pre-publication list, restricted to the parts a row can be missing.
      * A content ID, an audience and a version are columns the row cannot exist
      * without, so they are not failure modes this list can report.
@@ -132,6 +142,12 @@ final class PublishedContent
         return $this->sections() !== [];
     }
 
+    /** True for a policy notice, false for clinical copy. See `POLICY_PREFIX`. */
+    public function isPolicy(): bool
+    {
+        return str_starts_with($this->contentKey, self::POLICY_PREFIX);
+    }
+
     /**
      * The §17.5 inputs this row does not have yet, in the order §17.5 lists them.
      *
@@ -139,13 +155,25 @@ final class PublishedContent
      * filling the form nothing about which three, and §17.5 is a list somebody has
      * to work through.
      *
+     * **One field is audience-dependent, and this is where that is decided.** §17.5 asks for a
+     * clinical reviewer because it was written about clinical copy — a service page describing a
+     * procedure. HR-ENG-DEC-R1-003 D-01 gives the authority for a policy notice as Legal/Data
+     * Protection and the Product Owner, and neither is a clinician. Demanding a clinical reviewer of
+     * a privacy notice does not make it safer; it makes the page unpublishable for a reason that
+     * does not apply, so the natural next step is to type a clinician's name into a field they never
+     * signed. The exemption is narrow: a policy page still needs an approver and an approval date,
+     * which is exactly the approval Legal has not yet given.
+     *
+     * The same distinction is enforced in the schema by migration 0045, because a rule that only
+     * holds when the application asks politely is not a rule.
+     *
      * @return list<string>
      */
     public function missingForPublication(): array
     {
         $missing = [];
 
-        if ($this->clinicalReviewer === null || trim($this->clinicalReviewer) === '') {
+        if (!$this->isPolicy() && ($this->clinicalReviewer === null || trim($this->clinicalReviewer) === '')) {
             $missing[] = 'clinical reviewer';
         }
 
@@ -216,9 +244,62 @@ final class PublishedContent
     }
 
     /**
+     * The document-control fields a reader is entitled to see, as label/value pairs.
+     *
+     * D-01 requires a visible effective date and review date on each of the three policy pages, and
+     * "maintain the dates consistently across the pages and their underlying policy metadata" — so
+     * both the label and the value are built from the record here, and the template prints what it
+     * is given. A template that formatted the date itself would be a second place for the date to
+     * be wrong.
+     *
+     * Only what the record holds is listed. An absent effective date prints nothing rather than an
+     * empty field: a page that says "Effective from —" looks like a page somebody forgot to finish,
+     * and this one would then be published with that gap visible.
+     *
+     * @return list<array{label: string, value: string}>
+     */
+    public function documentControl(): array
+    {
+        $entries = [];
+
+        if ($this->effectiveOn !== null) {
+            $entries[] = ['label' => 'Effective from', 'value' => self::humanDate($this->effectiveOn)];
+        }
+
+        if ($this->reviewOn !== null) {
+            $entries[] = ['label' => 'Next review', 'value' => self::humanDate($this->reviewOn)];
+        }
+
+        return $entries;
+    }
+
+    /**
+     * A stored ISO date as a reader expects to see it: `2027-01-12` becomes `12 January 2027`.
+     *
+     * Stored dates are ISO because that is what sorts and compares; printed dates are prose because
+     * that is what a reader parses. An unparseable value is returned unchanged rather than replaced
+     * with an empty string — a wrong date that is visible is a defect somebody can report, and a
+     * blank one is not.
+     */
+    public static function humanDate(string $iso): string
+    {
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $iso);
+
+        if ($date === false) {
+            return $iso;
+        }
+
+        return $date->format('j F Y');
+    }
+
+    /**
      * The provenance line §17.5 requires beside each page. It is built here and
      * never from a template constant, so the name on the page is the name in the
      * record or the page does not render.
+     *
+     * It no longer carries the review date. That date is a document-control field and it is printed
+     * as one by `documentControl()`, on the same screen; stating it twice was how the two copies
+     * could come to disagree.
      */
     public function provenance(): string
     {
@@ -249,12 +330,10 @@ final class PublishedContent
             $line .= ($line === '' ? '' : ', ') . ($line === '' ? 'Approved' : 'approved') . ' by ' . $approver;
         }
 
+        // Printed the same way as the document-control dates on the same screen, so a reader does
+        // not have to work out that "2026-11-13" and "13 November 2026" are the same day.
         if ($this->approvedOn !== null) {
-            $line .= ($line === '' ? '' : ' ') . 'on ' . $this->approvedOn;
-        }
-
-        if ($this->reviewOn !== null) {
-            $line .= ($line === '' ? '' : '. ') . 'Due for review ' . $this->reviewOn;
+            $line .= ($line === '' ? '' : ' ') . 'on ' . self::humanDate($this->approvedOn);
         }
 
         return $line === '' ? '' : rtrim($line, '.') . '.';

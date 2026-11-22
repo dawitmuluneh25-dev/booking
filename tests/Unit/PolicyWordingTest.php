@@ -102,27 +102,36 @@ final class PolicyWordingTest extends TestCase
     }
 
     /**
-     * The three sections arrived as wording, not as permission to publish.
+     * The dates are D-01's, the approval is still nobody's, and those are two different things.
      *
-     * The publish path refuses a row without a clinical reviewer, an approver, an approval date, an effective
-     * date and a review date. None of the three decisions supplied those, so the page must still carry none of
-     * them — if this ever fails, somebody has published health-policy text whose dates were invented.
+     * HR-ENG-DEC-R1-003 D-01 fixed one date pair for all three pages — effective 12 January 2027,
+     * review 12 January 2028 — and said in as many words not to publish a policy as approved
+     * merely because the dates have been entered. Legal/Data Protection have not approved the
+     * content, so `approver` and `approved_on` must stay absent.
+     *
+     * If the first half of this fails, a date was invented. If the second half fails, somebody has
+     * published health-policy text on a signature nobody gave.
      */
-    public function testThePrivacyPageStillCarriesNoProvenance(): void
+    public function testThePolicyPagesCarryTheRecordsDatesAndNoApprovalTheyWereNotGiven(): void
     {
-        $page = $this->page('policy.privacy');
+        foreach (['policy.privacy', 'policy.booking', 'policy.referral'] as $key) {
+            $page = $this->page($key);
 
-        foreach (['approver', 'approved_on', 'effective_on', 'review_on', 'clinical_reviewer'] as $field) {
-            self::assertArrayNotHasKey(
-                $field,
-                $page,
-                sprintf(
-                    '`%s` is set on policy.privacy. The approved decisions gave wording and an approver for the '
-                    . 'decision, not an effective date or a review date for the page, so a value here would have '
-                    . 'been invented by whoever typed it.',
+            self::assertSame('2027-01-12', $page['effective_on'] ?? null, $key . ' does not carry D-01\'s date.');
+            self::assertSame('2028-01-12', $page['review_on'] ?? null, $key . ' does not carry D-01\'s review date.');
+
+            foreach (['approver', 'approved_on', 'clinical_reviewer'] as $field) {
+                self::assertArrayNotHasKey(
                     $field,
-                ),
-            );
+                    $page,
+                    sprintf(
+                        '`%s` is set on %s. D-01 fixed the dates; Legal/Data Protection have not approved the '
+                        . 'content, so a value here would have been invented by whoever typed it.',
+                        $field,
+                        $key,
+                    ),
+                );
+            }
         }
     }
 

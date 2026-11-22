@@ -23,12 +23,17 @@ use PHPUnit\Framework\TestCase;
  */
 final class PolicySourceTest extends TestCase
 {
+    /**
+     * What a policy page still owes, after D-01.
+     *
+     * Not the clinical reviewer — a policy notice is approved by Legal/Data Protection, not by a
+     * clinician (D-01), and `PublishedContent::missingForPublication()` no longer asks a `policy.`
+     * page for one. Not the dates either: D-01 fixed them at 12 January 2027 and 12 January 2028.
+     * What is left is the one thing the record does not supply — the approval itself.
+     */
     private const PROVENANCE = [
-        'clinical reviewer',
         'approver',
         'approval date',
-        'effective date',
-        'review date',
     ];
 
     /** @return list<array<string, mixed>> */
@@ -221,8 +226,12 @@ final class PolicySourceTest extends TestCase
             self::assertNull($draft->clinicalReviewer, $key . ' names a clinical reviewer.');
             self::assertNull($draft->approver, $key . ' names an approver.');
             self::assertNull($draft->approvedOn, $key . ' carries an approval date.');
-            self::assertNull($draft->effectiveOn, $key . ' carries an effective date.');
-            self::assertNull($draft->reviewOn, $key . ' carries a review date.');
+
+            // D-01 fixed these two, and fixed them for the set. A page with a different pair has
+            // been edited by hand, which is how three pages start disagreeing about when they took
+            // effect.
+            self::assertSame('2027-01-12', $draft->effectiveOn, $key . ' does not carry D-01\'s effective date.');
+            self::assertSame('2028-01-12', $draft->reviewOn, $key . ' does not carry D-01\'s review date.');
         }
     }
 

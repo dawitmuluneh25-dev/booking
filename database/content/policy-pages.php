@@ -8,11 +8,21 @@
  * policy owners approved.
  *
  * `author` names the document, not a person, for the same reason service-pages.php does: it
- * records where the words came from. `approver`, `approved_on`, `effective_on` and `review_on`
- * are deliberately absent. Without them `PublishedContent::missingForPublication()` reports the
- * record as incomplete, so `PublishContent` refuses it. That is the intended state: these pages
- * can be reviewed, corrected and imported, and cannot go public until someone supplies the
- * provenance in policy.md's publication readiness note.
+ * records where the words came from.
+ *
+ * **The two dates and the two absent fields (D-01, 23 November 2026).** HR-ENG-DEC-R1-003 D-01
+ * fixes one document-control date pair for all three pages — effective **12 January 2027**, first
+ * scheduled review **12 January 2028** — and they are here, identical on all three, because the
+ * decision says the dates are common to the set. `approver` and `approved_on` are deliberately
+ * still absent. D-01's approval condition is that Legal/Data Protection approve the final policy
+ * content *before publication*, and that approval has not been given; the decision fixes the dates,
+ * it does not sign the pages. With those two fields missing
+ * `PublishedContent::missingForPublication()` reports `approver`, `approval date`, `PublishContent`
+ * refuses, and the database CHECK refuses independently. D-01 says in as many words not to publish
+ * a policy as approved merely because the dates have been entered.
+ *
+ * The dates are also a second guard: `isServableOn()` will not serve a page whose effective date is
+ * in the future, so even a mistaken publication today would be invisible until 12 January 2027.
  *
  * Nine bracketed values in the source document are omitted rather than carried over as
  * placeholders, per that note: "publish the page without that section rather than with an
@@ -29,9 +39,9 @@
  *
  * A filled row means the paragraphs are the approved words, not that the page may publish. The
  * three privacy sections were transcribed from decisions that approve wording and nothing else:
- * the page still has no approver and no dates, so `PublishedContent::missingForPublication()`
- * still refuses it, and `PolicyWordingTest` now pins every approved sentence so a later edit
- * cannot drift one.
+ * the page still has no approver and no approval date, so `PublishedContent::missingForPublication()`
+ * still refuses it, and `PolicyWordingTest` pins every approved sentence so a later edit cannot
+ * drift one.
  *
  * When a value arrives, add it to the matching section here and re-import. The document remains
  * the source; this file is its transcription.
@@ -44,6 +54,8 @@ return [
         'key' => 'policy.privacy',
         'title' => 'Privacy Notice',
         'author' => 'HR-WEB-CONTENT-R1-001 policy pack',
+        'effective_on' => '2027-01-12',
+        'review_on' => '2028-01-12',
         'translation_review_status' => 'source',
         'sections' => [
             [
@@ -194,6 +206,8 @@ return [
         'key' => 'policy.booking',
         'title' => 'Booking and Procedure Request Policy',
         'author' => 'HR-WEB-CONTENT-R1-001 policy pack',
+        'effective_on' => '2027-01-12',
+        'review_on' => '2028-01-12',
         'translation_review_status' => 'source',
         'sections' => [
             [
@@ -304,6 +318,8 @@ return [
         'key' => 'policy.referral',
         'title' => 'Referral Guidance',
         'author' => 'HR-WEB-CONTENT-R1-001 policy pack',
+        'effective_on' => '2027-01-12',
+        'review_on' => '2028-01-12',
         'translation_review_status' => 'source',
         'sections' => [
             [

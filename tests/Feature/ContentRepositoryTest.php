@@ -168,6 +168,54 @@ final class ContentRepositoryTest extends TestCase
         );
     }
 
+    /**
+     * Migration 0045, asserted where it is enforced: the database.
+     *
+     * A policy notice is approved by Legal/Data Protection (D-01), not by a clinician, so the CHECK
+     * no longer demands a clinical reviewer of a `policy.%` row. This test goes straight at the
+     * table, because the rows that matter are the ones written by a future script that never asked
+     * the command for permission.
+     */
+    public function testTheSchemaPublishesAPolicyPageWithoutAClinicalReviewer(): void
+    {
+        $id = $this->import(ContentFactory::content('policy.privacy', ['clinicalReviewer' => null]));
+
+        $this->pdo()->exec(
+            "UPDATE published_content
+                SET status = 'published', published_at = UTC_TIMESTAMP(), published_by_user_id = "
+                . $this->actorUserId . '
+              WHERE id = ' . $id
+        );
+
+        $published = $this->repository()->find($id);
+
+        self::assertNotNull($published);
+        self::assertSame(ContentStatus::Published, $published->status);
+        self::assertNull($published->clinicalReviewer);
+    }
+
+    /**
+     * The exemption is one field wide. A policy page still cannot publish without an approver, and
+     * this is the assertion that keeps the migration from being read as "policy pages are exempt".
+     */
+    public function testTheSchemaStillRefusesAPolicyPageWithNoApprover(): void
+    {
+        $id = $this->import(ContentFactory::content('policy.privacy', [
+            'clinicalReviewer' => null,
+            'approver' => null,
+            'approvedOn' => null,
+        ]));
+
+        $this->expectException(PDOException::class);
+
+        $this->pdo()->exec(
+            "UPDATE published_content
+                SET status = 'published', published_at = UTC_TIMESTAMP(), published_by_user_id = "
+                . $this->actorUserId . '
+              WHERE id = ' . $id
+        );
+    }
+
     public function testTheSchemaRefusesAReviewDateBeforeTheApprovalItReviews(): void
     {
         $this->expectException(PDOException::class);

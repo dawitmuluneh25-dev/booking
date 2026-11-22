@@ -119,22 +119,78 @@ final class PublishedContentTest extends TestCase
         }
     }
 
-    public function testTheProvenanceLineNamesTheReviewerTheApproverAndTheReviewDate(): void
+    public function testTheProvenanceLineNamesTheReviewerTheApproverAndTheApprovalDate(): void
     {
         $line = $this->published()->provenance();
 
         self::assertStringContainsString('Clinically reviewed by Dr Reviewer', $line);
         self::assertStringContainsString('approved by Dawit Muluneh', $line);
-        self::assertStringContainsString('2026-11-13', $line);
-        self::assertStringContainsString('Due for review 2027-11-13', $line);
+        self::assertStringContainsString('13 November 2026', $line);
 
         // The whole sentence, because the separators are the part that goes wrong: a
         // space before the comma or a missing one after the year both read as typos.
         self::assertSame(
-            'Clinically reviewed by Dr Reviewer, approved by Dawit Muluneh on 2026-11-13. '
-                . 'Due for review 2027-11-13.',
+            'Clinically reviewed by Dr Reviewer, approved by Dawit Muluneh on 13 November 2026.',
             $line,
         );
+
+        // The review date moved to the document-control block (D-01). Saying it in both places was
+        // how the two copies came to disagree, so the line must not carry it any more.
+        self::assertStringNotContainsString('Due for review', $line);
+    }
+
+    /**
+     * D-01: the effective date and the review date are visible fields, and they come from the record.
+     *
+     * The labels are part of the assertion because a page that prints "2027-01-12" with no label is
+     * a date a reader has to guess the meaning of.
+     */
+    public function testTheDocumentControlBlockCarriesTheEffectiveDateAndTheReviewDate(): void
+    {
+        self::assertSame(
+            [
+                ['label' => 'Effective from', 'value' => '13 November 2026'],
+                ['label' => 'Next review', 'value' => '13 November 2027'],
+            ],
+            $this->published()->documentControl(),
+        );
+    }
+
+    public function testADateTheRecordDoesNotHoldIsNotPrintedAsAnEmptyField(): void
+    {
+        $content = $this->content(['effectiveOn' => null, 'reviewOn' => null]);
+
+        self::assertSame([], $content->documentControl());
+    }
+
+    public function testAnUnparseableDateIsShownAsStoredRatherThanBlanked(): void
+    {
+        self::assertSame('not a date', PublishedContent::humanDate('not a date'));
+        self::assertSame('12 January 2027', PublishedContent::humanDate('2027-01-12'));
+    }
+
+    /**
+     * The per-audience rule from D-01, asserted on the object rather than on the file.
+     *
+     * `policy.` pages do not owe a clinical reviewer; every other key still does. The negative case
+     * matters as much as the positive one: an exemption that leaked to `service.` pages would let
+     * clinical copy publish on nobody's signature.
+     */
+    public function testAPolicyPageDoesNotOweAClinicalReviewerAndClinicalCopyStillDoes(): void
+    {
+        $policy = ContentFactory::content('policy.privacy', [
+            'clinicalReviewer' => null,
+            'approver' => null,
+            'approvedOn' => null,
+        ]);
+
+        self::assertTrue($policy->isPolicy());
+        self::assertSame(['approver', 'approval date'], $policy->missingForPublication());
+
+        $service = ContentFactory::content('service.fnac', ['clinicalReviewer' => null]);
+
+        self::assertFalse($service->isPolicy());
+        self::assertContains('clinical reviewer', $service->missingForPublication());
     }
 
     /**
@@ -153,7 +209,7 @@ final class PublishedContentTest extends TestCase
         ])->provenance();
 
         self::assertSame(
-            'Reviewed and approved by Dawit Muluneh on 2026-11-13. Due for review 2027-11-13.',
+            'Reviewed and approved by Dawit Muluneh on 13 November 2026.',
             $line,
         );
         self::assertStringNotContainsString('Clinically reviewed by', $line);
@@ -171,7 +227,7 @@ final class PublishedContentTest extends TestCase
         ])->provenance();
 
         self::assertSame(
-            'Reviewed and approved by dawit MULUNEH on 2026-11-13. Due for review 2027-11-13.',
+            'Reviewed and approved by dawit MULUNEH on 13 November 2026.',
             $line,
         );
     }
@@ -187,7 +243,7 @@ final class PublishedContentTest extends TestCase
             'approvedOn' => null,
         ])->provenance();
 
-        self::assertSame('Clinically reviewed by Dr Reviewer. Due for review 2027-11-13.', $line);
+        self::assertSame('Clinically reviewed by Dr Reviewer.', $line);
         self::assertStringNotContainsString('approved', $line);
     }
 

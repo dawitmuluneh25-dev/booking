@@ -83,9 +83,11 @@ final class ServicePageTest extends TestCase
 
         self::assertStringContainsString('What it is', $body);
         self::assertStringContainsString('A sampling procedure.', $body);
-        // §17.5: the approver and the review date appear with the page.
+        // §17.5: the approver appears with the page, and the review date with it as a
+        // document-control field rather than as a second sentence (D-01).
         self::assertStringContainsString('Dawit Muluneh', $body);
-        self::assertStringContainsString('2027-11-13', $body);
+        self::assertStringContainsString('13 November 2027', $body);
+        self::assertStringContainsString('Next review', $body);
         self::assertStringContainsString('Version 1.0', $body);
     }
 
