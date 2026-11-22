@@ -215,7 +215,6 @@ return [
                         . 'and coordination. It is not a routine outpatient appointment. Do not wait for an '
                         . 'online booking response. Contact the referring hospital or emergency department '
                         . 'immediately using the verified emergency contact information provided.',
-                    'Emergency contact: 0906373154',
                 ],
             ],
             [
@@ -235,7 +234,6 @@ return [
                 'paragraphs' => [
                     'Requests to reschedule or cancel must be handled through the approved HakimeRAD '
                         . 'communication route.',
-                    'Booking contact: +251912480486',
                 ],
             ],
             [
@@ -355,7 +353,6 @@ return [
                     'If intussusception is suspected or the patient needs urgent assessment, contact the '
                         . 'referring hospital or emergency department immediately. Do not wait for a website '
                         . 'response or an online referral acknowledgement.',
-                    'Verified emergency coordination contact: +251912480486',
                 ],
             ],
             [
