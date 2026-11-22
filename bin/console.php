@@ -37,6 +37,7 @@ use App\Domain\RetentionService;
 use App\Domain\Role;
 use App\Security\Auth;
 use App\Security\PasswordHasher;
+use App\Support\BackupCipher;
 
 $root = dirname(__DIR__);
 $autoload = $root . '/vendor/autoload.php';
@@ -50,6 +51,16 @@ require $autoload;
 
 $command = $argv[1] ?? 'help';
 $options = array_slice($argv, 2);
+
+// `db:backup --key` is answered before the application boots, because booting connects to the
+// database — and the moment an operator needs a key is the moment a new installation has no data
+// in it yet. A generator that requires a working database cannot be used to set up a backup.
+if ($command === 'db:backup' && in_array('--key', $options, true)) {
+    echo BackupCipher::generateKey() . PHP_EOL;
+    echo 'Set BACKUP_ENCRYPTION_KEY to this value, then re-run without --key.' . PHP_EOL;
+    exit(0);
+}
+
 $app = Application::boot($root);
 
 switch ($command) {
@@ -157,7 +168,8 @@ switch ($command) {
           php bin/console outbox:receipt <provider-message-id> [--at="2026-11-13 09:00:00"]
 
           php bin/console diag                  Print the operational checks
-          php bin/console db:backup [--prune=14]
+          php bin/console db:backup [--prune=14] [--require-encryption]
+          php bin/console db:backup --key      Print a new BACKUP_ENCRYPTION_KEY and exit
           php bin/console db:backups
           php bin/console db:restore-drill [--file=…] [--database=…_drill] [--keep]
           php bin/console logs:review [--level=error] [--limit=30]
@@ -887,11 +899,33 @@ function issueResetToken(Application $app, array $options): int
  */
 function createBackup(Application $app, array $options): int
 {
+    // `--key` is handled before the application boots (see the dispatch block at the top of this
+    // file), because it must work on an installation that has no database yet. Reaching here with
+    // it set means the dispatch was changed; say so rather than print a key from the wrong place.
+    if (in_array('--key', $options, true)) {
+        fwrite(STDERR, "db:backup --key is answered before boot; this path should be unreachable.\n");
+
+        return 1;
+    }
+
     $prune = null;
+    $requireEncryption = false;
     foreach ($options as $option) {
         if (str_starts_with($option, '--prune=')) {
             $prune = max(1, (int) substr($option, 8));
         }
+        if ($option === '--require-encryption') {
+            $requireEncryption = true;
+        }
+    }
+
+    if ($requireEncryption && $app->config()->backupEncryptionKey() === null) {
+        fwrite(STDERR, "Backup refused: --require-encryption was given but BACKUP_ENCRYPTION_KEY is not set.\n");
+        fwrite(STDERR, "No file was written. Generate a key with: php bin/console db:backup --key\n");
+
+        // 2 rather than 1: "refused for want of a key" is a different condition from "the dump
+        // failed", and a cron wrapper that only sees an exit code should be able to tell them apart.
+        return 2;
     }
 
     try {
@@ -903,12 +937,19 @@ function createBackup(Application $app, array $options): int
     }
 
     printf(
-        "written %s (%s, %d tables, %d rows)\n",
+        "written %s (%s, %d tables, %d rows, %s)\n",
         $file->name,
         $file->humanSize(),
         $file->tables,
         $file->rows,
+        $file->encrypted ? 'encrypted' : 'NOT ENCRYPTED',
     );
+
+    if (!$file->encrypted) {
+        fwrite(STDERR, "WARNING: this dump is unencrypted. It is a complete copy of the clinical database,\n");
+        fwrite(STDERR, "readable by anyone who obtains the file. §9 of HR-OPS-REF-R1-001 requires encrypted\n");
+        fwrite(STDERR, "backups; set BACKUP_ENCRYPTION_KEY (php bin/console db:backup --key) to comply.\n");
+    }
 
     try {
         if ($prune !== null) {
@@ -931,9 +972,24 @@ function listBackups(Application $app): int
         return 0;
     }
 
-    printf("%-34s %-10s %s\n", 'FILE', 'SIZE', 'WRITTEN (UTC)');
+    printf("%-38s %-10s %-5s %s\n", 'FILE', 'SIZE', 'ENC', 'WRITTEN (UTC)');
     foreach ($files as $file) {
-        printf("%-34s %-10s %s\n", $file->name, $file->humanSize(), gmdate('Y-m-d H:i', $file->modifiedAt));
+        printf(
+            "%-38s %-10s %-5s %s\n",
+            $file->name,
+            $file->humanSize(),
+            $file->encrypted ? 'yes' : 'no',
+            gmdate('Y-m-d H:i', $file->modifiedAt),
+        );
+    }
+
+    $plain = array_filter($files, static fn ($file): bool => !$file->encrypted);
+    if ($plain !== []) {
+        printf(
+            "\n%d of %d listed backup(s) are unencrypted and remain so until `prune` removes them.\n",
+            count($plain),
+            count($files),
+        );
     }
 
     return 0;
@@ -969,7 +1025,7 @@ function restoreDrill(Application $app, array $options): int
             return 1;
         }
 
-        echo 'restoring ' . $file->name . PHP_EOL;
+        echo 'restoring ' . $file->name . ' (' . ($file->encrypted ? 'encrypted' : 'unencrypted') . ')' . PHP_EOL;
         $result = $app->backups()->verify($file, $target, $keep);
     } catch (Throwable $exception) {
         fwrite(STDERR, 'Restore drill failed: ' . $exception->getMessage() . PHP_EOL);

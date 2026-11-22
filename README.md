@@ -298,8 +298,9 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console outbox:list [--limit=20]` | Inspect queued notifications |
 | `php bin/console outbox:dispatch [--limit=20]` | Deliver due notifications (cron) |
 | `php bin/console diag` | Print the operational checks (exits 1 on a failure) |
-| `php bin/console db:backup [--prune=14]` | Write a gzipped logical backup to `var/backups/` |
-| `php bin/console db:backups` | List backups with size and age |
+| `php bin/console db:backup [--prune=14] [--require-encryption]` | Write a logical backup to `var/backups/`; encrypted when `BACKUP_ENCRYPTION_KEY` is set, and `--require-encryption` exits 2 rather than write a plaintext one |
+| `php bin/console db:backup --key` | Print a new `BACKUP_ENCRYPTION_KEY` and exit; storing nothing |
+| `php bin/console db:backups` | List backups with size, age, and whether each one is encrypted |
 | `php bin/console db:restore-drill [--file=…] [--database=…_drill] [--keep]` | Restore into a scratch schema and compare row counts |
 | `php bin/console logs:review [--level=error] [--limit=30]` | Read the JSON-lines application log |
 | `php bin/console retention:plan` | Show the cutoff and how many bookings are eligible |

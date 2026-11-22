@@ -108,6 +108,22 @@ final class Config
     }
 
     /**
+     * `BACKUP_ENCRYPTION_KEY` — the base64 key that turns a dump into a file nobody can read without it.
+     *
+     * Null when unset, and that is a supported state rather than an error. The hourly dump has to keep
+     * running on a host whose key has not been provisioned yet, and a backup that refuses to run is a
+     * worse outcome than one that states in its output that it is not encrypted. `db:backup
+     * --require-encryption` is how a cron entry fails closed once the key exists — the operator chooses
+     * the day that becomes true, rather than discovering it when the dumps stop.
+     */
+    public function backupEncryptionKey(): ?string
+    {
+        $key = trim((string) Env::get('BACKUP_ENCRYPTION_KEY', ''));
+
+        return $key === '' ? null : $key;
+    }
+
+    /**
      * Days after which the personal data of a finished booking is redacted.
      *
      * The fallback is the directed seven years, so an unset variable cannot

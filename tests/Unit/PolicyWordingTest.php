@@ -13,12 +13,12 @@ use PHPUnit\Framework\TestCase;
  * Three decisions of 20 November 2026 approved the paragraphs for storage and security, retention, and
  * cookies and third-party services. The transcription step is where a word gets lost — this project has
  * already had a reviewer's name dropped by a mapping (see `ContentSourceTest`) and a retention period
- * contradict a decision for three weeks. Both were silent. So the approved sentences are pinned here,
- * and a later edit that rewords one of them fails the build instead of publishing.
+ * contradict a decision for three weeks. Both were silent. So the approved sentences are pinned here, and a
+ * later edit that rewords one of them fails the build instead of publishing.
  *
  * The test compares whole paragraphs, not fragments: "contains" assertions pass when a sentence is
- * appended, duplicated or half-deleted around the matched substring, which is the failure mode that
- * matters on a page whose purpose is to state exactly what the controller does.
+ * appended, duplicated or half-deleted around the matched substring, which is the failure mode that matters
+ * on a page whose purpose is to state exactly what the controller does.
  */
 final class PolicyWordingTest extends TestCase
 {
@@ -77,7 +77,7 @@ final class PolicyWordingTest extends TestCase
     #[DataProvider('approvedSections')]
     public function testTheApprovedParagraphsArePresentVerbatim(string $heading, array $expected): void
     {
-        $sections = $this->sections('policy.privacy');
+        $sections = $this->paragraphs('policy.privacy');
 
         self::assertArrayHasKey(
             $heading,
@@ -93,7 +93,7 @@ final class PolicyWordingTest extends TestCase
             array_map($this->normalise(...), $expected),
             array_map($this->normalise(...), $sections[$heading]),
             sprintf(
-                "The \"%s\" paragraphs no longer match the approved wording. If Legal approved a change, record it "
+                'The "%s" paragraphs no longer match the approved wording. If Legal approved a change, record it '
                 . 'as a new decision and update both this test and the content in the same commit; otherwise the '
                 . 'page has been reworded without authority.',
                 $heading,
@@ -104,10 +104,9 @@ final class PolicyWordingTest extends TestCase
     /**
      * The three sections arrived as wording, not as permission to publish.
      *
-     * The publish path refuses a row without a clinical reviewer, an approver, an approval date, an
-     * effective date and a review date. None of the three decisions supplied those, so the page must
-     * still carry none of them — if this ever fails, somebody has published health-policy text whose
-     * dates were invented.
+     * The publish path refuses a row without a clinical reviewer, an approver, an approval date, an effective
+     * date and a review date. None of the three decisions supplied those, so the page must still carry none of
+     * them — if this ever fails, somebody has published health-policy text whose dates were invented.
      */
     public function testThePrivacyPageStillCarriesNoProvenance(): void
     {
@@ -130,24 +129,17 @@ final class PolicyWordingTest extends TestCase
     public function testNoSectionIsEmptyAndNoPlaceholderSurvives(): void
     {
         foreach (['policy.privacy', 'policy.booking', 'policy.referral'] as $key) {
-            $page = $this->page($key);
-
-            foreach ($page['sections'] as $index => $section) {
-                $text = implode(' ', array_merge(
-                    $section['paragraphs'] ?? [],
-                    $section['bullets'] ?? [],
-                ));
-
-                self::assertNotSame('', trim($text), sprintf('%s section %d is empty.', $key, $index));
+            foreach ($this->textBySection($key) as $heading => $text) {
+                self::assertNotSame('', $text, sprintf('%s / %s is empty.', $key, $heading));
                 self::assertStringNotContainsString(
                     '[',
                     $text,
                     sprintf(
-                        '%s section %d carries a bracketed placeholder. The policy pack says to omit a section '
-                        . 'rather than publish an unfilled marker, because a visitor reads "[insert number]" as a '
-                        . 'page that is still being written.',
+                        '%s / %s carries a bracketed placeholder. The policy pack says to omit a section rather '
+                        . 'than publish an unfilled marker, because a visitor reads "[insert number]" as a page '
+                        . 'that is still being written.',
                         $key,
-                        $index,
+                        $heading,
                     ),
                 );
             }
@@ -163,7 +155,10 @@ final class PolicyWordingTest extends TestCase
         self::assertFileExists($path);
 
         $pages = require $path;
-        self::assertIsArray($pages);
+
+        if (!is_array($pages)) {
+            self::fail('The content source did not return an array.');
+        }
 
         foreach ($pages as $page) {
             if (is_array($page) && ($page['key'] ?? null) === $key) {
@@ -175,15 +170,29 @@ final class PolicyWordingTest extends TestCase
     }
 
     /**
+     * @return array<array-key, mixed>
+     */
+    private function sections(string $key): array
+    {
+        $sections = $this->page($key)['sections'] ?? [];
+
+        if (!is_array($sections)) {
+            self::fail($key . ' has no section list.');
+        }
+
+        return $sections;
+    }
+
+    /**
      * Heading → its paragraphs, in document order.
      *
      * @return array<string, list<string>>
      */
-    private function sections(string $key): array
+    private function paragraphs(string $key): array
     {
         $out = [];
 
-        foreach ($this->page($key)['sections'] as $section) {
+        foreach ($this->sections($key) as $section) {
             if (!is_array($section)) {
                 continue;
             }
@@ -192,14 +201,64 @@ final class PolicyWordingTest extends TestCase
             $paragraphs = $section['paragraphs'] ?? [];
 
             if (is_string($heading) && is_array($paragraphs)) {
-                $out[$heading] = array_values(array_filter($paragraphs, is_string(...)));
+                $texts = [];
+
+                foreach ($paragraphs as $paragraph) {
+                    if (is_string($paragraph)) {
+                        $texts[] = $paragraph;
+                    }
+                }
+
+                $out[$heading] = $texts;
             }
         }
 
         return $out;
     }
 
-    /** The file wraps sentences with ` . ` at the join, so collapse whitespace before comparing. */
+    /**
+     * Heading → every word the visitor sees in it, paragraphs and bullets together.
+     *
+     * @return array<string, string>
+     */
+    private function textBySection(string $key): array
+    {
+        $out = [];
+
+        foreach ($this->sections($key) as $section) {
+            if (!is_array($section)) {
+                continue;
+            }
+
+            $heading = $section['heading'] ?? null;
+
+            if (!is_string($heading)) {
+                continue;
+            }
+
+            $texts = [];
+
+            foreach (['paragraphs', 'bullets'] as $field) {
+                $values = $section[$field] ?? [];
+
+                if (!is_array($values)) {
+                    continue;
+                }
+
+                foreach ($values as $value) {
+                    if (is_string($value)) {
+                        $texts[] = $value;
+                    }
+                }
+            }
+
+            $out[$heading] = implode(' ', $texts);
+        }
+
+        return $out;
+    }
+
+    /** The file wraps sentences with a concatenation at the join, so collapse whitespace before comparing. */
     private function normalise(string $text): string
     {
         return trim((string) preg_replace('/\s+/u', ' ', $text));

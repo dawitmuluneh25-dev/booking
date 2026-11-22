@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Database;
 
+use App\Support\BackupCipher;
 use App\Support\BackupFile;
 use Closure;
 use PDO;
@@ -26,32 +27,62 @@ final class DatabaseBackup
 {
     private const INSERT_CHUNK = 100;
 
+    /** Built on first use, so a malformed key cannot break a caller that never writes or reads a dump. */
+    private ?BackupCipher $cipherCache = null;
+
     /**
      * @param Closure(string): PDO $connectionFactory opens a connection to the
      *        given database name; the database must already exist.
+     * @param string|null $encryptionKey `BACKUP_ENCRYPTION_KEY`, base64. When set, dumps are
+     *        written encrypted; when null they are written as plain gzipped SQL, which the
+     *        console reports every time.
      */
     public function __construct(
         private readonly PDO $pdo,
         private readonly string $database,
         private readonly string $directory,
         private readonly Closure $connectionFactory,
+        private readonly ?string $encryptionKey = null,
     ) {
+    }
+
+    /**
+     * A file in the backup directory that is a finished backup.
+     *
+     * `.part` is excluded deliberately: a dump that is still being written must never be offered
+     * as the newest backup, because `latest()` feeds the restore drill and the drill would then
+     * restore a truncated file and report a row-count mismatch instead of a missing backup.
+     *
+     * Public because it is the rule that decides what `prune()` may delete, and it can be tested
+     * without a database connection.
+     */
+    public static function isBackupName(string $name): bool
+    {
+        return preg_match('/\Abooking-\d{8}-\d{6}(?:-\d+)?\.sql\.gz(?:\.enc)?\z/', $name) === 1;
     }
 
     public function create(): BackupFile
     {
         $this->ensureDirectory();
 
-        $name = 'booking-' . gmdate('Ymd-His') . '.sql.gz';
+        $encrypted = $this->encryptionKey !== null;
+        $extension = 'sql.gz' . ($encrypted ? '.enc' : '');
+
+        $name = 'booking-' . gmdate('Ymd-His') . '.' . $extension;
         $path = $this->directory . DIRECTORY_SEPARATOR . $name;
         $suffix = 1;
-        while (is_file($path)) {
-            $name = 'booking-' . gmdate('Ymd-His') . '-' . $suffix . '.sql.gz';
+        while (is_file($path) || is_file($path . '.part')) {
+            $name = 'booking-' . gmdate('Ymd-His') . '-' . $suffix . '.' . $extension;
             $path = $this->directory . DIRECTORY_SEPARATOR . $name;
             $suffix++;
         }
 
-        $handle = gzopen($path, 'wb9');
+        // Written under a `.part` name and moved into place only once it is complete. Before this,
+        // a process killed mid-dump left a truncated `.sql.gz` that `latest()` returned as the
+        // newest backup — a file that looks like a backup and restores to half a database.
+        $part = $path . '.part';
+
+        $handle = gzopen($part, 'wb9');
         if ($handle === false) {
             throw new RuntimeException('Cannot create the backup file.');
         }
@@ -79,12 +110,31 @@ final class DatabaseBackup
                 $this->pdo->rollBack();
             }
             gzclose($handle);
-            @unlink($path);
+            @unlink($part);
 
             throw $exception;
         }
 
         gzclose($handle);
+
+        if ($encrypted) {
+            try {
+                $this->cipher()->encryptFile($part, $path);
+            } catch (Throwable $exception) {
+                // A half-encrypted file is not a backup, and leaving it would let `all()` list a
+                // file that cannot be decrypted. Both names go.
+                @unlink($part);
+                @unlink($path);
+
+                throw $exception;
+            }
+
+            @unlink($part);
+        } elseif (!@rename($part, $path)) {
+            @unlink($part);
+
+            throw new RuntimeException('Cannot move the finished backup into place at ' . $path . '.');
+        }
 
         $bytes = filesize($path);
 
@@ -95,6 +145,7 @@ final class DatabaseBackup
             modifiedAt: time(),
             tables: $tables,
             rows: $rows,
+            encrypted: $encrypted,
         );
     }
 
@@ -103,17 +154,29 @@ final class DatabaseBackup
      */
     public function all(int $limit = 20): array
     {
-        $paths = glob($this->directory . DIRECTORY_SEPARATOR . '*.sql.gz') ?: [];
+        $paths = glob($this->directory . DIRECTORY_SEPARATOR . '*.sql.gz*') ?: [];
 
         $files = [];
         foreach ($paths as $path) {
+            $name = basename($path);
+
+            if (!self::isBackupName($name)) {
+                continue;
+            }
+
             $bytes = filesize($path);
             $modified = filemtime($path);
             if ($bytes === false || $modified === false) {
                 continue;
             }
 
-            $files[] = new BackupFile($path, basename($path), $bytes, $modified);
+            $files[] = new BackupFile(
+                $path,
+                $name,
+                $bytes,
+                $modified,
+                encrypted: BackupCipher::looksEncrypted($path),
+            );
         }
 
         usort($files, static fn (BackupFile $a, BackupFile $b): int => $b->modifiedAt <=> $a->modifiedAt);
@@ -134,7 +197,15 @@ final class DatabaseBackup
             : $this->directory . DIRECTORY_SEPARATOR . basename($pathOrName);
 
         if (!is_file($path)) {
-            throw new RuntimeException('No backup file at ' . $path . '.');
+            // A person reading `booking-….sql.gz.enc` off the disk is as likely to type the name
+            // without the suffix, so one silent retry rather than an error about a file that is there.
+            $alternate = str_ends_with($path, '.enc') ? substr($path, 0, -4) : $path . '.enc';
+
+            if (is_file($alternate)) {
+                $path = $alternate;
+            } else {
+                throw new RuntimeException('No backup file at ' . $path . '.');
+            }
         }
 
         $bytes = filesize($path);
@@ -145,6 +216,7 @@ final class DatabaseBackup
             name: basename($path),
             bytes: $bytes === false ? 0 : $bytes,
             modifiedAt: $modified === false ? time() : $modified,
+            encrypted: BackupCipher::looksEncrypted($path),
         );
     }
 
@@ -441,8 +513,19 @@ final class DatabaseBackup
         return (int) $statement->fetchColumn();
     }
 
+    /**
+     * The dump, decrypted when the file carries our magic.
+     *
+     * Dispatch is by content, not by name: a file renamed to `.sql.gz` after being encrypted would
+     * otherwise be fed to `gzopen`, which fails on the magic bytes with an error that says nothing
+     * about the real problem.
+     */
     private function read(BackupFile $file): string
     {
+        if (BackupCipher::looksEncrypted($file->path)) {
+            return $this->cipher()->decryptContents($file->path);
+        }
+
         $handle = gzopen($file->path, 'rb');
         if ($handle === false) {
             throw new RuntimeException('Cannot open the backup file.');
@@ -469,6 +552,19 @@ final class DatabaseBackup
             'SET FOREIGN_KEY_CHECKS = 0;',
             '',
         ]);
+    }
+
+    private function cipher(): BackupCipher
+    {
+        if ($this->encryptionKey === null) {
+            throw new RuntimeException(
+                'That backup is encrypted and BACKUP_ENCRYPTION_KEY is not set. Without the key the file '
+                . 'cannot be restored — which is the property the encryption is there to have, and the '
+                . 'reason the key needs custody of its own rather than a copy beside the database password.',
+            );
+        }
+
+        return $this->cipherCache ??= BackupCipher::fromBase64($this->encryptionKey);
     }
 
     private function ensureDirectory(): void

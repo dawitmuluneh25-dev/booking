@@ -16,6 +16,7 @@ final readonly class BackupFile
         public int $modifiedAt,
         public int $tables = 0,
         public int $rows = 0,
+        public bool $encrypted = false,
     ) {
     }
 

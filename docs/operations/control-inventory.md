@@ -139,9 +139,29 @@ consistent view rather than a set of tables sampled at different moments.
 **refuses** to target the live database, and it only drops a database whose name ends in `_drill`, so a
 mistyped name cannot delete production. `prune()` keeps the newest 14 dumps.
 
-**Not provided by the application:** encryption at rest of the backup file. The dump is plain gzipped
-SQL in a directory on the host. Whether that directory is encrypted, and where it is stored, is a hosting
-question — it is one of the twelve unanswered ones (S4).
+**Encryption at rest — provided since 22 November 2026, when a key is configured.** `src/Support/BackupCipher.php`
+encrypts the dump with `sodium_crypto_secretstream_xchacha20poly1305`: a 32-byte key from
+`BACKUP_ENCRYPTION_KEY`, a per-file header, and 256 KiB records each carrying its own authentication tag.
+A flipped byte fails the restore rather than producing a dump that is subtly wrong, and a truncated file is
+refused rather than half-restored. `db:restore-drill` reads either form, because dispatch is by content
+rather than by file name.
+
+Three limits belong beside that sentence, because "encrypted" on its own overstates what this does:
+
+- **A key held on the same host as the database password protects a copied file, not a compromised host.**
+  It defeats the real exposure — a dump downloaded over FTP, mailed, synced or left on a decommissioned
+  disk — and it does not defeat somebody who already has the application's environment. Key custody is an
+  operational control this document cannot supply.
+- **A lost key means the backups are unreadable, not recoverable.** That is the property encryption is
+  supposed to have, and it makes the key the single most important secret in the backup path.
+- **Unconfigured is the current state on staging.** `BACKUP_ENCRYPTION_KEY` is empty there, so dumps are
+  still plain gzipped SQL and every command says so on its output; `db:backup --require-encryption` refuses
+  to run when the key is missing, and that flag is how the cron entry fails closed once the key exists.
+
+The dump is also written to a `.part` name and moved into place only when complete, so a killed run no
+longer leaves a truncated file that `latest()` would offer to the restore drill. Whether the backup
+directory itself sits on encrypted storage, and where it is stored, remains a hosting question — one of the
+twelve unanswered ones (S4).
 
 ---
 
@@ -207,7 +227,7 @@ application feature, and none has been verified in this pass unless marked.
 |---|---|
 | A web application firewall | Nothing filters hostile requests before the application sees them. The host said none is in place (carried, `HANDOFF-R1.md` §7.2) |
 | Malware scanning of uploads | Quarantine plus human release is the compensating control; the notice must not claim scanning |
-| Encryption of backups at rest | The dump is plain gzipped SQL in a host directory |
+| ~~Encryption of backups at rest~~ | **Provided since 22 November 2026 when `BACKUP_ENCRYPTION_KEY` is set; not yet set on staging (§6).** The notice may not claim it until it is configured and a drill has passed against an encrypted file |
 | A second, least-privilege database user | The application connects as the account's database user (carried; one of the twelve S4 questions) |
 | Multi-factor authentication | Sign-in is password only |
 | Purging of audit and access-log rows | Retention covers clinical records; audit retention is still D5 |

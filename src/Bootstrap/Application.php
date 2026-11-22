@@ -1114,6 +1114,7 @@ final class Application
 
                 return Connection::create($configuration, $database === '');
             },
+            $this->config->backupEncryptionKey(),
         );
     }
 
