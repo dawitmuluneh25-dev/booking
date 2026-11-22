@@ -16,15 +16,22 @@
  *
  * Nine bracketed values in the source document are omitted rather than carried over as
  * placeholders, per that note: "publish the page without that section rather than with an
- * unfilled marker". The omissions are:
+ * unfilled marker". Their state on 22 November 2026:
  *
- *   Privacy §5   — the security and access-control description (bracketed field list)
- *   Privacy §6   — retention rules, omitted in full; nothing in the section survives the marker
- *   Privacy §10  — cookies, analytics and third-party processors, omitted in full
- *   Booking §7   — rescheduling, cancellation and non-attendance rules
- *   Booking §8   — fees, payment, refunds, omitted in full
- *   Referral §1  — the approved clinician referral route
- *   Referral §4  — the alternative document-submission route
+ *   Privacy §5   — FILLED 22 Nov from DEC-2026-11-20-02, verbatim
+ *   Privacy §6   — FILLED 22 Nov from DEC-2026-11-20-03, verbatim
+ *   Privacy §10  — FILLED 22 Nov from DEC-2026-11-20-04, verbatim
+ *   Booking §7   — still unfilled; the page carries a generic "approved communication route"
+ *                  sentence, which is not the same as rescheduling and cancellation rules
+ *   Booking §8   — still unfilled; the page says nothing about fees, payment or refunds
+ *   Referral §1  — still unfilled; naming the portal needs CFG-01 verified (operating model §11.1)
+ *   Referral §4  — still unfilled; naming the document service needs CFG-02 provisioned
+ *
+ * A filled row means the paragraphs are the approved words, not that the page may publish. The
+ * three privacy sections were transcribed from decisions that approve wording and nothing else:
+ * the page still has no approver and no dates, so `PublishedContent::missingForPublication()`
+ * still refuses it, and `PolicyWordingTest` now pins every approved sentence so a later edit
+ * cannot drift one.
  *
  * When a value arrives, add it to the matching section here and re-import. The document remains
  * the source; this file is its transcription.
@@ -104,9 +111,55 @@ return [
             ],
             [
                 'heading' => 'Storage and security',
+                // Approved wording, DEC-2026-11-20-02 (dejene tolera, Legal/Data Protection, 20 November 2026).
+                // Transcribed verbatim. The decision approves the wording and makes publication conditional on
+                // eight control-verification rows, which Engineering answered in
+                // `outputs/privacy-verification-2026-11-21.md`; two of those rows are still Pending.
                 'paragraphs' => [
-                    'HakimeRAD intends to protect submitted information through access restrictions and '
-                        . 'appropriate technical and organizational safeguards.',
+                    'HakimeRAD uses technical and organizational measures intended to protect personal and health '
+                        . 'information against unauthorized access, disclosure, alteration, loss and destruction.',
+                    'Access to non-public information is restricted to authorized personnel according to their '
+                        . 'assigned responsibilities. Documents and clinical information are intended to be handled '
+                        . 'through protected application storage and access-controlled application workflows.',
+                    'HakimeRAD maintains records of relevant system activity and applies security measures to '
+                        . 'information transmitted between users and the service. Backup and recovery arrangements '
+                        . 'are maintained to support service continuity.',
+                    'No security measure eliminates every risk. HakimeRAD reviews its safeguards and works to '
+                        . 'address identified security weaknesses.',
+                ],
+            ],
+            [
+                // Heading is editorial — the decision supplied the paragraphs, not a heading. The paragraphs
+                // below are the approved retention wording, DEC-2026-11-20-03 (20 November 2026), verbatim,
+                // including its second sentence, which is ungrammatical as approved. It is transcribed rather
+                // than improved for the same reason every other sentence here is: these are the words the
+                // policy owner signed, and a tidied version is a different sentence nobody approved.
+                'heading' => 'How long information is kept',
+                'paragraphs' => [
+                    'HakimeRAD retains personal and health information only for as long as is justified by the '
+                        . 'purposes for which it is processed and by applicable legal, professional and '
+                        . 'institutional requirements.',
+                    'The applicable retention and disposal arrangements are governed by the approved '
+                        . 'records-retention policy. In this case 7 years by Ethiopian medical record keeping '
+                        . 'directive by MOH.',
+                ],
+            ],
+            [
+                // Approved wording, DEC-2026-11-20-04 (20 November 2026), verbatim. That decision forbids naming
+                // a vendor that the technology inventory has not marked deployed, so this section names none —
+                // the inventory's one unconfirmed row is the email transport, and it stays unnamed until it is
+                // read off the deployed environment.
+                'heading' => 'Cookies and third-party services',
+                'paragraphs' => [
+                    'HakimeRAD may use essential browser technologies required to operate and secure the service. '
+                        . 'These technologies may support session handling, security and application '
+                        . 'functionality.',
+                    'The service may also rely on third-party infrastructure and communication providers where '
+                        . 'these services are configured and used to operate the application or communicate with '
+                        . 'users.',
+                    'The identity and purpose of relevant third-party services, and any non-essential tracking '
+                        . 'technologies, will be disclosed in accordance with the approved technology inventory '
+                        . 'and privacy arrangements.',
                 ],
             ],
             [
