@@ -21,10 +21,14 @@ final class ApplicationTest extends TestCase
         $response = $app->handle(Request::create('GET', '/'));
 
         self::assertSame(200, $response->status);
-        // The landing page describes the intake ADR-013 actually ships: referrals
-        // from registered clinicians. See PublicFunnelTest for the reachability
-        // assertions that this page previously failed.
-        self::assertStringContainsString('Refer a patient', $response->body());
+        // Since D-05 the landing page opens with the approved headline rather than the
+        // referrer-facing "Refer a patient" it carried while the owner's public copy was
+        // outstanding. HomePageCopyTest pins the rest of the approved text, and
+        // PublicFunnelTest holds the links to routes that answer.
+        self::assertStringContainsString(
+            'Specialist Image-Guided Interventional Radiology Care',
+            $response->body(),
+        );
         self::assertStringContainsString('<html lang="en">', $response->body());
     }
 
