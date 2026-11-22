@@ -184,7 +184,7 @@ switch ($command) {
         decision, so it is recorded as expiry rather than approval or refusal.
 
           php bin/console demo:seed [--yes] [--password=…]
-          php bin/console content:sync        Import the §17.1–§17.4 service pages as drafts
+          php bin/console content:sync        Import the service and policy pages as drafts
 
         user:create prints a generated password once when --password is omitted.
         outbox:dispatch is meant to run from cron, never from a web request.
@@ -198,17 +198,20 @@ switch ($command) {
 }
 
 /**
- * Import the §17.1–§17.4 service pages as drafts (§17.5).
+ * Import the §17.1–§17.4 service pages (§17.5) and the three HR-WEB-CONTENT-R1-001 policy pages
+ * as drafts.
  *
  * This is an import, not a publish. It exists so the approved words live in a
  * row that carries their provenance instead of in a template, and it refuses to
  * invent the fields the package does not supply: a page whose clinical reviewer,
- * effective date or review date is unknown is imported as a draft that says so,
- * and the publish command will name those three rather than quietly letting it
- * through.
+ * approver or dates are unknown is imported as a draft that says so, and the
+ * publish command will name them rather than quietly letting the page through.
  *
- * Idempotent on (content key, version, language), so running it twice is a no-op
- * rather than a second copy of the same version.
+ * Idempotent on (content key, version, language). Running it twice imports nothing the second
+ * time, but it is not a no-op: an existing *draft* is rewritten from the source, which is how a
+ * corrected paragraph on a page that has no dates yet reaches the row it will eventually be
+ * published from. A *published* row is never touched — an import must not rewrite words under an
+ * approval someone signed.
  */
 function syncContent(Application $app): int
 {
@@ -312,17 +315,25 @@ function syncContent(Application $app): int
         );
     }
 
+    $present = $created + $existing;
+
     printf("\n%d imported, %d already present, %d failed.\n", $created, $existing, $failures);
 
+    // "Nothing to do" was the wrong sentence: a run that imports nothing can still rewrite every
+    // draft it finds, because an existing draft is brought in line with the source. An operator
+    // reading "nothing to do" would have no reason to look at the rows, so it says what happened
+    // instead of how many rows it happened to.
     if ($created === 0 && $existing > 0) {
-        echo "Nothing to do: every page in the source is already imported.\n";
+        echo "No page was imported: all {$existing} in the source are already present. Any draft among\n";
+        echo "them was synchronised with the source; published rows were left untouched.\n";
     }
 
     if ($unpublishable > 0) {
-        echo "These are drafts. For {$unpublishable} of them §17.5 is still short of a clinical\n";
-        echo "reviewer, an effective date or a review date, and no command here will invent them.\n";
+        echo "These are drafts. For {$unpublishable} of {$present}, §17.5 is still short of at least one\n";
+        echo "provenance field — clinical reviewer, approver, approval date, effective date, review\n";
+        echo "date — and no command here will invent them.\n";
     } else {
-        echo "All four are complete by §17.5 and ready to publish. This command does not publish:\n";
+        echo "All {$present} are complete by §17.5 and ready to publish. This command does not publish:\n";
         echo "that is a dated, attributed act, performed at /admin/content.\n";
     }
 
