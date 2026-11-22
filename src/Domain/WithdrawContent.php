@@ -23,6 +23,43 @@ final class WithdrawContent
     }
 
     /**
+     * Withdraw whichever version of a page is live right now, addressed by its content key.
+     *
+     * The console needs this because an operator taking a page down at 3am knows the key — the
+     * thing printed in the URL and in the decision record — not a numeric row id. Resolving the key
+     * here rather than in the shell script keeps "which version is live" a question about the
+     * record, asked of the repository that answers it for the public site.
+     *
+     * The permission check is repeated rather than left to `execute()`, because the lookup comes
+     * first: without it an unauthorised caller could tell a live page from an absent one by reading
+     * the error message, which is a small but real disclosure about unpublished work.
+     *
+     * @throws AuthorisationException the actor may not publish content
+     * @throws ValidationException     no version of the page is live
+     */
+    public function executeByKey(
+        Actor $actor,
+        string $contentKey,
+        string $language = ContentSource::LANGUAGE,
+        ?string $nowUtc = null,
+    ): PublishedContent {
+        if (!$actor->can(Permission::ContentPublish)) {
+            throw new AuthorisationException($actor->role, Permission::ContentPublish);
+        }
+
+        $live = $this->content->published($contentKey, $language);
+
+        if ($live === null) {
+            throw new ValidationException([
+                'key' => 'Nothing is published at "' . $contentKey . '" (' . $language . '), so there is '
+                    . 'nothing to withdraw. A draft is taken down by never publishing it.',
+            ]);
+        }
+
+        return $this->execute($actor, $live->id, $nowUtc);
+    }
+
+    /**
      * @throws AuthorisationException the actor may not publish content
      * @throws ContentNotFoundException no such record
      * @throws ValidationException     the version is not live

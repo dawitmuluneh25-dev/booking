@@ -84,24 +84,34 @@ final class ContentSourceTest extends TestCase
     /**
      * The real source file, checked as data rather than as a mapping.
      *
-     * Four pages, each §17.5-complete, with a review date that can follow its
-     * approval — the exact shape the package's own rules require.
+     * Four pages. Three are §17.5-complete — the exact shape the package's own rules require — and
+     * one is deliberately not: `service.intussusception`, which HR-ENG-DEC-R1-003 D-03 keeps
+     * unpublishable until a sign-off that has not been recorded. That page is held to a different
+     * bar on purpose, and `IntussusceptionCopyTest` is where its bar is spelled out. The list of
+     * exceptions is written down here so that "one page is incomplete" stays a decision rather than
+     * becoming a habit.
      */
-    public function testTheCommittedSourceIsFourCompletePages(): void
+    public function testTheCommittedSourceIsThreeCompletePagesAndOneHeld(): void
     {
         $pages = require dirname(__DIR__, 2) . '/database/content/service-pages.php';
 
         self::assertIsArray($pages);
         self::assertCount(4, $pages);
 
+        $held = ['service.intussusception' => ['effective date']];
         $keys = [];
 
         foreach ($pages as $page) {
             self::assertIsArray($page);
 
             $draft = (new ContentSource())->toDraft($page, '2026-11-13 10:00:00');
+            $missing = $draft->missingForPublication();
 
-            self::assertSame([], $draft->missingForPublication(), $draft->contentKey . ' is incomplete.');
+            self::assertSame(
+                $held[$draft->contentKey] ?? [],
+                $missing,
+                $draft->contentKey . ' is not in the state this file is meant to be in.',
+            );
             self::assertNotNull($draft->reviewOn);
             self::assertNotNull($draft->approvedOn);
             self::assertTrue(

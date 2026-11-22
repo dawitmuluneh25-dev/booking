@@ -310,66 +310,42 @@ return [
         ],
     ],
     [
+        // HR-ENG-DEC-R1-003 D-03 (22 November 2026) restricts this pathway to urgent, hospital-based
+        // coordination and supplies the only public wording permitted for it. Two consequences are
+        // recorded here rather than left to a future reader:
+        //
+        //   `effective_on` is absent on purpose. D-03 makes publication conditional on a documented
+        //   sign-off by the Clinical Approver and the receiving paediatric/surgical authority, and
+        //   that sign-off is not recorded anywhere. With no effective date,
+        //   PublishedContent::missingForPublication() names the blocker and
+        //   ck_published_content_complete refuses the row, so the page cannot be published by an
+        //   import, a sync, or a click on the admin screen. Writing a date here to make the page
+        //   publishable would be inventing the approval the decision requires.
+        //
+        //   The copy is the record's approved paragraph and nothing else. The sections removed on
+        //   23 November described how coordination runs — present tense, as a service in operation —
+        //   which is the public availability claim D-03 forbids. No replacement prose was written:
+        //   the record authorises one paragraph, and a second paragraph would be me drafting
+        //   clinical copy nobody approved.
         'key' => 'service.intussusception',
         'title' => 'Hydrostatic Intussusception Reduction — Urgent Hospital Coordination',
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
         'clinical_reviewer' => 'Dawit Muluneh',
-        'effective_on' => '2026-11-13',
         'review_on' => '2027-11-13',
         'translation_review_status' => 'source',
         'sections' => [
             [
-                'heading' => 'What it is',
-                'paragraphs' => [
-                    'Hydrostatic reduction is an image-guided procedure that may be considered by a '
-                        . 'hospital clinical team as part of the management of selected cases of '
-                        . 'intussusception.',
-                ],
-            ],
-            [
                 'heading' => 'Important',
                 'paragraphs' => [
-                    'This is not a routine outpatient appointment and cannot be booked through ordinary '
-                        . 'public appointment selection. If intussusception is suspected, contact the '
-                        . 'treating hospital or emergency department immediately. Do not wait for an online '
-                        . 'response.',
-                ],
-            ],
-            [
-                'heading' => 'How coordination works',
-                'paragraphs' => [
-                    'The referring hospital contacts the receiving radiology team directly. The responsible '
-                        . 'clinical teams review the patient\'s condition and imaging, discuss the appropriate '
-                        . 'pathway and confirm whether the necessary personnel and resources are available. '
-                        . 'The receiving team makes the clinical decision.',
-                ],
-            ],
-            [
-                'heading' => 'Consent and preparation',
-                'paragraphs' => [
-                    'Any preparation, analgesia, sedation, consent and post-procedure arrangements are '
-                        . 'determined by the responsible hospital team under its approved clinical policy.',
-                ],
-            ],
-            [
-                'heading' => 'Frequently asked questions',
-                'faq' => [
-                    [
-                        'question' => 'Can a parent choose a date online?',
-                        'answer' => 'No. This pathway requires urgent hospital-based clinical assessment '
-                            . 'and coordination.',
-                    ],
-                    [
-                        'question' => 'Does an online alert mean the case has been accepted?',
-                        'answer' => 'No. A responsible clinician must explicitly acknowledge the referral.',
-                    ],
-                    [
-                        'question' => 'What if the online service is unavailable?',
-                        'answer' => 'The referring team must use the direct hospital/emergency '
-                            . 'communication route.',
-                    ],
+                    'Hydrostatic reduction of intussusception is an urgent, hospital-based procedure '
+                        . 'requiring assessment and coordination with the receiving clinical team, '
+                        . 'including appropriate paediatric and surgical involvement. Submitting an '
+                        . 'online request does not confirm clinical acceptance, suitability, or '
+                        . 'procedure availability. If a child may have intussusception or has '
+                        . 'concerning symptoms, seek immediate assessment at a hospital or emergency '
+                        . 'department. Do not wait for an online response.',
                 ],
             ],
         ],

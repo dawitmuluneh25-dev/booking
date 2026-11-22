@@ -32,6 +32,7 @@ use App\Domain\ChangeUserAccess;
 use App\Domain\ContentSource;
 use App\Domain\UserNotFoundException;
 use App\Domain\ValidationException;
+use App\Domain\WithdrawContent;
 use App\Domain\RetentionPolicy;
 use App\Domain\RetentionService;
 use App\Domain\Role;
@@ -162,6 +163,9 @@ switch ($command) {
     case 'content:sync':
         exit(syncContent($app));
 
+    case 'content:withdraw':
+        exit(withdrawContent($app, $options));
+
     case 'help':
     default:
         echo <<<TXT
@@ -205,6 +209,8 @@ switch ($command) {
 
           php bin/console demo:seed [--yes] [--password=…]
           php bin/console content:sync        Import the service and policy pages as drafts
+          php bin/console content:withdraw <content-key> --actor=<email> --yes
+                                              Take a published page down, and say who decided it
 
         user:create prints a generated password once when --password is omitted.
         outbox:dispatch is meant to run from cron, never from a web request.
@@ -358,6 +364,96 @@ function syncContent(Application $app): int
     }
 
     return $failures === 0 ? 0 : 1;
+}
+
+/**
+ * Take a published page down, addressed by its content key.
+ *
+ * Publishing is an approval act and so is withdrawing, so this names the person who decided it
+ * (`--actor`) and refuses to run without `--yes`. The alternative — a human logging into
+ * /admin/content to click a button — is the right path when a human is available; this exists for
+ * the case where a decision has already been recorded and the deployed state contradicts it, which
+ * is exactly how HR-ENG-DEC-R1-003 D-03 arrived: the decision was made on 22 November and the page
+ * stayed live.
+ *
+ * The page is not deleted. It keeps its words, its approver and its dates, and gains the time and
+ * the person who took it down, because the question after a withdrawal is "what did we show, and
+ * until when?"
+ *
+ * @param array<int, string> $options Arguments after the command name.
+ */
+function withdrawContent(Application $app, array $options): int
+{
+    $positional = array_values(array_filter(
+        $options,
+        static fn (string $option): bool => !str_starts_with($option, '--'),
+    ));
+
+    $actorEmail = '';
+    $confirmed = false;
+
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--actor=')) {
+            $actorEmail = substr($option, 8);
+        }
+
+        if ($option === '--yes') {
+            $confirmed = true;
+        }
+    }
+
+    if ($positional === [] || $actorEmail === '') {
+        fwrite(STDERR, "Usage: content:withdraw <content-key> --actor=<email> --yes\n");
+
+        return 1;
+    }
+
+    if (!$confirmed) {
+        fwrite(STDERR, "Refusing without --yes: this changes what the public site shows.\n");
+
+        return 1;
+    }
+
+    $credentials = $app->users()->findCredentialsByEmail(Auth::normalizeEmail($actorEmail));
+
+    if ($credentials === null) {
+        fwrite(STDERR, "No such actor: {$actorEmail}\n");
+
+        return 1;
+    }
+
+    if (!$credentials['user']->active) {
+        fwrite(STDERR, "The actor account is suspended, so it cannot withdraw anything.\n");
+
+        return 1;
+    }
+
+    $actor = new Actor($credentials['user']->id, $credentials['user']->role);
+    $withdraw = new WithdrawContent($app->content());
+
+    try {
+        $page = $withdraw->executeByKey($actor, $positional[0]);
+    } catch (AuthorisationException $exception) {
+        fwrite(STDERR, "{$credentials['user']->email} may not withdraw content: " . $exception->getMessage() . "\n");
+
+        return 1;
+    } catch (ValidationException $exception) {
+        fwrite(STDERR, implode(' ', $exception->errors) . "\n");
+
+        return 1;
+    }
+
+    printf(
+        "Withdrawn: %s version %s (%s), by %s at %s.\n",
+        $page->contentKey,
+        $page->version,
+        $page->language,
+        $credentials['user']->email,
+        $page->withdrawnAtUtc ?? 'unknown',
+    );
+    echo "The record is kept. The public route now answers as though the page does not exist.\n";
+
+    return 0;
 }
 
 function doctor(Application $app): int
