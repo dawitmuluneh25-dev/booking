@@ -31,8 +31,10 @@ final class KeyCustody
     /**
      * @param string      $publicRoot      the web root; nothing secret may live under it
      * @param string      $backupDirectory where the archives are, which the key must not be in
-     * @param string|null $envFile         the file that holds the key, or null when it is only in the process environment
-     * @param string|null $recoveryPath    the independent recovery copy, from `BACKUP_RECOVERY_KEY_FILE`
+     * @param string|null $envFile         the file that holds the key, or null when it is only in the
+     *        process environment
+     * @param string|null $recoveryPath    the independent recovery copy, from
+     *        `BACKUP_RECOVERY_KEY_FILE`
      * @param bool        $keyConfigured   whether the key itself is set at all
      */
     public function __construct(

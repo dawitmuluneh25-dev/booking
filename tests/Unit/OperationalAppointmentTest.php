@@ -65,7 +65,10 @@ final class OperationalAppointmentTest extends TestCase
         $officer = OperationalAppointment::ClinicalCoordinationOfficer;
 
         self::assertFalse($officer->confersClinicalAuthority());
-        self::assertStringContainsString('without independently exercising clinical decision authority', $officer->responsibility());
+        self::assertStringContainsString(
+            'without independently exercising clinical decision authority',
+            $officer->responsibility(),
+        );
 
         foreach (OperationalAppointment::cases() as $appointment) {
             self::assertFalse(

@@ -172,7 +172,16 @@ final class KeyCustodyTest extends TestCase
         $recovery = $this->root . '/recovery/key';
         file_put_contents($recovery, 'not-a-real-key');
 
-        $custody = $this->custody($this->envFile(), $recovery);
+        $env = $this->envFile();
+
+        // `file_put_contents` creates 0644 under the CI runner's umask, so on Linux the key-file
+        // check would fail and this test would be asserting the mode rather than the recovery copy.
+        // The mode is tightened here so the assertion is about the thing its name says.
+        if (PHP_OS_FAMILY !== 'Windows') {
+            chmod($env, 0600);
+        }
+
+        $custody = $this->custody($env, $recovery);
 
         self::assertSame('ok', $this->find($custody, 'Recovery copy')['state']);
         self::assertFalse($custody->hasFailure());
