@@ -24,6 +24,7 @@ use App\Domain\OpenUrgentReview;
 use App\Domain\NotificationFeedRepository;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
+use App\Domain\RetentionSchedule;
 use App\Domain\IdempotencyStore;
 use App\Domain\AcknowledgeUrgentCase;
 use App\Domain\AppointmentRepository;
@@ -975,6 +976,19 @@ final class Application
             $this->retentionRepository(),
             new RetentionPolicy($this->config->retentionDays()),
         );
+    }
+
+    /**
+     * D-02's per-class retention schedule, and whether it has been activated.
+     *
+     * Deliberately not consulted by `retention()`: the service still runs the single window, because
+     * the schedule is adopted and not activated (see `RetentionSchedule`). `retention:plan` is where
+     * the difference is reported, which is the only thing this slice is allowed to change until
+     * Legal validates the periods.
+     */
+    public function retentionSchedule(): RetentionSchedule
+    {
+        return new RetentionSchedule($this->config->retentionScheduleActive());
     }
 
     public function referralAccess(): ReferralAccessResolver

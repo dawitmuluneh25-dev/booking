@@ -1,0 +1,102 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit;
+
+use App\Bootstrap\Config;
+use App\Domain\RetentionSchedule;
+use InvalidArgumentException;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * D-02's retention table, as code, with its gate closed.
+ *
+ * The decision adopts a period per record class and then makes the whole table conditional on Legal
+ * validation. So there are two things to hold: the numbers must be the ones D-02 adopted, and the
+ * gate must be shut by default — an unset environment variable must leave the old single window
+ * running rather than start deleting on an unvalidated schedule.
+ *
+ * The periods are asserted rather than derived on purpose. A schedule computed from "seven years" at
+ * run time would drift from the privacy notice on a leap year; these are the figures D-02 adopted
+ * and the figures the notice states.
+ */
+final class RetentionScheduleTest extends TestCase
+{
+    public function testTheClosedScheduleIsTheDefault(): void
+    {
+        self::assertFalse((new RetentionSchedule())->isActive());
+    }
+
+    public function testTheTableIsTheOneTheDecisionAdopted(): void
+    {
+        self::assertSame(
+            [
+                'clinical_and_procedure' => 2557,
+                'referral_and_intake' => 2557,
+                'uploaded_clinical_documents' => 2557,
+                'appointment_and_administrative' => 2557,
+                'notification_and_outbox' => 365,
+                'security_and_audit' => 2557,
+            ],
+            (new RetentionSchedule())->classes(),
+        );
+    }
+
+    /**
+     * The two classes that were swept by nothing now have a period, and one of them is not seven
+     * years. That difference is the whole reason the single constant had to go.
+     */
+    public function testNotificationRecordsAreKeptForTwelveMonthsAndClinicalRecordsForSevenYears(): void
+    {
+        $schedule = new RetentionSchedule();
+
+        self::assertSame(365, $schedule->daysFor('notification_and_outbox'));
+        self::assertSame(2557, $schedule->daysFor('clinical_and_procedure'));
+        self::assertLessThan(
+            $schedule->daysFor('clinical_and_procedure'),
+            $schedule->daysFor('notification_and_outbox'),
+        );
+    }
+
+    /**
+     * Audit records get the longest period, not the shortest. A seven-year audit trail that is swept
+     * with the notifications would destroy the evidence of every other deletion.
+     */
+    public function testAuditRecordsAreKeptForSevenYears(): void
+    {
+        self::assertSame(2557, (new RetentionSchedule())->daysFor('security_and_audit'));
+    }
+
+    public function testTheBackupRowIsAMaximumAgeAndACopyCap(): void
+    {
+        $schedule = new RetentionSchedule();
+
+        self::assertSame(35, $schedule->backupMaxAgeDays());
+        self::assertSame(14, $schedule->backupCopyCap());
+    }
+
+    public function testTheSevenYearFigureIsTheOneThePrivacyNoticeStates(): void
+    {
+        self::assertSame(Config::DEFAULT_RETENTION_DAYS, RetentionSchedule::SEVEN_YEARS_DAYS);
+    }
+
+    public function testAnUnknownRecordClassIsRefusedRatherThanDefaulted(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new RetentionSchedule())->daysFor('everything_else');
+    }
+
+    /**
+     * The reason the schedule is not running names the authority that has to lift the gate. A message
+     * that said "not activated" without saying by whom would leave the next reader guessing.
+     */
+    public function testTheInactiveReasonNamesTheGateAndWhatIsUnmanagedToday(): void
+    {
+        $reason = (new RetentionSchedule())->inactiveReason();
+
+        self::assertStringContainsString('Legal / Data Protection', $reason);
+        self::assertStringContainsString('notification and audit records are swept by nothing', $reason);
+    }
+}

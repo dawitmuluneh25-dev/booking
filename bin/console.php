@@ -1317,6 +1317,44 @@ function retentionPlan(Application $app): int
 /**
  * @param array<int, string> $options Arguments after the command name.
  */
+/**
+ * D-02's per-class schedule, printed beside the window that actually runs.
+ *
+ * The point of this report is the gap, not the table. A reader who runs `retention:plan` should see
+ * both what was adopted and what is executing, because the alternative — a schedule in a decision
+ * document and a different number in the code — is how the retention period came to contradict the
+ * privacy notice for three weeks (§23.2).
+ *
+ * Nothing is counted for the classes here. Counting what would be deleted under a schedule that has
+ * not been validated would invite somebody to read the number as a plan of record; the table states
+ * the adopted periods and the state of the gate, and says which classes are unmanaged today.
+ */
+function retentionScheduleReport(Application $app): void
+{
+    $schedule = $app->retentionSchedule();
+
+    echo PHP_EOL . 'D-02 schedule by record class' . PHP_EOL;
+
+    foreach ($schedule->classes() as $recordClass => $days) {
+        printf("  %-32s %5d days\n", $recordClass, $days);
+    }
+
+    printf(
+        "  %-32s %5d days max, %d copies\n",
+        'encrypted_backups',
+        $schedule->backupMaxAgeDays(),
+        $schedule->backupCopyCap(),
+    );
+
+    if ($schedule->isActive()) {
+        echo PHP_EOL . 'The schedule is ACTIVE: Legal validation is recorded and these periods run.' . PHP_EOL;
+
+        return;
+    }
+
+    echo PHP_EOL . 'The schedule is NOT ACTIVE. ' . wordwrap($schedule->inactiveReason(), 100) . PHP_EOL;
+}
+
 function retentionPurge(Application $app, array $options): int
 {
     $confirmed = in_array('--yes', $options, true);

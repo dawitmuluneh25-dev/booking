@@ -135,6 +135,21 @@ final class Config
     }
 
     /**
+     * Whether D-02's per-class schedule has been validated and may run.
+     *
+     * Off unless somebody sets `RETENTION_SCHEDULE_ACTIVE=true`, and setting it is a Legal decision
+     * rather than an engineering one: D-02's legal condition is that Legal/Data Protection validate
+     * the periods, the lawful basis, the preservation exceptions and the applicable Ethiopian
+     * requirements before production activation. A default of `false` means the bad outcome of a
+     * forgotten environment variable is "the old single window keeps running", not "records start
+     * being deleted on a schedule nobody validated".
+     */
+    public function retentionScheduleActive(): bool
+    {
+        return Env::bool('RETENTION_SCHEDULE_ACTIVE', false);
+    }
+
+    /**
      * The key that turns a visitor's address into a stored counter hash.
      *
      * `APP_SECRET` is the right answer and is set in production. When it is absent the
