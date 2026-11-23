@@ -170,6 +170,9 @@ switch ($command) {
     case 'escalation:seed-register':
         exit(seedEscalationRegister($app));
 
+    case 'backup:key-check':
+        exit(checkBackupKey($app));
+
     case 'help':
     default:
         echo <<<TXT
@@ -215,6 +218,7 @@ switch ($command) {
           php bin/console content:sync        Import the service and policy pages as drafts
           php bin/console content:withdraw <content-key> --actor=<email> --yes
                                               Take a published page down, and say who decided it
+          php bin/console backup:key-check     Check the backup key's custody against D-08
           php bin/console escalation:seed-register
                                               Create the five D-06 route categories, empty and inactive
 
@@ -492,6 +496,39 @@ function seedEscalationRegister(Application $app): int
         count($result['created']),
         count($result['existing']),
     );
+
+    return 0;
+}
+
+/**
+ * Report whether the backup key is held the way D-08 requires (custody, not cryptography).
+ *
+ * Exit 1 on any failed check so a cron entry or a release script can act on it, 0 when the only
+ * findings are warnings — a missing recovery copy is a warning because it cannot be created from this
+ * host, and pretending otherwise would make the command always fail and therefore never be read.
+ */
+function checkBackupKey(Application $app): int
+{
+    $config = new \App\Bootstrap\Config(dirname(__DIR__));
+    $custody = new \App\Support\KeyCustody(
+        $config->publicRoot(),
+        $config->backupDirectory(),
+        is_file($config->envFile()) ? $config->envFile() : null,
+        $config->backupRecoveryKeyFile(),
+        $config->backupEncryptionKey() !== null,
+    );
+
+    foreach ($custody->checks() as $check) {
+        printf("[%-4s] %-26s %s\n", strtoupper($check['state']), $check['check'], $check['detail']);
+    }
+
+    if ($custody->hasFailure()) {
+        echo PHP_EOL . 'At least one D-08 custody control fails; see docs/operations/backup-key-custody.md.' . PHP_EOL;
+
+        return 1;
+    }
+
+    echo PHP_EOL . 'No D-08 custody control fails. Warnings still need a person: see the custody record.' . PHP_EOL;
 
     return 0;
 }

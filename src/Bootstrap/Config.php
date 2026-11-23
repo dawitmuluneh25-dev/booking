@@ -107,6 +107,32 @@ final class Config
         return $this->root('var/backups');
     }
 
+    /** The document root: nothing secret may live under it. */
+    public function publicRoot(): string
+    {
+        return $this->root('public');
+    }
+
+    /** The file that holds the environment, which is where the backup key is expected to live. */
+    public function envFile(): string
+    {
+        return $this->root('.env');
+    }
+
+    /**
+     * `BACKUP_RECOVERY_KEY_FILE` — the independent copy of the backup key (D-08).
+     *
+     * Null when the variable is unset, which is the honest state today: no recovery copy exists, so
+     * losing this host loses every archive. `backup:key-check` reports that as a warning on every run
+     * rather than letting it be discovered during an incident.
+     */
+    public function backupRecoveryKeyFile(): ?string
+    {
+        $path = trim((string) Env::get('BACKUP_RECOVERY_KEY_FILE', ''));
+
+        return $path === '' ? null : $path;
+    }
+
     /**
      * `BACKUP_ENCRYPTION_KEY` — the base64 key that turns a dump into a file nobody can read without it.
      *
