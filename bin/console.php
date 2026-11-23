@@ -30,6 +30,7 @@ use App\Domain\AuditEntry;
 use App\Domain\AuthorisationException;
 use App\Domain\ChangeUserAccess;
 use App\Domain\ContentSource;
+use App\Domain\SeedEscalationRegister;
 use App\Domain\UserNotFoundException;
 use App\Domain\ValidationException;
 use App\Domain\WithdrawContent;
@@ -166,6 +167,9 @@ switch ($command) {
     case 'content:withdraw':
         exit(withdrawContent($app, $options));
 
+    case 'escalation:seed-register':
+        exit(seedEscalationRegister($app));
+
     case 'help':
     default:
         echo <<<TXT
@@ -211,6 +215,8 @@ switch ($command) {
           php bin/console content:sync        Import the service and policy pages as drafts
           php bin/console content:withdraw <content-key> --actor=<email> --yes
                                               Take a published page down, and say who decided it
+          php bin/console escalation:seed-register
+                                              Create the five D-06 route categories, empty and inactive
 
         user:create prints a generated password once when --password is omitted.
         outbox:dispatch is meant to run from cron, never from a web request.
@@ -452,6 +458,40 @@ function withdrawContent(Application $app, array $options): int
         $page->withdrawnAtUtc ?? 'unknown',
     );
     echo "The record is kept. The public route now answers as though the page does not exist.\n";
+
+    return 0;
+}
+
+/**
+ * Put D-06's five route categories into the register, empty and inactive.
+ *
+ * This is the one console command that writes rows nobody signed, so it is also the most
+ * constrained: it creates categories, never contacts, and an existing category is left untouched.
+ * Operations fills the rows in through /admin/escalation-routes, where recording a contact and
+ * verifying that somebody answers it are two separate acts.
+ *
+ * It prints what it found rather than what it did, because the interesting case is running it twice:
+ * the second run must report five existing and create nothing.
+ */
+function seedEscalationRegister(Application $app): int
+{
+    $seeder = new SeedEscalationRegister($app->escalationRoutes());
+    $result = $seeder->execute();
+
+    foreach ($result['created'] as $kind) {
+        printf("%-18s %-24s created, inactive, no contact\n", $kind->routeKey(), $kind->receivingRole());
+    }
+
+    foreach ($result['existing'] as $kind) {
+        printf("%-18s %-24s already present, left as it is\n", $kind->routeKey(), $kind->receivingRole());
+    }
+
+    printf(
+        "\n%d created, %d already present. Urgent escalation stays disabled until the primary,\n"
+        . "secondary and receiving-team routes are recorded and verified.\n",
+        count($result['created']),
+        count($result['existing']),
+    );
 
     return 0;
 }

@@ -19,7 +19,8 @@ use PDO;
  */
 final class PdoEscalationRouteRepository implements EscalationRouteRepository
 {
-    private const COLUMNS = 'id, kind, label, contact_name, contact_phone, is_staffed,
+    private const COLUMNS = 'id, kind, label, contact_name, contact_phone, operating_hours,
+        acknowledgement_expectation, fallback_route, is_staffed,
         verified_by_user_id, verified_at, verification_note, is_active, created_at';
 
     public function __construct(private readonly PDO $pdo)
@@ -55,20 +56,30 @@ final class PdoEscalationRouteRepository implements EscalationRouteRepository
     public function create(EscalationRoute $route): EscalationRoute
     {
         $statement = $this->pdo->prepare(
+            // `is_active` is taken from the route rather than hard-coded to 1. D-06 seeds five
+            // register categories before anybody answers them, and an inactive row is the only state
+            // in which an incomplete one may exist. The admin path always passes an active route, so
+            // its behaviour is unchanged; the database CHECK refuses an active row with no contact.
             'INSERT INTO escalation_routes
-                (kind, label, contact_name, contact_phone, is_staffed, verified_by_user_id,
+                (kind, label, contact_name, contact_phone, operating_hours,
+                 acknowledgement_expectation, fallback_route, is_staffed, verified_by_user_id,
                  verified_at, verification_note, is_active, created_at, updated_at)
              VALUES
-                (:kind, :label, :contact_name, :contact_phone, :is_staffed, NULL,
-                 NULL, NULL, 1, :created_at, :updated_at)'
+                (:kind, :label, :contact_name, :contact_phone, :operating_hours,
+                 :acknowledgement_expectation, :fallback_route, :is_staffed, NULL,
+                 NULL, NULL, :is_active, :created_at, :updated_at)'
         );
 
         $statement->execute([
             'kind' => $route->kind->value,
             'label' => $route->label,
-            'contact_name' => $route->contactName,
-            'contact_phone' => $route->contactPhone,
+            'contact_name' => $route->contactName === '' ? null : $route->contactName,
+            'contact_phone' => $route->contactPhone === '' ? null : $route->contactPhone,
+            'operating_hours' => $route->operatingHours,
+            'acknowledgement_expectation' => $route->acknowledgementExpectation,
+            'fallback_route' => $route->fallbackRoute,
             'is_staffed' => $route->isStaffed ? 1 : 0,
+            'is_active' => $route->isActive ? 1 : 0,
             'created_at' => $route->createdAtUtc,
             'updated_at' => $route->createdAtUtc,
         ]);

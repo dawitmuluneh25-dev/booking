@@ -29,12 +29,31 @@ final class EscalationRoute
         public readonly ?string $verifiedAtUtc,
         public readonly ?string $verificationNote,
         public readonly string $createdAtUtc,
+        /** Opening hours as Operations states them, or null while the route is unstaffed. */
+        public readonly ?string $operatingHours = null,
+        /** What the receiving role is expected to do on receipt of an escalation. */
+        public readonly ?string $acknowledgementExpectation = null,
+        /** The route to use when this one does not answer. Never a substitute for a clinical one. */
+        public readonly ?string $fallbackRoute = null,
     ) {
     }
 
     public function isVerified(): bool
     {
         return $this->verifiedAtUtc !== null;
+    }
+
+    /**
+     * Whether anybody has been recorded against this route yet.
+     *
+     * D-06 seeds five categories before Operations supplies the roster, and those rows are inactive
+     * without being retired. The two states look identical from `isActive` alone and mean opposite
+     * things — "we stopped using this" and "we have not started" — so the distinction is made from
+     * the contact rather than from the flag.
+     */
+    public function hasContact(): bool
+    {
+        return trim($this->contactName) !== '';
     }
 
     /**
@@ -62,6 +81,9 @@ final class EscalationRoute
             verifiedAtUtc: $this->verifiedAtUtc,
             verificationNote: $this->verificationNote,
             createdAtUtc: $this->createdAtUtc,
+            operatingHours: $this->operatingHours,
+            acknowledgementExpectation: $this->acknowledgementExpectation,
+            fallbackRoute: $this->fallbackRoute,
         );
     }
 
@@ -79,6 +101,9 @@ final class EscalationRoute
             verifiedAtUtc: $atUtc,
             verificationNote: $note,
             createdAtUtc: $this->createdAtUtc,
+            operatingHours: $this->operatingHours,
+            acknowledgementExpectation: $this->acknowledgementExpectation,
+            fallbackRoute: $this->fallbackRoute,
         );
     }
 
@@ -96,6 +121,9 @@ final class EscalationRoute
             verifiedAtUtc: $this->verifiedAtUtc,
             verificationNote: $this->verificationNote,
             createdAtUtc: $this->createdAtUtc,
+            operatingHours: $this->operatingHours,
+            acknowledgementExpectation: $this->acknowledgementExpectation,
+            fallbackRoute: $this->fallbackRoute,
         );
     }
 
@@ -122,6 +150,26 @@ final class EscalationRoute
                     ? (string) $row['verification_note']
                     : null,
             createdAtUtc: is_scalar($row['created_at'] ?? null) ? (string) $row['created_at'] : '',
+            operatingHours: self::optional($row, 'operating_hours'),
+            acknowledgementExpectation: self::optional($row, 'acknowledgement_expectation'),
+            fallbackRoute: self::optional($row, 'fallback_route'),
         );
+    }
+
+    /**
+     * A nullable column, treating '' as absent.
+     *
+     * D-06's register holds five categories before Operations fills any of them in, so the columns
+     * added for those five have to survive being empty. An empty string renders as an empty cell and
+     * reads as "nobody wrote this down"; null is the same fact stated once, and it is what
+     * `documentControl()`-style code can test for.
+     *
+     * @param array<string, mixed> $row
+     */
+    private static function optional(array $row, string $key): ?string
+    {
+        $value = $row[$key] ?? null;
+
+        return is_scalar($value) && trim((string) $value) !== '' ? (string) $value : null;
     }
 }

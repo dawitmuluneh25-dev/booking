@@ -21,6 +21,41 @@ enum EscalationRouteKind: string
     case AfterHours = 'after_hours';
     case TechnicalFallback = 'technical_fallback';
 
+    /**
+     * The route key HR-ENG-DEC-R1-003 D-06 gives this category.
+     *
+     * D-06 names five keys — `PRIMARY_IR`, `SECONDARY_RAD`, `SURGICAL_TEAM`, `AFTER_HOURS`,
+     * `TECHNICAL_SUPPORT` — and 0042 named the same five arrangements in the vocabulary Product
+     * Owner Decision 4 used. They are the same five things, and this method is the statement of
+     * that: one mapping, in the domain, tested, rather than a comment claiming the two lists agree.
+     *
+     * D-06 also gives each one a required receiving role, which is what `receivingRole()` returns.
+     * The role is text and not a foreign key, because Operations assigns people to roles and the
+     * register must be able to say "this is the post that answers" before anybody holds it.
+     */
+    public function routeKey(): string
+    {
+        return match ($this) {
+            self::Primary => 'PRIMARY_IR',
+            self::Secondary => 'SECONDARY_RAD',
+            self::ReceivingTeam => 'SURGICAL_TEAM',
+            self::AfterHours => 'AFTER_HOURS',
+            self::TechnicalFallback => 'TECHNICAL_SUPPORT',
+        };
+    }
+
+    /** The receiving role D-06's table requires this route to reach. */
+    public function receivingRole(): string
+    {
+        return match ($this) {
+            self::Primary => 'Primary receiving interventional radiologist',
+            self::Secondary => 'Secondary radiology lead / clinical lead',
+            self::ReceivingTeam => 'Receiving surgical or paediatric team',
+            self::AfterHours => 'Verified on-call clinician',
+            self::TechnicalFallback => 'Engineering support lead',
+        };
+    }
+
     public function label(): string
     {
         return match ($this) {

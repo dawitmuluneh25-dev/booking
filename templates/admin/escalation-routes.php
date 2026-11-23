@@ -89,7 +89,11 @@
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if (!$route->isActive): ?>
+                                <?php if (!$route->hasContact()): ?>
+                                    <?php /* D-06: the category exists, nobody is recorded against it. */ ?>
+                                    <span class="badge">Awaiting Operations</span>
+                                    <span class="muted block">No contact recorded. Counts toward nothing.</span>
+                                <?php elseif (!$route->isActive): ?>
                                     <span class="badge">Retired</span>
                                 <?php elseif ($route->isVerified()): ?>
                                     <span class="badge">Verified</span>

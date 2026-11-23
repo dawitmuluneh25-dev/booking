@@ -92,6 +92,12 @@ final class RecordEscalationRoute
             verifiedAtUtc: null,
             verificationNote: null,
             createdAtUtc: $when,
+            // D-06 asks for these three beside the contact, and all three are optional here: a route
+            // recorded from the phone in the middle of a shift is better than no route at all, and
+            // the gap is visible on the roster as "not stated" rather than as a value nobody meant.
+            operatingHours: $this->optional($input, 'operating_hours', 120),
+            acknowledgementExpectation: $this->optional($input, 'acknowledgement_expectation', 160),
+            fallbackRoute: $this->optional($input, 'fallback_route', 160),
         );
 
         return $this->transaction->run(function () use ($actor, $route, $when): EscalationRoute {
@@ -113,6 +119,27 @@ final class RecordEscalationRoute
 
             return $stored;
         });
+    }
+
+    /**
+     * An optional free-text field, or null when it was not supplied.
+     *
+     * Truncated rather than refused at the column width: D-06 supplies no maximum for hours or for
+     * an acknowledgement expectation, so refusing a long sentence would be inventing a rule. The
+     * column is the limit, and it is applied here so the database does not silently truncate a value
+     * the operator believed they had saved.
+     *
+     * @param array<string, mixed> $input
+     */
+    private function optional(array $input, string $key, int $max): ?string
+    {
+        $value = $this->text($input, $key);
+
+        if ($value === '') {
+            return null;
+        }
+
+        return mb_substr($value, 0, $max);
     }
 
     /** @param array<string, mixed> $input */

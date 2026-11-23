@@ -150,17 +150,98 @@ final class EscalationRouteRepositoryTest extends TestCase
             EscalationRouteKind::Secondary,
         ];
 
+        $created = [];
+
         foreach ($kinds as $kind) {
-            $created = $this->repository()->create($this->route($kind));
-            $this->routeIds[] = $created->id;
+            $route = $this->repository()->create($this->route($kind));
+            $this->routeIds[] = $route->id;
+            $created[] = $route->id;
         }
 
-        $ordered = array_map(
-            static fn (EscalationRoute $each): string => $each->kind->value,
-            $this->repository()->all(),
-        );
+        // Scoped to the rows this test created. The assertion used to read the whole table, which
+        // passed only while the table happened to be empty — and 0046/D-06 give every environment
+        // five register categories before anybody fills one in, so an empty table is no longer the
+        // normal state. The order being asserted is a property of the repository's ordering, not of
+        // which routes exist.
+        $ordered = [];
+
+        foreach ($this->repository()->all() as $each) {
+            if (in_array($each->id, $created, true)) {
+                $ordered[] = $each->kind->value;
+            }
+        }
 
         self::assertSame(['primary', 'secondary', 'receiving_team'], $ordered);
+    }
+
+    /**
+     * D-06's register categories, and the price of allowing them: inactive is the only state an
+     * unfilled route may occupy.
+     *
+     * Written as raw SQL because the point is the constraint, not the repository. A future script
+     * that inserts straight into the table is exactly the caller this CHECK exists for.
+     */
+    public function testAnUnfilledRouteMayExistOnlyWhileItIsInactive(): void
+    {
+        $label = 'placeholder ' . $this->runId;
+
+        $this->pdo()->exec(
+            "INSERT INTO escalation_routes
+                (kind, label, contact_name, contact_phone, is_staffed, is_active, created_at, updated_at)
+             VALUES
+                ('primary', '" . $label . "', NULL, NULL, 0, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        );
+
+        $id = (int) $this->pdo()->lastInsertId();
+        $this->routeIds[] = $id;
+
+        // Inactive and empty is a legitimate state: the category exists, nobody answers it yet.
+        $stored = $this->repository()->find($id);
+        self::assertNotNull($stored);
+        self::assertFalse($stored->isActive);
+        self::assertFalse($stored->hasContact());
+
+        try {
+            $this->pdo()->exec('UPDATE escalation_routes SET is_active = 1 WHERE id = ' . $id);
+            self::fail('A route with no contact was activated, so the roster can promise a line nobody answers.');
+        } catch (PDOException $exception) {
+            self::assertStringContainsString('ck_escalation_route_active_complete', $exception->getMessage());
+        }
+    }
+
+    /** The three fields D-06 adds beside the contact survive a round trip. */
+    public function testTheRegisterStoresHoursTheAcknowledgementExpectationAndTheFallback(): void
+    {
+        $route = new EscalationRoute(
+            id: 0,
+            kind: EscalationRouteKind::Secondary,
+            label: 'secondary ' . $this->runId,
+            contactName: 'Duty officer',
+            contactPhone: '+251911000555',
+            isStaffed: true,
+            isActive: true,
+            verifiedByUserId: null,
+            verifiedAtUtc: null,
+            verificationNote: null,
+            createdAtUtc: self::NOW,
+            operatingHours: 'Mon-Fri 08:00-17:00',
+            acknowledgementExpectation: 'A clinician answers and accepts or declines the case.',
+            fallbackRoute: 'Primary contact, then the technical support lead.',
+        );
+
+        $stored = $this->repository()->create($route);
+        $this->routeIds[] = $stored->id;
+
+        $read = $this->repository()->find($stored->id);
+
+        self::assertNotNull($read);
+        self::assertSame('Mon-Fri 08:00-17:00', $read->operatingHours);
+        self::assertSame(
+            'A clinician answers and accepts or declines the case.',
+            $read->acknowledgementExpectation,
+        );
+        self::assertSame('Primary contact, then the technical support lead.', $read->fallbackRoute);
+        self::assertTrue($read->hasContact());
     }
 
     private function route(EscalationRouteKind $kind, bool $staffed = true): EscalationRoute
