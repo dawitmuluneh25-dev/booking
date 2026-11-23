@@ -1392,6 +1392,9 @@ function retentionScheduleReport(Application $app): void
     echo PHP_EOL . 'The schedule is NOT ACTIVE. ' . wordwrap($schedule->inactiveReason(), 100) . PHP_EOL;
 }
 
+/**
+ * @param array<int, string> $options Arguments after the command name.
+ */
 function retentionPurge(Application $app, array $options): int
 {
     $confirmed = in_array('--yes', $options, true);
