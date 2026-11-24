@@ -173,6 +173,9 @@ switch ($command) {
     case 'backup:key-check':
         exit(checkBackupKey($app));
 
+    case 'security:credentials':
+        exit(reportCredentials($app, $options));
+
     case 'help':
     default:
         echo <<<TXT
@@ -219,6 +222,8 @@ switch ($command) {
           php bin/console content:withdraw <content-key> --actor=<email> --yes
                                               Take a published page down, and say who decided it
           php bin/console backup:key-check     Check the backup key's custody against D-08
+          php bin/console security:credentials [--require-recorded] [--today=YYYY-MM-DD]
+                                              Print the D-10 credential register and what is overdue
           php bin/console escalation:seed-register
                                               Create the five D-06 route categories, empty and inactive
 
@@ -531,6 +536,186 @@ function checkBackupKey(Application $app): int
     echo PHP_EOL . 'No D-08 custody control fails. Warnings still need a person: see the custody record.' . PHP_EOL;
 
     return 0;
+}
+
+/**
+ * Print the D-10 credential register: who owns each secret, when it was last rotated, and what is due.
+ *
+ * Exit 1 on an overdue or impossible rotation date, and — with `--require-recorded` — on any secret
+ * that has no rotation on record or no named custodian. Without the flag those are warnings, because
+ * every credential in this system is currently unrecorded: a command that failed on its first line
+ * every run is a command an operator learns to ignore, which is the opposite of a control.
+ *
+ * The archive question is answered here rather than left to prose: D-10 forbids retiring a backup key
+ * while archives it encrypted are still within retention, and the archives are on disk with their
+ * timestamps in their names.
+ *
+ * @param list<string> $options
+ */
+function reportCredentials(Application $app, array $options): int
+{
+    $config = new \App\Bootstrap\Config(dirname(__DIR__));
+    $path = $config->root('database/operations/credential-inventory.php');
+
+    try {
+        $inventory = \App\Support\CredentialInventory::fromFile($path);
+    } catch (\InvalidArgumentException $invalid) {
+        fwrite(STDERR, $invalid->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    $today = gmdate('Y-m-d');
+
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--today=')) {
+            $today = substr($option, strlen('--today='));
+        }
+    }
+
+    try {
+        $report = $inventory->report($today, configuredEnvKeys($inventory->secretEnvKeys()));
+    } catch (\InvalidArgumentException $invalid) {
+        fwrite(STDERR, $invalid->getMessage() . PHP_EOL);
+
+        return 1;
+    }
+
+    echo 'Credential register — HR-ENG-DEC-R1-003 D-10, ' . $config->root('') . PHP_EOL;
+    echo 'Rotation interval: ' . \App\Support\CredentialInventory::ROTATION_INTERVAL_DAYS
+        . ' days, as at ' . $today . ' (UTC)' . PHP_EOL . PHP_EOL;
+
+    foreach ($report as $row) {
+        $owner = $row['custodian'] === null
+            ? $row['office'] . ' (custodian unassigned)'
+            : $row['office'] . ' (' . $row['custodian'] . ')';
+
+        printf(
+            "[%-12s] %-24s %-12s %-40s %s\n",
+            strtoupper($row['state']),
+            $row['key'],
+            $row['kind'],
+            $owner,
+            $row['detail'],
+        );
+    }
+
+    $backupKeySection = backupKeySection($config, $inventory, $today);
+
+    if ($backupKeySection !== []) {
+        echo PHP_EOL . 'Backup key and the archives it unlocks' . PHP_EOL;
+
+        foreach ($backupKeySection as $line) {
+            echo '  ' . $line . PHP_EOL;
+        }
+    }
+
+    $requireRecorded = in_array('--require-recorded', $options, true);
+
+    echo PHP_EOL;
+
+    if ($inventory->hasFailure($report, $requireRecorded)) {
+        echo 'The register has findings that must be closed before a production release.';
+
+        if (!$requireRecorded) {
+            echo ' Run with --require-recorded to fail on an unrecorded rotation or an unnamed';
+            echo ' custodian as well as on an overdue one.';
+        }
+
+        echo PHP_EOL;
+
+        return 1;
+    }
+
+    echo 'Nothing is overdue. A rotation with no date on record is still a gap rather than a pass:';
+    echo ' see docs/operations/credential-rotation.md.' . PHP_EOL;
+
+    return 0;
+}
+
+/**
+ * @param list<string> $keys
+ *
+ * @return list<string> the keys that currently hold a non-empty value
+ */
+function configuredEnvKeys(array $keys): array
+{
+    $set = [];
+
+    foreach ($keys as $key) {
+        $value = \App\Bootstrap\Env::get($key);
+
+        if ($value !== null && trim($value) !== '') {
+            $set[] = $key;
+        }
+    }
+
+    return $set;
+}
+
+/**
+ * The D-10 archive rule, stated against the files that are actually on disk.
+ *
+ * @return list<string>
+ */
+function backupKeySection(
+    \App\Bootstrap\Config $config,
+    \App\Support\CredentialInventory $inventory,
+    string $today,
+): array {
+    $archives = [];
+    $directory = $config->backupDirectory();
+
+    if (!is_dir($directory)) {
+        return ['The backup directory does not exist yet (' . $directory . '), so no archive depends on a key.'];
+    }
+
+    foreach (scandir($directory) ?: [] as $entry) {
+        if (preg_match('/\Abooking-\d{8}-\d{6}(?:-\d+)?\.sql\.gz(?:\.enc)?\z/', $entry) === 1) {
+            $archives[] = $entry;
+        }
+    }
+
+    $rotatedOn = null;
+
+    foreach ($inventory->credentials() as $entry) {
+        if ($entry['kind'] === 'backup-key') {
+            $rotatedOn = $entry['rotated_on'];
+        }
+    }
+
+    if ($archives === []) {
+        return ['No archive is on disk, so there is nothing the current key has to stay for.'];
+    }
+
+    $lines = [count($archives) . ' archive(s) on disk under ' . $directory . '.'];
+
+    if ($rotatedOn === null) {
+        $lines[] = 'No backup-key rotation is on record. Any rotation must keep the previous key until';
+        $lines[] = 'every archive above has expired or has been re-encrypted and verified (D-10).';
+
+        return $lines;
+    }
+
+    $predating = \App\Support\CredentialInventory::archivesPredating($archives, $rotatedOn);
+
+    if ($predating === []) {
+        $lines[] = 'Every archive postdates the rotation recorded on ' . $rotatedOn
+            . ', so nothing here depends on the previous key.';
+
+        return $lines;
+    }
+
+    $lines[] = count($predating) . ' archive(s) predate the rotation recorded on ' . $rotatedOn
+        . ' and were written under the previous key:';
+    $lines[] = 'oldest: ' . $predating[0];
+    $lines[] = 'The previous key must not be destroyed while any of them is within retention (D-10).';
+
+    if ($today < $rotatedOn) {
+        $lines[] = 'The recorded rotation is dated in the future; check the register.';
+    }
+
+    return $lines;
 }
 
 function doctor(Application $app): int
