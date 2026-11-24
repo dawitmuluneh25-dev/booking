@@ -32,7 +32,9 @@ final class ContentSource
     private const REQUIRED_KEYS = ['key', 'title', 'author'];
 
     /**
-     * @param array<string, mixed> $page one entry of database/content/service-pages.php
+     * @param array<string, mixed> $page one entry of database/content/service-pages.php. `version` and
+ *        `superseded_version` are optional: a page corrected after publication supplies both, and an
+ *        unchanged page supplies neither and keeps `self::VERSION`
      *
      * @throws ValidationException the entry cannot become a page
      */
@@ -54,6 +56,24 @@ final class ContentSource
             ]);
         }
 
+        // A page may carry its own version once it is corrected after publication.
+        //
+        // Without this the package version was one constant for all four pages, and a corrected page
+        // could never reach a database that already holds it: `content:sync` refuses to rewrite a
+        // published row, and the row's identity is (content key, version, language), so re-importing
+        // the same version is a no-op by design. A page that changes therefore has to be able to say
+        // so. What it may not do is claim a new version while superseding nothing, so the two fields
+        // are checked together rather than trusted separately.
+        $version = self::nullableString($page['version'] ?? null) ?? self::VERSION;
+        $superseded = self::nullableString($page['superseded_version'] ?? null);
+
+        if ($superseded !== null && $version === self::VERSION) {
+            throw new ValidationException([
+                'source' => 'The entry "' . $page['key'] . '" supersedes ' . $superseded
+                    . ' but keeps version ' . self::VERSION . '; a correction needs its own version.',
+            ]);
+        }
+
         return new PublishedContent(
             id: 0,
             contentKey: (string) $page['key'],
@@ -61,14 +81,14 @@ final class ContentSource
             language: self::LANGUAGE,
             title: (string) $page['title'],
             body: json_encode($sections, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            version: self::VERSION,
+            version: $version,
             author: (string) $page['author'],
             clinicalReviewer: self::nullableString($page['clinical_reviewer'] ?? null),
             approver: self::nullableString($page['approver'] ?? null),
             approvedOn: self::nullableString($page['approved_on'] ?? null),
             effectiveOn: self::nullableString($page['effective_on'] ?? null),
             reviewOn: self::nullableString($page['review_on'] ?? null),
-            supersededVersion: self::nullableString($page['superseded_version'] ?? null),
+            supersededVersion: $superseded,
             translationReviewStatus: self::nullableString($page['translation_review_status'] ?? null),
             status: ContentStatus::Draft,
             publishedAtUtc: null,

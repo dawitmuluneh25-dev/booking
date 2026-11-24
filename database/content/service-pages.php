@@ -37,6 +37,12 @@ declare(strict_types=1);
  *
  * `author` is the package, not a person: it records where the words came from.
  *
+ * `version` and `superseded_version` — absent on `service.intussusception`, which still cannot be
+ * published (D-03). The three procedure pages carry `1.1` / `1.0` because C4 corrected copy that was
+ * already published: `content:sync` never rewrites a published row, and the row's identity includes
+ * the version, so a correction without a new version is an import that reports success and changes
+ * nothing. A page that supersedes something must say so; `ContentSource` refuses the half-edit.
+ *
  * @return list<array{
  *     key: string,
  *     title: string,
@@ -47,6 +53,8 @@ declare(strict_types=1);
  *     effective_on: ?string,
  *     review_on: ?string,
  *     translation_review_status: ?string,
+ *     version?: string,
+ *     superseded_version?: string,
  *     sections: list<array<string, mixed>>
  * }>
  */
@@ -55,6 +63,9 @@ return [
     [
         'key' => 'service.fnac',
         'title' => 'Image-Guided Fine Needle Aspiration Cytology (FNAC)',
+        // C4: corrected after publication, so it carries its own version. See §42 of the plan.
+        'version' => '1.1',
+        'superseded_version' => '1.0',
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
@@ -118,6 +129,20 @@ return [
                 ],
             ],
             [
+                // C-5 §C11, transcribed. The published page carried no urgent-care section at all,
+                // which is the "do not wait for a response" divergence C4 records.
+                'heading' => 'When to contact the treating team or seek urgent care',
+                'paragraphs' => [
+                    'Use the contact details provided by the treating team if there is a concern about '
+                        . 'the sampling site, recovery or follow-up arrangements.',
+                    'If the patient experiences a serious or rapidly worsening problem or needs urgent '
+                        . 'assessment, seek medical care through the appropriate emergency service '
+                        . 'rather than waiting for an online response.',
+                    'The responsible clinician must provide the patient-specific warning signs and '
+                        . 'contact instructions.',
+                ],
+            ],
+            [
                 'heading' => 'Frequently asked questions',
                 'faq' => [
                     [
@@ -141,6 +166,9 @@ return [
     [
         'key' => 'service.core_biopsy',
         'title' => 'Image-Guided Core Needle Biopsy',
+        // C4: corrected after publication, so it carries its own version. See §42 of the plan.
+        'version' => '1.1',
+        'superseded_version' => '1.0',
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
@@ -191,6 +219,10 @@ return [
                         . 'preparation instructions will be provided by an authorized clinician if needed. '
                         . 'The clinician will explain the procedure, potential benefits, material risks and '
                         . 'alternatives and will address questions before the consent process.',
+                    // C-5 §D8, transcribed word for word: the anticoagulant warning C4 records as missing.
+                    'Do not stop anticoagulants, antiplatelet medicines or other medicines without a '
+                        . 'specific clinical instruction. Do not apply a generic fasting or laboratory '
+                        . 'rule to your own procedure.',
                 ],
             ],
             [
@@ -199,6 +231,19 @@ return [
                     'The team will document the sample handover and identify the clinician or team '
                         . 'responsible for result follow-up. The booking system does not interpret '
                         . 'pathology results.',
+                ],
+            ],
+            [
+                // C-5 §D11, transcribed.
+                'heading' => 'When to contact the treating team or seek urgent care',
+                'paragraphs' => [
+                    'Follow the warning signs and contact instructions provided by the treating team.',
+                    'Contact the team if there is a concern about the biopsy site, recovery, results or '
+                        . 'follow-up.',
+                    'If the patient develops a serious or rapidly worsening problem or needs urgent '
+                        . 'assessment, seek care through the appropriate emergency service immediately.',
+                    'The treating clinician must specify the relevant patient-specific warning signs '
+                        . 'before discharge.',
                 ],
             ],
             [
@@ -225,7 +270,13 @@ return [
     ],
     [
         'key' => 'service.abscess_drainage',
-        'title' => 'Image-Guided Abscess Drainage',
+        // C-5 §E1 says "Abscess Aspiration and Drainage". The published title dropped "Aspiration
+        // and", which is the first of C4's five divergences: a page that names one of two approaches
+        // is a page that has quietly decided the other one does not exist.
+        'title' => 'Image-Guided Abscess Aspiration and Drainage',
+        // C4: corrected after publication, so it carries its own version. See §42 of the plan.
+        'version' => '1.1',
+        'superseded_version' => '1.0',
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
@@ -285,6 +336,25 @@ return [
                     'If a drain is placed, the treating team will identify who is responsible for '
                         . 'follow-up and provide the appropriate contact route and individual instructions. '
                         . 'The booking system does not decide when a catheter should be removed or changed.',
+                    // C-5 §E10, transcribed word for word: the catheter-care warning C4 records as
+                    // missing. It is the one instruction on this page that a patient could act on to
+                    // hurt themselves, so it is carried in the package's own emphatic wording.
+                    'Do not attempt to flush, remove, reposition or otherwise manipulate a drainage '
+                        . 'catheter unless the responsible clinical team has specifically instructed and '
+                        . 'trained you to do so under an approved local protocol.',
+                ],
+            ],
+            [
+                // C-5 §E11, transcribed.
+                'heading' => 'When to contact the treating team or seek urgent care',
+                'paragraphs' => [
+                    'The treating team must provide individualized warning signs and a contact route.',
+                    'Contact the treating team if there is a concern about the drain, procedure site, '
+                        . 'drainage instructions, results or planned review.',
+                    'If the patient becomes acutely unwell, develops a serious or rapidly worsening '
+                        . 'problem, or requires urgent medical assessment, contact the treating hospital '
+                        . 'or emergency service immediately.',
+                    'Do not wait for an online response.',
                 ],
             ],
             [

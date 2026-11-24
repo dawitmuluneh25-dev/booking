@@ -37,6 +37,35 @@ final class ContentSourceTest extends TestCase
         self::assertSame(ContentStatus::Draft, $draft->status);
     }
 
+    /**
+     * A corrected page may carry its own version, because a published row is never rewritten.
+     *
+     * The importer keys on (content key, version, language) and deliberately leaves published rows
+     * alone. That is right, and it means a correction under the package version is not an update — it
+     * is a no-op that reports success. The page has to be able to say "this is 1.1".
+     */
+    public function testAPageThatWasCorrectedCarriesItsOwnVersionAndWhatItReplaces(): void
+    {
+        $draft = (new ContentSource())->toDraft(
+            $this->entry(['version' => '1.1', 'superseded_version' => '1.0']),
+            '2026-11-24 00:00:00',
+        );
+
+        self::assertSame('1.1', $draft->version);
+        self::assertSame('1.0', $draft->supersededVersion);
+    }
+
+    /** Superseding something while keeping the old version would make the correction invisible. */
+    public function testAPageCannotSupersedeAVersionWithoutCarryingANewOne(): void
+    {
+        $this->expectException(ValidationException::class);
+
+        (new ContentSource())->toDraft(
+            $this->entry(['superseded_version' => '1.0']),
+            '2026-11-24 00:00:00',
+        );
+    }
+
     public function testAnEmptyStringIsAbsenceRatherThanAName(): void
     {
         // "" as a reviewer satisfies a NOT NULL check while telling nobody who

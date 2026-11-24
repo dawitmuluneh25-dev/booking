@@ -308,7 +308,7 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console outbox:receipt <provider-message-id> [--at=…]` | Record that the provider reported delivery; refuses an id this system never handed over |
 | `php bin/console accounts:requests [--expire]` | List the referring-account queue; `--expire` closes anything unanswered after 60 days |
 | `php bin/console demo:seed [--yes] [--password=…]` | Fill an empty development database with fictional records; refuses to run in production |
-| `php bin/console content:sync` | Import the service and policy pages as drafts; a published row is never rewritten |
+| `php bin/console content:sync` | Import the service and policy pages as drafts; a published row is never rewritten, so a corrected page carries its own `version` and `superseded_version` |
 | `php bin/console content:withdraw <content-key> --actor=<email> --yes` | Take a published page down, and record who decided it |
 | `php bin/console backup:key-check` | Check the backup key's custody against D-08 (exits 1 on a failed control) |
 | `php bin/console escalation:seed-register` | Create the five D-06 route categories, empty and inactive |
