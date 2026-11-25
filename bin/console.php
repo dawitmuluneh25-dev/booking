@@ -176,6 +176,9 @@ switch ($command) {
     case 'security:credentials':
         exit(reportCredentials($app, $options));
 
+    case 'notify:preflight':
+        exit(notificationPreflight($app));
+
     case 'release:gates':
         exit(reportReleaseGates($app, $options));
 
@@ -2213,4 +2216,48 @@ function listBookings(Application $app): int
     }
 
     return 0;
+}
+
+/**
+ * Report whether the configured notification path can deliver (D-09).
+ *
+ * Exit 1 when it cannot. This is deliberately not one of section 3.2's seven gates — those are about
+ * publication and activation, and a misconfigured mail driver is a deployment error rather than a
+ * missing signature — but it answers the same kind of question, so it uses the same rule the transport
+ * factory uses to decide whether to refuse.
+ */
+function notificationPreflight(Application $app): int
+{
+    $config = $app->config();
+    $driver = $config->notificationDriver();
+    $production = $config->isProduction();
+
+    $readiness = \App\Notifications\DeliveryReadiness::assess(
+        $driver,
+        $production,
+        $config->mailActivationApproved(),
+        $config->brevoApiKey() !== '',
+        $config->brevoSender() !== '',
+        $config->notificationUrl() !== '',
+        $config->notificationToken() !== '',
+    );
+
+    printf("environment : %s\n", $production ? 'production' : 'not production');
+    printf("driver      : %s\n", $driver);
+    printf("approved    : %s\n", $config->mailActivationApproved() ? 'yes' : 'no');
+    printf("sender      : %s\n", $config->brevoSender() === '' ? '(unset)' : $config->brevoSender());
+    printf("api key     : %s\n", $config->brevoApiKey() === '' ? '(unset)' : 'set (value not shown)');
+    echo PHP_EOL;
+
+    if ($readiness['ok']) {
+        echo 'READY: messages will be handed to the driver.' . PHP_EOL;
+    } else {
+        echo 'NOT READY: ' . $readiness['reason'] . PHP_EOL;
+    }
+
+    foreach ($readiness['warnings'] as $warning) {
+        echo 'warning: ' . $warning . PHP_EOL;
+    }
+
+    return $readiness['ok'] ? 0 : 1;
 }

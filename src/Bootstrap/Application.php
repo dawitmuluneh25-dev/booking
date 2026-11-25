@@ -105,6 +105,8 @@ use App\Domain\UrgentCaseRepository;
 use App\Domain\RetentionService;
 use App\Domain\UserRepository;
 use App\Notifications\BrevoTransport;
+use App\Notifications\DeliveryReadiness;
+use App\Notifications\MisconfiguredTransport;
 use App\Notifications\CurlHttpClient;
 use App\Notifications\HttpTransport;
 use App\Notifications\LogTransport;
@@ -945,6 +947,23 @@ final class Application
      */
     public function transport(): NotificationTransport
     {
+        // Production is only allowed to claim delivery when something can deliver. A log driver there
+        // marks rows `sent` and sends nothing, and the outbox is the record staff use to answer "was the
+        // patient told?" — so the answer has to be a failure they can see, not a receipt they cannot.
+        $readiness = DeliveryReadiness::assess(
+            $this->config->notificationDriver(),
+            $this->config->isProduction(),
+            $this->config->mailActivationApproved(),
+            $this->config->brevoApiKey() !== '',
+            $this->config->brevoSender() !== '',
+            $this->config->notificationUrl() !== '',
+            $this->config->notificationToken() !== '',
+        );
+
+        if ($this->config->isProduction() && !$readiness['ok']) {
+            return new MisconfiguredTransport((string) $readiness['reason']);
+        }
+
         if ($this->config->notificationDriver() === 'http') {
             return new HttpTransport(
                 new CurlHttpClient(),
