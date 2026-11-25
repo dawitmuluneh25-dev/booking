@@ -199,9 +199,10 @@ final class ReleaseGates
 
         return [
             'state' => self::PARTIAL,
-            'detail' => 'RETENTION_SCHEDULE_ACTIVE is on. The validation behind it is an attestation: the'
-                . ' repository can confirm the schedule runs, not that Legal / Data Protection validated'
-                . ' the periods, lawful basis and exceptions D-02 requires.',
+            'detail' => 'RETENTION_SCHEDULE_ACTIVE is on and the class sweeps run: bookings, referrals and'
+                . ' documents at their class period, outbox rows retired at 365 days. The validation behind'
+                . ' it is an attestation — the repository can confirm the schedule runs, not that Legal /'
+                . ' Data Protection validated the periods, lawful basis and exceptions D-02 requires.',
         ];
     }
 

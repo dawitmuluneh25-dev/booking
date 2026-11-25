@@ -22,6 +22,8 @@ use App\Domain\BookingService;
 use App\Domain\ClinicCalendar;
 use App\Domain\OpenUrgentReview;
 use App\Domain\NotificationFeedRepository;
+use App\Domain\NotificationRetentionRepository;
+use App\Domain\NotificationRetentionService;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\RetentionSchedule;
@@ -116,6 +118,7 @@ use App\Repositories\PdoAuditTrail;
 use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoDocumentRepository;
+use App\Repositories\PdoNotificationRetentionRepository;
 use App\Repositories\PdoReferralRetentionRepository;
 use App\Repositories\PdoTrackingTokenRepository;
 use App\Repositories\PdoClinicalAssessmentRepository;
@@ -330,6 +333,8 @@ final class Application
     private ?ReferralTrackingLink $trackingLink = null;
 
     private ?ReferralRetentionRepository $referralRetentionRepository = null;
+
+    private ?NotificationRetentionRepository $notificationRetentionRepository = null;
 
     private ?AuditTrail $auditTrail = null;
 
@@ -1076,11 +1081,29 @@ final class Application
             $this->transaction(),
         );
 
+        // Referrals carry their own class in D-02's table. Reading it here keeps the schedule the only
+        // place a period is decided: today both are seven years, but a rule that is right by coincidence
+        // is a rule that will be wrong quietly.
+        $schedule = $this->retentionSchedule();
+        $days = $schedule->isActive()
+            ? $schedule->daysFor('referral_and_intake')
+            : $this->config->retentionDays();
+
         return new ReferralRetentionService(
             $repository,
             $this->documentStorage(),
-            new RetentionPolicy($this->config->retentionDays()),
+            new RetentionPolicy($days),
         );
+    }
+
+    public function notificationRetention(int $days): NotificationRetentionService
+    {
+        $repository = $this->notificationRetentionRepository ??= new PdoNotificationRetentionRepository($this->pdo());
+
+        // The days come from the caller, and the caller reads `RetentionSchedule::daysFor()`: this
+        // class retires at 365 days, and a policy built from `retentionDays()` would hold it for seven
+        // years. Passing the number in keeps one place — the schedule — deciding periods.
+        return new NotificationRetentionService($repository, new RetentionPolicy($days));
     }
 
     public function audit(): AuditRepository

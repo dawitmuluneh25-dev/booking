@@ -38,7 +38,10 @@ retroactive in the sense of deleting anything a decision protects: every period 
 the class is lower-risk, and every purge writes an audit row naming the class, the count and the
 cut-off.
 
-## 2a. Why the flag is still off — a defect found on 25 November 2026
+## 2a. The defect that blocked activation, and its resolution (25 November 2026)
+
+**Status: resolved.** The flag is now on, and this section is kept because the defect is the reason the
+wiring exists — deleting it would hide how easily a schedule can look adopted and do nothing.
 
 The validation above was given. The activation was **attempted and reverted on the same day**, because
 setting the flag would have changed nothing and claimed something.
@@ -53,14 +56,40 @@ called by any command. So:
   days — has no purge implementation anywhere in the codebase;
 - `retention:plan` prints the single window, so an operator reading it cannot tell the schedule exists.
 
-Activating in that state would have produced a green-looking flag, a gate reading `declared`, and no
+Activating in that state would have produced a green-looking flag, a gate reading `partial`, and no
 change to what the system retains. That is the exact failure mode this project has spent a month
 removing, so the flag was removed from `.env` and the work is recorded as a **blocking defect**:
 
-> **DEFECT (D-02 activation):** the per-class schedule is data and documentation, not behaviour.
-> Activation requires a purge path that honours `RetentionSchedule` per class, starting with
-> `notification_and_outbox` (365 days), a dry-run that reports per class, and audit rows naming the
-> class. Until that exists, `RETENTION_SCHEDULE_ACTIVE` must stay unset.
+> **DEFECT (D-02 activation), now fixed:** the per-class schedule was data and documentation, not
+> behaviour. Activation required a purge path that honours `RetentionSchedule` per class, starting with
+> `notification_and_outbox` (365 days), a dry-run that reports per class, and run records naming the
+> class.
+
+### What changed to fix it
+
+| Piece | Before | Now |
+|---|---|---|
+| Booking sweep period | `RETENTION_DAYS` | `daysFor('appointment_and_administrative')` when active, `RETENTION_DAYS` otherwise |
+| Referral sweep period | `RETENTION_DAYS` | `daysFor('referral_and_intake')` when active |
+| Notification sweep | **did not exist** | `NotificationRetentionService` — retires outbox rows at `daysFor('notification_and_outbox')` = 365 days |
+| Outbox redaction | recipient overwritten only when its booking was redacted | recipient, payload and `last_error` overwritten; `redacted_at` stamped; `dedupe_key`, template, channel, status and provider id kept |
+| Run record | bookings, referrals, documents | plus `notifications_redacted` (migration 0047) |
+| `retention:plan` | single window | per class, plus the schedule table — `retentionScheduleReport()` is now reachable |
+| `retention:purge` | two sweeps | three, when the schedule is active |
+
+**What survives in a retired outbox row, and why:** the row itself (it is the delivery record), the
+unique `dedupe_key` (it is what stops a retried dispatch sending a second message), and the template,
+channel, status, timestamps and provider message id (the accounting `outbox:receipt` reconciles against).
+What does not survive is the phone number, the payload naming procedure and case, and the provider error
+that sometimes echoes the recipient.
+
+**Verified:** `tests/Feature/NotificationRetentionTest.php` asserts both halves against the real schema —
+an old row loses its recipient and payload while keeping its accounting, a fresh row is untouched, a
+second sweep counts zero, and the run lands in `retention_runs.notifications_redacted`.
+
+Residual risk, stated rather than hidden: `security_and_audit` has a seven-year period and **no sweep**.
+The audit trail is append-only by design, and a retention rule that deletes audit rows is a decision
+nobody has taken. The class is therefore declared and unenforced, and this document says so.
 
 ## 3. How to activate in production
 
@@ -85,10 +114,10 @@ happens because somebody copied an example file is not an activation anybody dec
 |---|---|
 | The validation itself | this file, §1 and the signature block below |
 | The schedule in code | `src/Domain/RetentionSchedule.php`, classes and periods |
-| The gate reading it | `php bin/console release:gates` — retention row moves from `open` to `declared` while the flag is on |
+| The gate reading it | `php bin/console release:gates` — retention row moves from `open` to `partial` while the flag is on |
 | The purge behaves per class | `tests/Unit/RetentionScheduleTest.php`, `tests/Feature/RetentionPurgeTest.php` |
 
-Note the gate's honest word for this state: **`declared`**, not `met`. A flag being on is an assertion
+Note the gate's honest word for this state: **`partial`**, not `met`. A flag being on is an assertion
 that Legal validated the schedule; no local check can verify that assertion, and the gate does not
 pretend otherwise.
 

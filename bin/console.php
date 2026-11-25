@@ -1685,7 +1685,14 @@ function reviewLogs(Application $app, array $options): int
  */
 function retentionService(Application $app, array $options): RetentionService
 {
-    $days = $app->config()->retentionDays();
+    // With the schedule active, the class period is the period — not `retentionDays()`. The two agree
+    // today (both seven years), and that agreement is exactly why the difference used to be invisible;
+    // reading the schedule here means a future change to D-02's table takes effect without another
+    // code change, and an operator's `--days` override still wins because it is a deliberate act.
+    $schedule = $app->retentionSchedule();
+    $days = $schedule->isActive()
+        ? $schedule->daysFor('appointment_and_administrative')
+        : $app->config()->retentionDays();
 
     foreach ($options as $option) {
         if (str_starts_with($option, '--days=')) {
@@ -1707,15 +1714,39 @@ function retentionPlan(Application $app): int
     }
 
     $referrals = $app->referralRetention()->plan();
+    $schedule = $app->retentionSchedule();
 
     printf("retention : %d days\n", $plan['days']);
     printf("cutoff    : %s (UTC)\n", $plan['cutoff']);
     printf("eligible  : %d booking(s) still holding personal data\n", $plan['eligible']);
     printf("referrals : %d referral(s) with documents on the same schedule\n", $referrals['eligible']);
 
-    if ($plan['eligible'] > 0 || $referrals['eligible'] > 0) {
+    // The notification class only has a period when the schedule is active. Printing a zero while it
+    // is inactive would read as "nothing to do" rather than "nothing is watching", which is the exact
+    // misreading that let the outbox sit unpurged in the first place.
+    $notifications = null;
+
+    if ($schedule->isActive()) {
+        $notifications = $app->notificationRetention(
+            $schedule->daysFor('notification_and_outbox')
+        )->plan();
+
+        printf(
+            "notify    : %d outbox row(s) past %d days\n",
+            $notifications['eligible'],
+            $notifications['days'],
+        );
+    }
+
+    $pending = $plan['eligible'] > 0
+        || $referrals['eligible'] > 0
+        || ($notifications !== null && $notifications['eligible'] > 0);
+
+    if ($pending) {
         echo PHP_EOL . "Run: php bin/console retention:purge --yes" . PHP_EOL;
     }
+
+    retentionScheduleReport($app);
 
     return 0;
 }
@@ -1779,9 +1810,19 @@ function retentionPurge(Application $app, array $options): int
         $service = retentionService($app, $options);
         $referralService = $app->referralRetention();
 
+        // Same rule as the plan: the notification class exists only under an active schedule. When it
+        // is inactive the sweep is exactly what it was before this code — bookings and referrals on one
+        // window — so nothing about the old behaviour changes behind an operator's back.
+        $schedule = $app->retentionSchedule();
+        $notificationService = $schedule->isActive()
+            ? $app->notificationRetention($schedule->daysFor('notification_and_outbox'))
+            : null;
+
         if (!$confirmed) {
             $plan = $service->plan();
             $referrals = $referralService->plan();
+            $notifications = $notificationService?->plan();
+
             printf(
                 "dry run: %d booking(s) and %d referral(s) would be redacted (retention %d days, cutoff %s)\n",
                 $plan['eligible'],
@@ -1789,6 +1830,16 @@ function retentionPurge(Application $app, array $options): int
                 $plan['days'],
                 $plan['cutoff'],
             );
+
+            if ($notifications !== null) {
+                printf(
+                    "         %d outbox row(s) would be retired (%d days, cutoff %s)\n",
+                    $notifications['eligible'],
+                    $notifications['days'],
+                    $notifications['cutoff'],
+                );
+            }
+
             echo "Nothing changed. Re-run with --yes to redact." . PHP_EOL;
 
             return 1;
@@ -1796,6 +1847,7 @@ function retentionPurge(Application $app, array $options): int
 
         $result = $service->purge('cli:retention', $batch);
         $documentResult = $referralService->purge('cli:retention', $batch);
+        $notificationResult = $notificationService?->purge('cli:retention', $batch);
     } catch (Throwable $exception) {
         fwrite(STDERR, 'Retention failed: ' . $exception->getMessage() . PHP_EOL);
 
@@ -1813,6 +1865,15 @@ function retentionPurge(Application $app, array $options): int
         $documentResult['referrals'],
         $documentResult['documents'],
     );
+
+    if ($notificationResult !== null) {
+        printf(
+            "retired %d outbox row(s) in %d batch(es), cutoff %s\n",
+            $notificationResult['redacted'],
+            $notificationResult['batches'],
+            $notificationResult['cutoff'],
+        );
+    }
 
     // The account-request queue is not clinical, so it does not follow the clinical
     // retention window: an applicant nobody answered is expired after 60 days, and
