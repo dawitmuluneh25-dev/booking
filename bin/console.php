@@ -1661,7 +1661,7 @@ function restoreDrill(Application $app, array $options): int
         if ($record) {
             // A drill that could not run is evidence too: the archive did not restore, and the next
             // reader needs to know that rather than inferring it from an empty table.
-            recordRestoreDrill($app, $file, [
+            recordRestoreDrill($app, "(unknown)", false, [
                 'target' => $target ?? '(none)',
                 'tables' => 0,
                 'rows' => 0,
@@ -1686,7 +1686,7 @@ function restoreDrill(Application $app, array $options): int
         // A failed drill is evidence too: "we tried and it did not match" is what a reader needs, and
         // an absence cannot express it.
         if ($record) {
-            recordRestoreDrill($app, $file, $result, 'failed');
+            recordRestoreDrill($app, $file->name, $file->encrypted, $result, 'failed');
         }
 
         fwrite(STDERR, "Row counts do not match:\n");
@@ -1698,7 +1698,7 @@ function restoreDrill(Application $app, array $options): int
     }
 
     if ($record) {
-        recordRestoreDrill($app, $file, $result, 'ok');
+        recordRestoreDrill($app, $file->name, $file->encrypted, $result, 'ok');
     }
 
     echo $result['dropped'] ? "scratch database dropped\n" : "scratch database left in place\n";
@@ -1717,13 +1717,14 @@ function restoreDrill(Application $app, array $options): int
  */
 function recordRestoreDrill(
     Application $app,
-    ?\App\Support\BackupFile $file,
+    string $archive,
+    bool $encrypted,
     array $result,
     string $verdict,
 ): void {
     $app->restoreDrills()->record([
-        'archive' => $file?->name ?? '(unknown)',
-        'encrypted' => $file?->encrypted ?? false,
+        'archive' => $archive,
+        'encrypted' => $encrypted,
         'target' => $result['target'],
         'tables' => $result['tables'],
         'rows' => $result['rows'],
