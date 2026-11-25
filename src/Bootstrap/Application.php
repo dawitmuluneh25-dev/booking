@@ -24,6 +24,8 @@ use App\Domain\OpenUrgentReview;
 use App\Domain\NotificationFeedRepository;
 use App\Domain\NotificationRetentionRepository;
 use App\Domain\NotificationRetentionService;
+use App\Domain\OperationalAppointmentRepository;
+use App\Domain\SaveOperationalAppointment;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
 use App\Domain\RetentionSchedule;
@@ -119,6 +121,7 @@ use App\Repositories\PdoBookingRepository;
 use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoDocumentRepository;
 use App\Repositories\PdoNotificationRetentionRepository;
+use App\Repositories\PdoOperationalAppointmentRepository;
 use App\Repositories\PdoReferralRetentionRepository;
 use App\Repositories\PdoTrackingTokenRepository;
 use App\Repositories\PdoClinicalAssessmentRepository;
@@ -335,6 +338,8 @@ final class Application
     private ?ReferralRetentionRepository $referralRetentionRepository = null;
 
     private ?NotificationRetentionRepository $notificationRetentionRepository = null;
+
+    private ?OperationalAppointmentRepository $operationalAppointments = null;
 
     private ?AuditTrail $auditTrail = null;
 
@@ -1106,6 +1111,26 @@ final class Application
         return new NotificationRetentionService($repository, new RetentionPolicy($days));
     }
 
+    public function operationalAppointments(): OperationalAppointmentRepository
+    {
+        return $this->operationalAppointments ??= new PdoOperationalAppointmentRepository($this->pdo());
+    }
+
+    /**
+     * Saves one appointment, validates it against the enum, and writes the audit row in the same
+     * transaction. Constructed per call rather than memoised: it holds nothing but references, and a
+     * cached instance would hide a change to the audit trail binding during a test.
+     */
+    public function saveOperationalAppointment(): SaveOperationalAppointment
+    {
+        return new SaveOperationalAppointment(
+            $this->operationalAppointments(),
+            new Validator(),
+            $this->transaction(),
+            $this->auditTrail(),
+        );
+    }
+
     public function audit(): AuditRepository
     {
         return new PdoAuditRepository($this->pdo());
@@ -1191,3 +1216,4 @@ final class Application
         );
     }
 }
+

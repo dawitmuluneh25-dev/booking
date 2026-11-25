@@ -684,10 +684,13 @@ function reportReleaseGates(Application $app, array $options): int
 /**
  * The facts behind `release:gates`, gathered in one place.
  *
- * Three of them are deliberately null. `restoreDrillRecorded` and `appointmentsNamed` describe records
- * that do not exist — a drill prints its verdict and stores none, and the operating model names no
- * individuals — so the honest fact is "unobservable", not "false". A false would read as "checked and
- * absent", which is a different and stronger claim.
+ * One of them is deliberately null. `restoreDrillRecorded` describes a record that does not exist — a
+ * drill prints its verdict and stores none — so the honest fact is "unobservable", not "false". A false
+ * would read as "checked and absent", which is a different and stronger claim.
+ *
+ * `appointmentsNamed` used to be null for the same reason. Since migration 0048 the five appointments
+ * are rows, so the fact became observable and had to stop being an excuse: a gate that keeps saying
+ * "cannot tell" after the data arrives is a gate that has stopped asking.
  */
 function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
 {
@@ -751,6 +754,20 @@ function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
         }
     }
 
+    // "Covered" means a holder and a deputy, which is the rule the Operations screen states. A row with
+    // a holder and no deputy is an appointment with no cover, and counting it as covered would make the
+    // gate greener than the page a coordinator reads.
+    $appointments = ['named' => 0];
+    $statement = $pdo->query(
+        "SELECT COUNT(*) AS named FROM operational_appointments
+          WHERE holder_name IS NOT NULL AND deputy_name IS NOT NULL"
+    );
+
+    if ($statement !== false) {
+        $named = $statement->fetchColumn();
+        $appointments['named'] = is_numeric($named) ? (int) $named : 0;
+    }
+
     $archives = 0;
     $directory = $config->backupDirectory();
 
@@ -806,7 +823,10 @@ function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
         escalationRoutesTotal: $routes['total'],
         escalationRoutesVerified: $routes['verified'],
         appointmentsDefined: count(\App\Domain\OperationalAppointment::cases()),
-        appointmentsNamed: null,
+        // Observable since migration 0048: the five appointments are rows, and a row counts only when
+        // both a holder and a deputy are named. That is the same rule the screen states, so the gate
+        // and the page cannot disagree about what "covered" means.
+        appointmentsNamed: $appointments['named'],
         backupKeyConfigured: $config->backupEncryptionKey() !== null,
         encryptedArchives: $archives,
         restoreDrillRecorded: null,

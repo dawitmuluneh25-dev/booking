@@ -26,6 +26,15 @@ enum AuditAction: string
     case EscalationRouteRecorded = 'escalation.route_recorded';
     case EscalationRouteVerified = 'escalation.route_verified';
     case EscalationRouteRetired = 'escalation.route_retired';
+
+    /**
+     * Who holds an operational appointment, or who deputises, changed (D-05).
+     *
+     * Its own action rather than reusing the escalation ones: an appointment is a rota, a route is a
+     * telephone number, and an audit filter that could not tell them apart would be unable to answer
+     * "who was Operations Lead in November" without reading the before/after maps.
+     */
+    case OperationalAppointmentChanged = 'operations.appointment_changed';
     // A procedure-day event (§15) is a statement about a patient at a moment, so
     // it leaves the workflow table and a copy in the audit trail. The audit row
     // carries the kind, the time and the state it produced — never the note, which
@@ -63,6 +72,7 @@ enum AuditAction: string
             self::EscalationRouteRecorded => 'Escalation route recorded',
             self::EscalationRouteVerified => 'Escalation route verified',
             self::EscalationRouteRetired => 'Escalation route retired',
+        self::OperationalAppointmentChanged => 'Operational appointment changed',
             self::ProcedureMilestoneRecorded => 'Procedure milestone recorded',
             self::LoginSucceeded => 'Sign-in succeeded',
             self::LoginFailed => 'Sign-in failed',

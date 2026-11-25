@@ -12,6 +12,7 @@ use App\Controllers\AdminAuditController;
 use App\Controllers\AdminController;
 use App\Controllers\AdminDiagnosticsController;
 use App\Controllers\AdminEscalationRouteController;
+use App\Controllers\AdminOperationsController;
 use App\Controllers\AdminLaboratoryController;
 use App\Controllers\AdminHoursController;
 use App\Controllers\AdminPhysicianController;
@@ -460,6 +461,29 @@ return static function (Application $app): void {
     $router->post(
         '/admin/escalation-routes/{id}/retire',
         static fn (Request $request, array $params) => $escalationRoutesAdmin->retire($request, $params),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+
+    // The five operational appointments (D-05), stored in the database (D-08). Same permission as the
+    // escalation roster, and for the same reason: it is operational configuration, and holding an
+    // appointment grants no access of its own.
+    $operationsAdmin = new AdminOperationsController(
+        $app->view(),
+        $app->auth(),
+        $app->gate(),
+        $app->operationalAppointments(),
+        $app->saveOperationalAppointment(),
+        $app->config()->timezone(),
+    );
+
+    $router->get(
+        '/admin/operations',
+        static fn (Request $request) => $operationsAdmin->index($request),
+        RouteAccess::permission(Permission::ClinicConfigure),
+    );
+    $router->post(
+        '/admin/operations',
+        static fn (Request $request) => $operationsAdmin->update($request),
         RouteAccess::permission(Permission::ClinicConfigure),
     );
 

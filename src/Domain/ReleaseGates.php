@@ -280,23 +280,20 @@ final class ReleaseGates
             return [
                 'state' => self::PARTIAL,
                 'detail' => $facts->appointmentsDefined . ' appointments are defined with titles and'
-                    . ' responsibilities; no individual is named in the repository, and cannot be — D-07'
-                    . ' makes appointment an operational act. Coverage is unobservable from here.',
+                    . ' responsibilities, but this database has no table holding the holders — migration'
+                    . ' 0048 has not been applied here, so coverage is unobservable from this host.',
             ];
         }
 
-        if ($facts->appointmentsNamed >= $facts->appointmentsDefined) {
-            return [
-                'state' => self::MET,
-                'detail' => $facts->appointmentsNamed . ' of ' . $facts->appointmentsDefined
-                    . ' appointments have a named holder.',
-            ];
-        }
+        // "Covered" means a holder and a deputy, which is the rule the Operations screen states. A
+        // holder with no deputy is an appointment with no cover, and counting it would make this row
+        // greener than the page a coordinator reads.
+        $detail = $facts->appointmentsNamed . ' of ' . $facts->appointmentsDefined
+            . ' appointments have both a holder and a deputy.';
 
         return [
-            'state' => self::OPEN,
-            'detail' => $facts->appointmentsNamed . ' of ' . $facts->appointmentsDefined
-                . ' appointments have a named holder.',
+            'state' => $facts->appointmentsNamed >= $facts->appointmentsDefined ? self::MET : self::OPEN,
+            'detail' => $detail,
         ];
     }
 

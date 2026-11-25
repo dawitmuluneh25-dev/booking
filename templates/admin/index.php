@@ -45,6 +45,15 @@
         </article>
 
         <article class="card">
+            <h3>Operational appointments</h3>
+            <p>
+                Who holds each of the five operational jobs, and who covers it. Stored in the
+                database, with every change recorded against the account that made it.
+            </p>
+            <a class="link" href="/admin/operations">Name the holders</a>
+        </article>
+
+        <article class="card">
             <h3>Escalation routes</h3>
             <p>
                 Who to telephone during an urgent case, and whether anybody has confirmed that the
