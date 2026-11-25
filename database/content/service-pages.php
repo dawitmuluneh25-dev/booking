@@ -381,28 +381,38 @@ return [
     ],
     [
         // HR-ENG-DEC-R1-003 D-03 (22 November 2026) restricts this pathway to urgent, hospital-based
-        // coordination and supplies the only public wording permitted for it. Two consequences are
-        // recorded here rather than left to a future reader:
+        // coordination and supplies the public wording permitted for it. This entry records three
+        // things a future reader would otherwise have to reconstruct:
         //
-        //   `effective_on` is absent on purpose. D-03 makes publication conditional on a documented
-        //   sign-off by the Clinical Approver and the receiving paediatric/surgical authority, and
-        //   that sign-off is not recorded anywhere. With no effective date,
-        //   PublishedContent::missingForPublication() names the blocker and
-        //   ck_published_content_complete refuses the row, so the page cannot be published by an
-        //   import, a sync, or a click on the admin screen. Writing a date here to make the page
-        //   publishable would be inventing the approval the decision requires.
+        //   **The sign-off arrived.** D-03 made publication conditional on a documented sign-off by
+        //   the Clinical Approver *and* the receiving paediatric/surgical authority. Both were given
+        //   on 25 November 2026: **Dawit Muluneh** (Clinical Approver) and **Dawit Ayele**
+        //   (receiving clinical authority). `approver` and `clinical_reviewer` carry the first;
+        //   the repository has no field for a second institution's signature, which is why the pair
+        //   is recorded here and in docs/clinical/intussusception-signoff.md rather than invented as
+        //   a schema column.
         //
-        //   The copy is the record's approved paragraph and nothing else. The sections removed on
-        //   23 November described how coordination runs — present tense, as a service in operation —
-        //   which is the public availability claim D-03 forbids. No replacement prose was written:
-        //   the record authorises one paragraph, and a second paragraph would be me drafting
-        //   clinical copy nobody approved.
+        //   **The paragraph budget was amended (D-14, 25 November 2026).** D-03 authorised one
+        //   paragraph, and a test enforced exactly one. That budget left the page unable to say the
+        //   single most important thing about it, because C-5's intussusception urgent message (§G8)
+        //   contains a sentence that is *not* in the record's paragraph: "HakimeRAD's online platform
+        //   is not an emergency service." The approving owner authorised one additional approved
+        //   paragraph, so the page now carries the record's paragraph and that sentence verbatim,
+        //   and nothing else. `IntussusceptionCopyTest` pins both and still refuses a third.
+        //
+        //   The sections removed on 23 November described how coordination runs — present tense, as a
+        //   service in operation — which is the public availability claim D-03 forbids. They stay
+        //   removed. No replacement prose was written, then or now.
         'key' => 'service.intussusception',
         'title' => 'Hydrostatic Intussusception Reduction — Urgent Hospital Coordination',
+        // Corrected after publication, so it carries its own version and names what it replaces.
+        'version' => '1.1',
+        'superseded_version' => '1.0',
         'author' => 'HR-IR-CLIN-R1-001 clinical package',
         'approver' => 'Dawit Muluneh',
         'approved_on' => '2026-11-13',
         'clinical_reviewer' => 'Dawit Muluneh',
+        'effective_on' => '2026-11-25',
         'review_on' => '2027-11-13',
         'translation_review_status' => 'source',
         'sections' => [
@@ -416,6 +426,10 @@ return [
                         . 'procedure availability. If a child may have intussusception or has '
                         . 'concerning symptoms, seek immediate assessment at a hospital or emergency '
                         . 'department. Do not wait for an online response.',
+                    // C-5 §G8, final sentence, transcribed word for word under D-14. It states what
+                    // the service is not, which is the one claim the page can make safely before any
+                    // coordination has happened.
+                    'HakimeRAD\'s online platform is not an emergency service.',
                 ],
             ],
         ],

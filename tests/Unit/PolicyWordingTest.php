@@ -106,32 +106,40 @@ final class PolicyWordingTest extends TestCase
      *
      * HR-ENG-DEC-R1-003 D-01 fixed one date pair for all three pages — effective 12 January 2027,
      * review 12 January 2028 — and said in as many words not to publish a policy as approved
-     * merely because the dates have been entered. Legal/Data Protection have not approved the
-     * content, so `approver` and `approved_on` must stay absent.
+     * merely because the dates have been entered.
      *
-     * If the first half of this fails, a date was invented. If the second half fails, somebody has
-     * published health-policy text on a signature nobody gave.
+     * **The approval arrived on 25 November 2026** (Gemechisa Dalu, Legal/Data Protection), and the
+     * approving owner moved the effective date to the launch date. So this now asserts three things:
+     * the approval is the one that was given, no clinical reviewer appears on a policy page, and the
+     * review date is still D-01's — the only date nobody has re-decided.
+     *
+     * If it fails, either a provenance value was invented or somebody moved a document-control date
+     * without a decision. Both are the failures this file exists to catch, in that order of likelihood.
      */
-    public function testThePolicyPagesCarryTheRecordsDatesAndNoApprovalTheyWereNotGiven(): void
+    public function testThePolicyPagesCarryTheApprovalTheyWereGiven(): void
     {
         foreach (['policy.privacy', 'policy.booking', 'policy.referral'] as $key) {
             $page = $this->page($key);
 
-            self::assertSame('2027-01-12', $page['effective_on'] ?? null, $key . ' does not carry D-01\'s date.');
+            self::assertSame(
+                '2026-12-18',
+                $page['effective_on'] ?? null,
+                $key . ' does not carry the approved effective date.',
+            );
             self::assertSame('2028-01-12', $page['review_on'] ?? null, $key . ' does not carry D-01\'s review date.');
+            self::assertSame('Gemechisa Dalu', $page['approver'] ?? null, $key . ' names the wrong approver.');
+            self::assertSame('2026-11-25', $page['approved_on'] ?? null, $key . ' carries the wrong approval date.');
 
-            foreach (['approver', 'approved_on', 'clinical_reviewer'] as $field) {
-                self::assertArrayNotHasKey(
-                    $field,
-                    $page,
-                    sprintf(
-                        '`%s` is set on %s. D-01 fixed the dates; Legal/Data Protection have not approved the '
-                        . 'content, so a value here would have been invented by whoever typed it.',
-                        $field,
-                        $key,
-                    ),
-                );
-            }
+            self::assertArrayNotHasKey(
+                'clinical_reviewer',
+                $page,
+                sprintf(
+                    '`clinical_reviewer` is set on %s. D-01 makes a policy notice Legal/Data Protection\'s to '
+                    . 'approve, not a clinician\'s; a value here would put clinical governance on a document '
+                    . 'the clinical pack does not govern.',
+                    $key,
+                ),
+            );
         }
     }
 

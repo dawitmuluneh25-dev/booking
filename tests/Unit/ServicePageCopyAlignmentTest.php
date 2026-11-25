@@ -191,7 +191,7 @@ final class ServicePageCopyAlignmentTest extends TestCase
      * row, and the row's identity includes the version, so a page edited under version 1.0 would be
      * skipped by the very import meant to carry it.
      */
-    public function testTheCorrectedPagesDeclareVersionOnePointOneAndTheHeldPageDoesNot(): void
+    public function testEveryCorrectedPageDeclaresVersionOnePointOne(): void
     {
         foreach (['service.fnac', 'service.core_biopsy', 'service.abscess_drainage'] as $key) {
             $page = self::page($key);
@@ -205,12 +205,17 @@ final class ServicePageCopyAlignmentTest extends TestCase
             self::assertSame('1.0', $draft->supersededVersion);
         }
 
-        $held = self::page('service.intussusception');
-        self::assertArrayNotHasKey('version', $held);
+        // The intussusception page joined this set on 25 November 2026: the D-03 sign-off arrived and
+        // it was republished as 1.1 with C-5 §G8's disclaimer (D-14). While it could not be published
+        // it deliberately had no version of its own; that guard belonged to its unpublishability and
+        // left with it.
+        $corrected = self::page('service.intussusception');
+
+        self::assertSame('1.1', $corrected['version'] ?? null);
+        self::assertSame('1.0', $corrected['superseded_version'] ?? null);
         self::assertSame(
-            ContentSource::VERSION,
-            (new ContentSource())->toDraft($held, '2026-11-24 00:00:00')->version,
-            'The restricted page must not acquire a version of its own while it cannot be published.'
+            '1.1',
+            (new ContentSource())->toDraft($corrected, '2026-11-25 00:00:00')->version,
         );
     }
 

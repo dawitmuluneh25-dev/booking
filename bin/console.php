@@ -694,10 +694,19 @@ function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
     $pdo = $app->pdo();
     $config = new \App\Bootstrap\Config(dirname(__DIR__));
 
+    // "Approved and published", not "in force". D-01's evidence is an approver, an approval date and a
+    // publication — the effective date determines when a reader can see the page, which is a separate
+    // question and, for this release, a date in December. Counting `effective_on <= CURDATE()` here
+    // made a correctly approved set read as unmet until the new year.
     $policy = ['total' => 0, 'published' => 0];
     $statement = $pdo->query(
         "SELECT content_key,
-                MAX(status = 'published' AND effective_on IS NOT NULL AND effective_on <= CURDATE()) AS is_live
+                MAX(
+                    status = 'published'
+                    AND effective_on IS NOT NULL
+                    AND approver IS NOT NULL
+                    AND approved_on IS NOT NULL
+                ) AS is_live
            FROM published_content
           WHERE content_key LIKE 'policy.%'
           GROUP BY content_key"

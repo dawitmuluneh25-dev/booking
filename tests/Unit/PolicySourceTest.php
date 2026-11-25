@@ -16,25 +16,27 @@ use PHPUnit\Framework\TestCase;
  * before it gets there. The conversion is where a page can lose a `bullets` list, arrive with a
  * blank title, or — the failure this is really for — claim an approval it does not have.
  *
- * The three pages are drafts that must stay unpublishable by construction, so the assertion is not
- * "they are complete" but "they are incomplete in exactly the six ways the decision documents leave
- * open and no others". A file with a broken section changes that list, because `toDraft()` refuses
- * an entry with no sections rather than importing an empty page.
+ * **These assertions were inverted on 25 November 2026, and that is the point.** Until then the
+ * three pages were drafts that had to stay unpublishable by construction, and the assertion was not
+ * "they are complete" but "they are incomplete in exactly the ways the decision documents leave open".
+ * D-01's approval arrived — Legal/Data Protection, named and dated — so the assertion is now that each
+ * page carries exactly that approval and nothing invented alongside it. The tests did not get weaker;
+ * they got a different subject: an approval that is *present but wrong* (a different name, a guessed
+ * date, a clinical reviewer on a policy page) is the failure mode now.
  */
 final class PolicySourceTest extends TestCase
 {
     /**
-     * What a policy page still owes, after D-01.
+     * The approval D-01 was waiting for, as given on 25 November 2026.
      *
-     * Not the clinical reviewer — a policy notice is approved by Legal/Data Protection, not by a
-     * clinician (D-01), and `PublishedContent::missingForPublication()` no longer asks a `policy.`
-     * page for one. Not the dates either: D-01 fixed them at 12 January 2027 and 12 January 2028.
-     * What is left is the one thing the record does not supply — the approval itself.
+     * Not the clinical reviewer: a policy notice is approved by Legal/Data Protection, not by a
+     * clinician, and `PublishedContent::missingForPublication()` does not ask a `policy.` page for one.
      */
-    private const PROVENANCE = [
-        'approver',
-        'approval date',
-    ];
+    private const APPROVER = 'Gemechisa Dalu';
+
+    private const APPROVED_ON = '2026-11-25';
+
+    private const EFFECTIVE_ON = '2026-12-18';
 
     /** @return list<array<string, mixed>> */
     private static function pages(): array
@@ -212,42 +214,47 @@ final class PolicySourceTest extends TestCase
     }
 
     /**
-     * The one failure that would be invisible until publication: a file that carries an approver
-     * nobody supplied would make the publish gate pass on invented provenance.
+     * The approval is present, and it is the one that was given.
+     *
+     * An approval that is present but wrong is worse than an absent one: the absent one stops the
+     * gate, and the wrong one opens it. So the name, the date and the effective date are each pinned.
      */
-    public function testNoPageClaimsAnApprovalItWasNotGiven(): void
+    public function testEveryPageCarriesTheApprovalItWasGivenAndNothingElse(): void
     {
         $source = new ContentSource();
 
         foreach (self::pages() as $page) {
-            $draft = $source->toDraft($page, '2026-11-22 20:00:00');
+            $draft = $source->toDraft($page, '2026-11-25 20:00:00');
             $key = self::header($page, 'key');
 
             self::assertNull($draft->clinicalReviewer, $key . ' names a clinical reviewer.');
-            self::assertNull($draft->approver, $key . ' names an approver.');
-            self::assertNull($draft->approvedOn, $key . ' carries an approval date.');
+            self::assertSame(self::APPROVER, $draft->approver, $key . ' names the wrong approver.');
+            self::assertSame(self::APPROVED_ON, $draft->approvedOn, $key . ' carries the wrong approval date.');
+            self::assertSame(self::EFFECTIVE_ON, $draft->effectiveOn, $key . ' carries the wrong effective date.');
 
-            // D-01 fixed these two, and fixed them for the set. A page with a different pair has
-            // been edited by hand, which is how three pages start disagreeing about when they took
-            // effect.
-            self::assertSame('2027-01-12', $draft->effectiveOn, $key . ' does not carry D-01\'s effective date.');
+            // D-01 fixed the review date and only the effective date was re-set by the approver.
             self::assertSame('2028-01-12', $draft->reviewOn, $key . ' does not carry D-01\'s review date.');
         }
     }
 
-    public function testTheOnlyThingEachPageIsMissingIsProvenance(): void
+    /**
+     * Nothing is missing any more: the approval that D-01 made a precondition is on the record.
+     *
+     * This is the test that used to prove the pages were unpublishable. It now proves they are not —
+     * and if a future edit drops the approver, it fails with the field name rather than with a
+     * publication that quietly does not happen.
+     */
+    public function testEachPageIsComplete(): void
     {
         $source = new ContentSource();
 
         foreach (self::pages() as $page) {
-            $missing = $source->toDraft($page, '2026-11-22 20:00:00')->missingForPublication();
+            $missing = $source->toDraft($page, '2026-11-25 20:00:00')->missingForPublication();
 
             self::assertSame(
-                self::PROVENANCE,
+                [],
                 $missing,
-                self::header($page, 'key') . ' is incomplete in a way the decision documents do not '
-                . 'account for. A missing title or section means the file is wrong, not that a '
-                . 'signature is owed.',
+                self::header($page, 'key') . ' is incomplete: ' . implode(', ', $missing),
             );
         }
     }

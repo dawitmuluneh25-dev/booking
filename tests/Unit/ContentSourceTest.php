@@ -120,14 +120,18 @@ final class ContentSourceTest extends TestCase
      * exceptions is written down here so that "one page is incomplete" stays a decision rather than
      * becoming a habit.
      */
-    public function testTheCommittedSourceIsThreeCompletePagesAndOneHeld(): void
+    public function testTheCommittedSourceIsFourCompletePages(): void
     {
         $pages = require dirname(__DIR__, 2) . '/database/content/service-pages.php';
 
         self::assertIsArray($pages);
         self::assertCount(4, $pages);
 
-        $held = ['service.intussusception' => ['effective date']];
+        // Empty since 25 November 2026: the intussusception sign-off arrived (D-03), so the page that
+        // was held is complete. The map stays because the day a page is held again, this is where the
+        // reason has to be written down — an empty exception list is a claim, not an absence.
+        /** @var array<string, list<string>> $held */
+        $held = [];
         $keys = [];
 
         foreach ($pages as $page) {

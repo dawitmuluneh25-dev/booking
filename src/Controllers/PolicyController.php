@@ -29,6 +29,16 @@ final class PolicyController
 {
     private const LANGUAGE = 'en';
 
+    /**
+     * The three pages HR-WEB-CONTENT-R1-001 defines.
+     *
+     * D-12 (25 November 2026) asks for a holding page instead of a 404 while a policy is approved but
+     * not yet in force. The list is written out rather than derived because the point of the exemption
+     * is that it is narrow: a key that is not one of these three still 404s exactly as before, so the
+     * 404 discipline is preserved for everything else.
+     */
+    private const POLICY_KEYS = ['policy.privacy', 'policy.booking', 'policy.referral'];
+
     public function __construct(
         private readonly View $view,
         private readonly Auth $auth,
@@ -37,31 +47,62 @@ final class PolicyController
     ) {
     }
 
+    public const SHOW = 'show';
+
+    public const PENDING = 'pending';
+
+    public const NOT_FOUND = 'not-found';
+
+    /**
+     * What a request for this key should do today.
+     *
+     * Extracted from `show()` so the rule can be tested without a session, a view or a database. It is
+     * three lines of policy that three separate decisions argued over, and the arguments are the
+     * reason it is not inlined: D-12 narrows the 404 discipline to everything except the three policy
+     * keys, and D-01's effective date is what turns "approved" into "still held".
+     *
+     * @param list<string> $policyKeys
+     */
+    public static function disposition(
+        ?PublishedContent $page,
+        string $contentKey,
+        string $today,
+        array $policyKeys = self::POLICY_KEYS,
+    ): string {
+        if ($page !== null && $page->isServableOn($today)) {
+            return self::SHOW;
+        }
+
+        return in_array($contentKey, $policyKeys, true) ? self::PENDING : self::NOT_FOUND;
+    }
+
     public function show(Request $request, string $contentKey): Response
     {
-        $page = $this->servable($contentKey);
+        $page = $this->content->published($contentKey, self::LANGUAGE);
+        $disposition = self::disposition($page, $contentKey, $this->today());
 
-        if ($page === null) {
+        if ($disposition === self::SHOW && $page !== null) {
+            return Response::html($this->view->render('pages/show', [
+                'title' => $page->title,
+                'page' => $page,
+                'currentUser' => $this->auth->user(),
+            ]));
+        }
+
+        if ($disposition === self::NOT_FOUND) {
             throw new HttpException(404);
         }
 
-        return Response::html($this->view->render('pages/show', [
-            'title' => $page->title,
-            'page' => $page,
+        // D-12. A published-but-not-yet-effective policy is the normal state between approval and its
+        // effective date, and a draft is the state before approval. Both used to 404, which turned the
+        // footer's "Privacy" link into a dead end on a site that takes referral data. The holding page
+        // carries no legal content, no approver and no document control block: it says the page is not
+        // published, and names the effective date only when a record supplies one.
+        return Response::html($this->view->render('pages/pending', [
+            'title' => $page !== null ? $page->title : 'Page in preparation',
+            'effectiveOn' => $page !== null ? $page->effectiveOn : null,
             'currentUser' => $this->auth->user(),
         ]));
-    }
-
-    /** The page, if it may be shown today; `published()` decides what is live. */
-    private function servable(string $contentKey): ?PublishedContent
-    {
-        $page = $this->content->published($contentKey, self::LANGUAGE);
-
-        if ($page === null || !$page->isServableOn($this->today())) {
-            return null;
-        }
-
-        return $page;
     }
 
     private function today(): string

@@ -10,19 +10,22 @@
  * `author` names the document, not a person, for the same reason service-pages.php does: it
  * records where the words came from.
  *
- * **The two dates and the two absent fields (D-01, 23 November 2026).** HR-ENG-DEC-R1-003 D-01
- * fixes one document-control date pair for all three pages — effective **12 January 2027**, first
- * scheduled review **12 January 2028** — and they are here, identical on all three, because the
- * decision says the dates are common to the set. `approver` and `approved_on` are deliberately
- * still absent. D-01's approval condition is that Legal/Data Protection approve the final policy
- * content *before publication*, and that approval has not been given; the decision fixes the dates,
- * it does not sign the pages. With those two fields missing
- * `PublishedContent::missingForPublication()` reports `approver`, `approval date`, `PublishContent`
- * refuses, and the database CHECK refuses independently. D-01 says in as many words not to publish
- * a policy as approved merely because the dates have been entered.
+ * **The approval (D-01, executed 25 November 2026).** D-01's condition was that Legal/Data
+ * Protection approve the final policy content before publication. That approval was given on
+ * 25 November 2026 by **Gemechisa Dalu**, and `approver` / `approved_on` now carry it on all three
+ * pages. Before this, `PublishedContent::missingForPublication()` reported `approver` and
+ * `approval date`, `PublishContent` refused, and the database CHECK refused independently — the two
+ * absent fields, not the missing signature in someone's inbox, were what the system could see.
  *
- * The dates are also a second guard: `isServableOn()` will not serve a page whose effective date is
- * in the future, so even a mistaken publication today would be invisible until 12 January 2027.
+ * **The effective date moved.** D-01 fixed effective **12 January 2027**; the approving owner
+ * re-set it to **18 December 2026**, the launch date, so that the policies are in force when the
+ * service opens rather than seven weeks later. The review date is left at D-01's **12 January
+ * 2028** — moving it forward to 18 December 2027 would be a document-control decision nobody has
+ * taken, and is recorded as an open item rather than silently changed.
+ *
+ * The effective date is also a second guard: `isServableOn()` will not serve a page whose effective
+ * date is in the future. So publishing today makes the pages approved, live rows that are still
+ * **not served** until 18 December 2026 — which is what the holding page below exists for.
  *
  * Nine bracketed values in the source document are omitted rather than carried over as
  * placeholders, per that note: "publish the page without that section rather than with an
@@ -54,7 +57,9 @@ return [
         'key' => 'policy.privacy',
         'title' => 'Privacy Notice',
         'author' => 'HR-WEB-CONTENT-R1-001 policy pack',
-        'effective_on' => '2027-01-12',
+        'approver' => 'Gemechisa Dalu',
+        'approved_on' => '2026-11-25',
+        'effective_on' => '2026-12-18',
         'review_on' => '2028-01-12',
         'translation_review_status' => 'source',
         'sections' => [
@@ -206,7 +211,9 @@ return [
         'key' => 'policy.booking',
         'title' => 'Booking and Procedure Request Policy',
         'author' => 'HR-WEB-CONTENT-R1-001 policy pack',
-        'effective_on' => '2027-01-12',
+        'approver' => 'Gemechisa Dalu',
+        'approved_on' => '2026-11-25',
+        'effective_on' => '2026-12-18',
         'review_on' => '2028-01-12',
         'translation_review_status' => 'source',
         'sections' => [
@@ -318,7 +325,9 @@ return [
         'key' => 'policy.referral',
         'title' => 'Referral Guidance',
         'author' => 'HR-WEB-CONTENT-R1-001 policy pack',
-        'effective_on' => '2027-01-12',
+        'approver' => 'Gemechisa Dalu',
+        'approved_on' => '2026-11-25',
+        'effective_on' => '2026-12-18',
         'review_on' => '2028-01-12',
         'translation_review_status' => 'source',
         'sections' => [
