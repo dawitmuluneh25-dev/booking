@@ -1216,4 +1216,3 @@ final class Application
         );
     }
 }
-

@@ -14,6 +14,10 @@
 -- No generic key/value table. A text bucket would take any key, any value, and record nothing about
 -- what either means; the escalation roster already has typed columns, and this table does too. If a
 -- future operational value arrives, it gets a column with a name, not a row in a dictionary.
+--
+-- Table options follow the rest of the schema — `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4` and no explicit
+-- collation. Naming a MySQL 8 collation here (`utf8mb4_0900_ai_ci`) is what the repository's MariaDB
+-- parity job catches: MariaDB 10.11 does not have it, and the migration fails at apply time.
 
 CREATE TABLE operational_appointments (
     role_key VARCHAR(48) NOT NULL,
@@ -26,9 +30,7 @@ CREATE TABLE operational_appointments (
         CHECK (holder_name IS NULL OR CHAR_LENGTH(holder_name) >= 2),
     CONSTRAINT ck_operational_appointment_deputy
         CHECK (deputy_name IS NULL OR CHAR_LENGTH(deputy_name) >= 2)
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8mb4
-  COLLATE = utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO operational_appointments (role_key, holder_name, deputy_name, updated_by, updated_at)
 VALUES

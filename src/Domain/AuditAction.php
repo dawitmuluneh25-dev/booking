@@ -72,7 +72,7 @@ enum AuditAction: string
             self::EscalationRouteRecorded => 'Escalation route recorded',
             self::EscalationRouteVerified => 'Escalation route verified',
             self::EscalationRouteRetired => 'Escalation route retired',
-        self::OperationalAppointmentChanged => 'Operational appointment changed',
+            self::OperationalAppointmentChanged => 'Operational appointment changed',
             self::ProcedureMilestoneRecorded => 'Procedure milestone recorded',
             self::LoginSucceeded => 'Sign-in succeeded',
             self::LoginFailed => 'Sign-in failed',

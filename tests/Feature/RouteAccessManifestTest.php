@@ -69,7 +69,12 @@ final class RouteAccessManifestTest extends TestCase
         // and the milestone it records — remain permission-gated, and none joins the
         // public set above: a procedure day carries the patient's name and what
         // happened to them.
-        self::assertSame(103, count($manifest));
+        //
+        // 105: the two operational-appointment routes (D-05) — the screen that reads
+        // who holds each responsibility, and the POST that names them. Both are gated
+        // by `clinic.configure` and neither joins the public set: a roster of who to
+        // telephone is operational information, not something a visitor is shown.
+        self::assertSame(105, count($manifest));
 
         foreach ($manifest as $route) {
             self::assertInstanceOf(RouteAccess::class, $route['access']);
