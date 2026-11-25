@@ -176,6 +176,9 @@ switch ($command) {
     case 'security:credentials':
         exit(reportCredentials($app, $options));
 
+    case 'notify:queue-health':
+        exit(notificationQueueHealth($app));
+
     case 'notify:preflight':
         exit(notificationPreflight($app));
 
@@ -2260,4 +2263,42 @@ function notificationPreflight(Application $app): int
     }
 
     return $readiness['ok'] ? 0 : 1;
+}
+
+/**
+ * Report whether the outbox is being drained (D-09's other half).
+ *
+ * Exit 1 when it is not. A pending row is not a problem; a pending row that is a day old is a schedule
+ * nobody is running, and the difference is invisible from every other screen in the application.
+ */
+function notificationQueueHealth(Application $app): int
+{
+    $snapshot = $app->notificationQueue()->snapshot();
+
+    $health = \App\Notifications\QueueHealth::assess(
+        $snapshot['pending'],
+        $snapshot['oldestPending'],
+        $snapshot['failed'],
+        $snapshot['lastSent'],
+        gmdate('Y-m-d H:i:s'),
+    );
+
+    printf("pending     : %d\n", (int) $health['pending']);
+    printf("oldest      : %s\n", $health['oldest_hours'] === null
+        ? '(nothing queued)'
+        : sprintf('%.1f hours', $health['oldest_hours']));
+    printf("failed      : %d\n", $health['failed']);
+    printf("last sent   : %s\n", $health['last_sent'] ?? '(never)');
+    printf("state       : %s\n", strtoupper($health['state']));
+    echo PHP_EOL;
+
+    foreach ($health['reasons'] as $reason) {
+        echo '  - ' . $reason . PHP_EOL;
+    }
+
+    if ($health['state'] === \App\Notifications\QueueHealth::OK) {
+        echo 'The queue has drained before and nothing is waiting longer than 24 hours.' . PHP_EOL;
+    }
+
+    return $health['state'] === \App\Notifications\QueueHealth::OK ? 0 : 1;
 }

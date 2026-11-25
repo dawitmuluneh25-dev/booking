@@ -62,3 +62,50 @@ second one has been observed.
 - **No template approval for WhatsApp.** SMS and email are free text here; WhatsApp templates require
   provider approval before they can send at all, which is why `NotificationChannel::WhatsApp` is not in
   the launch path.
+
+---
+
+## 6. Is the queue moving? — `notify:queue-health`
+
+A second way for delivery to fail silently, found on 26 November 2026 while finishing D-09.
+
+`NOTIFY_DRIVER=log` was one way for the outbox to lie. This is the other: the outbox only moves when
+`outbox:dispatch` runs, and nothing in the repository guaranteed that it did. On the demo database the
+check found **14 messages queued and no dispatch in the table's history** — rows sitting `pending` since
+the previous day, which staff would reasonably read as "in hand".
+
+```
+pending     : 14
+oldest      : 9.7 hours
+failed      : 0
+last sent   : (never)
+state       : STALE
+  - 14 message(s) are queued and nothing has ever been dispatched.
+    The `outbox:dispatch` schedule has not run at all.
+```
+
+### The rule
+
+| Condition | State | Exit |
+|---|---|---|
+| Rows queued **and** no dispatch ever recorded | `STALE` | 1 |
+| Oldest queued row older than 24 hours | `STALE` | 1 |
+| Any row `failed` (and the queue is not stale) | `ATTENTION` | 1 |
+| Nothing queued, nothing failed | `OK` | 0 |
+| Outbox unreadable | `UNKNOWN` | 1 |
+
+The first row is the one that matters. A threshold-only rule would have reported `OK` for that queue for
+another fourteen hours, because the oldest row had not yet passed 24 hours — which is exactly the window
+in which somebody asks whether messages are going out. **Never dispatched is decisive on its own.**
+
+`ATTENTION` exits non-zero too: a row in `failed` will not retry itself once its attempts are exhausted,
+and a queue with failures in it needs a person.
+
+### What it reads, and what it does not
+
+- Reads `status`, `created_at` and `sent_at` only. Read-only by construction — a monitoring path that
+  could write would be able to change what it measures.
+- Uses `sent_at` rather than `updated_at` for "last activity": retention redaction also touches
+  `updated_at`, so a queue that had not moved would look like it moved on the day retention ran.
+- Does **not** check whether the dispatch schedule exists. It reports the symptom; wiring
+  `outbox:dispatch` into cron remains a deployment task, and this check is what tells you it was missed.
