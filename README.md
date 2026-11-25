@@ -313,6 +313,7 @@ The full deployment procedure is a separate runbook; the shape is:
 | `php bin/console backup:key-check` | Check the backup key's custody against D-08 (exits 1 on a failed control) |
 | `php bin/console escalation:seed-register` | Create the five D-06 route categories, empty and inactive |
 | `php bin/console security:credentials [--require-recorded]` | Print the D-10 credential register: office, custodian, last rotation, what is overdue |
+| `php bin/console release:gates [--json]` | Print the seven §3.2 release gates, their owner and their evidence; exits 1 while any is unmet |
 
 ---
 

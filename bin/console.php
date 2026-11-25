@@ -176,6 +176,9 @@ switch ($command) {
     case 'security:credentials':
         exit(reportCredentials($app, $options));
 
+    case 'release:gates':
+        exit(reportReleaseGates($app, $options));
+
     case 'help':
     default:
         echo <<<TXT
@@ -224,6 +227,7 @@ switch ($command) {
           php bin/console backup:key-check     Check the backup key's custody against D-08
           php bin/console security:credentials [--require-recorded] [--today=YYYY-MM-DD]
                                               Print the D-10 credential register and what is overdue
+          php bin/console release:gates [--json]   Print the seven §3.2 release gates and their evidence
           php bin/console escalation:seed-register
                                               Create the five D-06 route categories, empty and inactive
 
@@ -631,6 +635,177 @@ function reportCredentials(Application $app, array $options): int
     echo ' see docs/operations/credential-rotation.md.' . PHP_EOL;
 
     return 0;
+}
+
+/**
+ * Print §3.2's seven release gates against what this host can observe.
+ *
+ * Exit 1 while any gate is not met. That is the true state today and it is the intended state: the
+ * command exists so the number is visible and the responsible authority is named per row, not so it
+ * can be made green. Nothing here approves anything, and no flag turns a gate green — see §3.3, which
+ * says no item in the record authorises release by itself.
+ *
+ * @param list<string> $options
+ */
+function reportReleaseGates(Application $app, array $options): int
+{
+    $report = (new \App\Domain\ReleaseGates(collectReleaseGateFacts($app)))->assess();
+
+    if (in_array('--json', $options, true)) {
+        echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            . PHP_EOL;
+
+        return \App\Domain\ReleaseGates::blockedCount($report) === 0 ? 0 : 1;
+    }
+
+    echo 'Release gates — HR-ENG-DEC-R1-003 §3.2, ' . count($report) . ' gates' . PHP_EOL . PHP_EOL;
+
+    foreach ($report as $gate) {
+        printf("[%-7s] %-36s %s\n", strtoupper($gate['state']), $gate['name'], $gate['authority']);
+        echo '          evidence: ' . $gate['evidence'] . PHP_EOL;
+        echo '          ' . $gate['detail'] . PHP_EOL . PHP_EOL;
+    }
+
+    $blocked = \App\Domain\ReleaseGates::blockedCount($report);
+
+    if ($blocked === 0) {
+        echo 'All seven gates are met. §3.3 still requires documented release authorisation from the'
+            . ' responsible owners: this command reports, it does not approve.' . PHP_EOL;
+
+        return 0;
+    }
+
+    echo $blocked . ' of ' . count($report) . ' gates are not met. Each names the authority that owns it;'
+        . ' no flag or environment variable here can close one.' . PHP_EOL;
+
+    return 1;
+}
+
+/**
+ * The facts behind `release:gates`, gathered in one place.
+ *
+ * Three of them are deliberately null. `restoreDrillRecorded` and `appointmentsNamed` describe records
+ * that do not exist — a drill prints its verdict and stores none, and the operating model names no
+ * individuals — so the honest fact is "unobservable", not "false". A false would read as "checked and
+ * absent", which is a different and stronger claim.
+ */
+function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
+{
+    $pdo = $app->pdo();
+    $config = new \App\Bootstrap\Config(dirname(__DIR__));
+
+    $policy = ['total' => 0, 'published' => 0];
+    $statement = $pdo->query(
+        "SELECT content_key,
+                MAX(status = 'published' AND effective_on IS NOT NULL AND effective_on <= CURDATE()) AS is_live
+           FROM published_content
+          WHERE content_key LIKE 'policy.%'
+          GROUP BY content_key"
+    );
+
+    if ($statement !== false) {
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $policy['total']++;
+
+            $live = $row['is_live'] ?? 0;
+
+            if (is_numeric($live) && (int) $live === 1) {
+                $policy['published']++;
+            }
+        }
+    }
+
+    $intussusception = $pdo->query(
+        "SELECT COUNT(*) FROM published_content
+          WHERE content_key = 'service.intussusception' AND status = 'published'"
+    );
+    $publishedCount = $intussusception === false ? 0 : $intussusception->fetchColumn();
+    $intussusceptionPublished = is_numeric($publishedCount) && (int) $publishedCount > 0;
+
+    $routes = ['total' => 0, 'verified' => 0];
+    $statement = $pdo->query(
+        "SELECT COUNT(*) AS total,
+                SUM(is_active = 1 AND verified_at IS NOT NULL
+                    AND contact_name <> '' AND contact_phone <> '') AS verified
+           FROM escalation_routes"
+    );
+
+    if ($statement !== false) {
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+
+        if (is_array($row)) {
+            $total = $row['total'] ?? 0;
+            $verified = $row['verified'] ?? 0;
+
+            $routes['total'] = is_numeric($total) ? (int) $total : 0;
+            $routes['verified'] = is_numeric($verified) ? (int) $verified : 0;
+        }
+    }
+
+    $archives = 0;
+    $directory = $config->backupDirectory();
+
+    if (is_dir($directory)) {
+        foreach (scandir($directory) ?: [] as $entry) {
+            if (preg_match('/\Abooking-\d{8}-\d{6}(?:-\d+)?\.sql\.gz\.enc\z/', $entry) === 1) {
+                $archives++;
+            }
+        }
+    }
+
+    $credentials = ['total' => 0, 'rotated' => 0, 'named' => 0];
+    $registerPath = $config->root('database/operations/credential-inventory.php');
+
+    if (is_file($registerPath)) {
+        $inventory = \App\Support\CredentialInventory::fromFile($registerPath);
+
+        foreach ($inventory->credentials() as $entry) {
+            $credentials['total']++;
+
+            if ($entry['rotated_on'] !== null) {
+                $credentials['rotated']++;
+            }
+
+            if ($entry['custodian'] !== null) {
+                $credentials['named']++;
+            }
+        }
+    }
+
+    // The number of policy pages is a property of the source, not of what happens to be in this
+    // database: a development schema that a test has swept should not make the gate look closer to
+    // met than the release candidate is. Published pages still come from the database, because
+    // publication is a database fact.
+    $policySource = $config->root('database/content/policy-pages.php');
+
+    if (is_file($policySource)) {
+        /** @var mixed $policyPages */
+        $policyPages = require $policySource;
+
+        if (is_array($policyPages)) {
+            $policy['total'] = max($policy['total'], count($policyPages));
+        }
+    }
+
+    $recovery = $config->backupRecoveryKeyFile();
+
+    return new \App\Domain\ReleaseGateFacts(
+        policyPagesTotal: $policy['total'],
+        policyPagesPublished: $policy['published'],
+        retentionActive: $config->retentionScheduleActive(),
+        intussusceptionPublished: $intussusceptionPublished,
+        escalationRoutesTotal: $routes['total'],
+        escalationRoutesVerified: $routes['verified'],
+        appointmentsDefined: count(\App\Domain\OperationalAppointment::cases()),
+        appointmentsNamed: null,
+        backupKeyConfigured: $config->backupEncryptionKey() !== null,
+        encryptedArchives: $archives,
+        restoreDrillRecorded: null,
+        credentialsTotal: $credentials['total'],
+        credentialsWithRotation: $credentials['rotated'],
+        credentialsWithCustodian: $credentials['named'],
+        recoveryKeyPresent: $recovery !== null && is_file($recovery),
+    );
 }
 
 /**
