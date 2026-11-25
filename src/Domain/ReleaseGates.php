@@ -328,9 +328,9 @@ final class ReleaseGates
         return [
             'state' => self::PARTIAL,
             'detail' => $facts->encryptedArchives . ' encrypted archive(s) on disk and the key is'
-                . ' configured, but no restore result is stored anywhere: db:restore-drill prints its'
-                . ' verdict and keeps none. A successful drill has to be run and recorded in the release'
-                . ' file, because a backup nobody has restored is a hypothesis.',
+                . ' configured, but no successful restore drill within the last 90 days is recorded.'
+                . ' Run `php bin/console db:restore-drill --record`: the row is written only after the'
+                . ' comparison passes, because a backup nobody has restored is a hypothesis.',
         ];
     }
 

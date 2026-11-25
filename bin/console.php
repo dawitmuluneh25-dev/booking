@@ -684,9 +684,10 @@ function reportReleaseGates(Application $app, array $options): int
 /**
  * The facts behind `release:gates`, gathered in one place.
  *
- * One of them is deliberately null. `restoreDrillRecorded` describes a record that does not exist — a
- * drill prints its verdict and stores none — so the honest fact is "unobservable", not "false". A false
- * would read as "checked and absent", which is a different and stronger claim.
+ * `restoreDrillRecorded` is null only where migration 0049 has not been applied. Since that migration
+ * the drill writes its own row after the comparison passes, so the fact is a date rather than a hope —
+ * and a null now means "this host cannot see the table", which is a different sentence from "no drill
+ * has run".
  *
  * `appointmentsNamed` used to be null for the same reason. Since migration 0048 the five appointments
  * are rows, so the fact became observable and had to stop being an excuse: a gate that keeps saying
@@ -768,6 +769,23 @@ function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
         $appointments['named'] = is_numeric($named) ? (int) $named : 0;
     }
 
+    // A drill older than 90 days is a memory rather than evidence: the archive it proved may since have
+    // been pruned and the schema has moved on. Ninety days matches the rotation ceiling D-10 sets for
+    // credentials, so the two clocks agree about what "recent" means.
+    $drills = ['recorded' => null];
+
+    try {
+        $latestDrill = $app->restoreDrills()->latestSuccessful();
+
+        $drills['recorded'] = $latestDrill !== null && (new \DateTimeImmutable(
+            $latestDrill['verifiedAt'],
+            new \DateTimeZone('UTC'),
+        ))->modify('+90 days') > new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+    } catch (Throwable) {
+        // No `restore_drills` table on this host (0049 not applied). "Cannot tell" — not "no drills".
+        $drills['recorded'] = null;
+    }
+
     $archives = 0;
     $directory = $config->backupDirectory();
 
@@ -829,7 +847,7 @@ function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
         appointmentsNamed: $appointments['named'],
         backupKeyConfigured: $config->backupEncryptionKey() !== null,
         encryptedArchives: $archives,
-        restoreDrillRecorded: null,
+        restoreDrillRecorded: $drills['recorded'],
         credentialsTotal: $credentials['total'],
         credentialsWithRotation: $credentials['rotated'],
         credentialsWithCustodian: $credentials['named'],
@@ -1610,6 +1628,8 @@ function restoreDrill(Application $app, array $options): int
     $path = '';
     $target = null;
     $keep = false;
+    $record = false;
+    $file = null;
 
     foreach ($options as $option) {
         if (str_starts_with($option, '--file=')) {
@@ -1620,6 +1640,9 @@ function restoreDrill(Application $app, array $options): int
         }
         if ($option === '--keep') {
             $keep = true;
+        }
+        if ($option === '--record') {
+            $record = true;
         }
     }
 
@@ -1635,6 +1658,18 @@ function restoreDrill(Application $app, array $options): int
         echo 'restoring ' . $file->name . ' (' . ($file->encrypted ? 'encrypted' : 'unencrypted') . ')' . PHP_EOL;
         $result = $app->backups()->verify($file, $target, $keep);
     } catch (Throwable $exception) {
+        if ($record) {
+            // A drill that could not run is evidence too: the archive did not restore, and the next
+            // reader needs to know that rather than inferring it from an empty table.
+            recordRestoreDrill($app, $file, [
+                'target' => $target ?? '(none)',
+                'tables' => 0,
+                'rows' => 0,
+                'mismatches' => [],
+                'dropped' => false,
+            ], 'failed');
+        }
+
         fwrite(STDERR, 'Restore drill failed: ' . $exception->getMessage() . PHP_EOL);
 
         return 1;
@@ -1648,6 +1683,12 @@ function restoreDrill(Application $app, array $options): int
     );
 
     if ($result['mismatches'] !== []) {
+        // A failed drill is evidence too: "we tried and it did not match" is what a reader needs, and
+        // an absence cannot express it.
+        if ($record) {
+            recordRestoreDrill($app, $file, $result, 'failed');
+        }
+
         fwrite(STDERR, "Row counts do not match:\n");
         foreach ($result['mismatches'] as $mismatch) {
             fwrite(STDERR, '  ' . $mismatch . PHP_EOL);
@@ -1656,10 +1697,41 @@ function restoreDrill(Application $app, array $options): int
         return 1;
     }
 
+    if ($record) {
+        recordRestoreDrill($app, $file, $result, 'ok');
+    }
+
     echo $result['dropped'] ? "scratch database dropped\n" : "scratch database left in place\n";
     echo "backup verified: the file restores to identical row counts\n";
 
     return 0;
+}
+
+/**
+ * Write the drill's verdict where the release gate can read it (0049).
+ *
+ * Called after the comparison, never before: the row is the evidence, so writing it first would make the
+ * table a claim about intent rather than a record of what happened.
+ *
+ * @param array{target: string, tables: int, rows: int, mismatches: list<string>, dropped: bool} $result
+ */
+function recordRestoreDrill(
+    Application $app,
+    ?\App\Support\BackupFile $file,
+    array $result,
+    string $verdict,
+): void {
+    $app->restoreDrills()->record([
+        'archive' => $file?->name ?? '(unknown)',
+        'encrypted' => $file?->encrypted ?? false,
+        'target' => $result['target'],
+        'tables' => $result['tables'],
+        'rows' => $result['rows'],
+        'verdict' => $verdict,
+        'actor' => 'cli:restore-drill',
+    ], gmdate('Y-m-d H:i:s'));
+
+    echo 'recorded in restore_drills: ' . $verdict . PHP_EOL;
 }
 
 /**

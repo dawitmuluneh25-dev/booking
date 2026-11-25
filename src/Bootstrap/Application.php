@@ -25,6 +25,7 @@ use App\Domain\NotificationFeedRepository;
 use App\Domain\NotificationRetentionRepository;
 use App\Domain\NotificationRetentionService;
 use App\Domain\OperationalAppointmentRepository;
+use App\Domain\RestoreDrillRepository;
 use App\Domain\SaveOperationalAppointment;
 use App\Domain\OutboxRepository;
 use App\Domain\RetentionPolicy;
@@ -122,6 +123,7 @@ use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoDocumentRepository;
 use App\Repositories\PdoNotificationRetentionRepository;
 use App\Repositories\PdoOperationalAppointmentRepository;
+use App\Repositories\PdoRestoreDrillRepository;
 use App\Repositories\PdoReferralRetentionRepository;
 use App\Repositories\PdoTrackingTokenRepository;
 use App\Repositories\PdoClinicalAssessmentRepository;
@@ -340,6 +342,8 @@ final class Application
     private ?NotificationRetentionRepository $notificationRetentionRepository = null;
 
     private ?OperationalAppointmentRepository $operationalAppointments = null;
+
+    private ?RestoreDrillRepository $restoreDrills = null;
 
     private ?AuditTrail $auditTrail = null;
 
@@ -1109,6 +1113,11 @@ final class Application
         // class retires at 365 days, and a policy built from `retentionDays()` would hold it for seven
         // years. Passing the number in keeps one place — the schedule — deciding periods.
         return new NotificationRetentionService($repository, new RetentionPolicy($days));
+    }
+
+    public function restoreDrills(): RestoreDrillRepository
+    {
+        return $this->restoreDrills ??= new PdoRestoreDrillRepository($this->pdo());
     }
 
     public function operationalAppointments(): OperationalAppointmentRepository
