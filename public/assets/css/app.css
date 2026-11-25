@@ -168,6 +168,20 @@ a:hover { color: var(--accent-hover); }
     gap: 0.35rem 1.25rem;
 }
 
+/* Twelve links plus the account actions do not fit on one row between a laptop and a wide desktop.
+   Rather than let the bar wrap into two rows — which pushed "Admin" down and split "Sign out" across
+   the break — the gap and the type step down through that range. Below 40rem the menu collapses
+   instead, which is why this starts just above it. */
+@media (min-width: 40.0625rem) and (max-width: 90rem) {
+    .site-nav {
+        gap: 0.3rem 0.7rem;
+    }
+
+    .site-nav a {
+        font-size: 0.875rem;
+    }
+}
+
 /* Hidden until a script says otherwise: without one the wrapped bar above is
    the fallback, and a button that opens nothing would be worse than no button. */
 .nav-toggle {
@@ -656,6 +670,13 @@ tr.is-superseded td {
     align-items: center;
     gap: 0.6rem;
     font-size: 0.9rem;
+}
+
+/* "Sign out" broke across two lines when the bar was tight, which reads as two actions rather than one.
+   Each account action is a phrase, so none of them wraps. */
+.header-account a,
+.header-account button {
+    white-space: nowrap;
 }
 
 .account-name {
