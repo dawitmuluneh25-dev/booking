@@ -2235,15 +2235,9 @@ function notificationPreflight(Application $app): int
     $driver = $config->notificationDriver();
     $production = $config->isProduction();
 
-    $readiness = \App\Notifications\DeliveryReadiness::assess(
-        $driver,
-        $production,
-        $config->mailActivationApproved(),
-        $config->brevoApiKey() !== '',
-        $config->brevoSender() !== '',
-        $config->notificationUrl() !== '',
-        $config->notificationToken() !== '',
-    );
+    // The same object the transport factory asks, so the command cannot report a
+    // rule the factory does not apply.
+    $readiness = \App\Notifications\NotificationSettings::fromConfig($config)->readiness();
 
     printf("environment : %s\n", $production ? 'production' : 'not production');
     printf("driver      : %s\n", $driver);

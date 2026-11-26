@@ -106,11 +106,11 @@ use App\Domain\UrgentCaseRepository;
 use App\Domain\RetentionService;
 use App\Domain\UserRepository;
 use App\Notifications\BrevoTransport;
-use App\Notifications\DeliveryReadiness;
 use App\Notifications\MisconfiguredTransport;
 use App\Notifications\CurlHttpClient;
 use App\Notifications\HttpTransport;
 use App\Notifications\LogTransport;
+use App\Notifications\NotificationSettings;
 use App\Notifications\NotificationTransport;
 use App\Notifications\OutboxDispatcher;
 use App\Http\Kernel;
@@ -366,10 +366,17 @@ final class Application
         private readonly View $view,
         private readonly Router $router,
         private readonly Logger $logger,
+        private readonly ?NotificationSettings $notificationSettings = null,
     ) {
     }
 
-    public static function boot(string $root): self
+    /**
+     * `$notificationSettings` exists for callers that already know how notifications
+     * are configured — a test asserting what production does, and nothing else at
+     * present. Live callers pass nothing and the settings are read from the
+     * environment, so behaviour is unchanged.
+     */
+    public static function boot(string $root, ?NotificationSettings $notificationSettings = null): self
     {
         Env::load($root . '/.env');
 
@@ -383,6 +390,7 @@ final class Application
             new View($config->root('templates'), ['appName' => $config->appName()]),
             $router,
             new Logger($config->root('var/logs')),
+            $notificationSettings,
         );
 
         // The authoriser needs the application that has just been built, so it is
@@ -951,34 +959,28 @@ final class Application
      */
     public function transport(): NotificationTransport
     {
+        $settings = $this->notificationSettings ?? NotificationSettings::fromConfig($this->config);
+
         // Production is only allowed to claim delivery when something can deliver. A log driver there
         // marks rows `sent` and sends nothing, and the outbox is the record staff use to answer "was the
         // patient told?" — so the answer has to be a failure they can see, not a receipt they cannot.
-        $readiness = DeliveryReadiness::assess(
-            $this->config->notificationDriver(),
-            $this->config->isProduction(),
-            $this->config->mailActivationApproved(),
-            $this->config->brevoApiKey() !== '',
-            $this->config->brevoSender() !== '',
-            $this->config->notificationUrl() !== '',
-            $this->config->notificationToken() !== '',
-        );
+        $readiness = $settings->readiness();
 
-        if ($this->config->isProduction() && !$readiness['ok']) {
+        if ($settings->production && !$readiness['ok']) {
             return new MisconfiguredTransport((string) $readiness['reason']);
         }
 
-        if ($this->config->notificationDriver() === 'http') {
+        if ($settings->driver === 'http') {
             return new HttpTransport(
                 new CurlHttpClient(),
-                $this->config->notificationUrl(),
-                $this->config->notificationToken(),
-                $this->config->notificationTimeout(),
-                new DateTimeZone($this->config->timezone()),
+                $settings->httpUrl,
+                $settings->httpToken,
+                $settings->httpTimeoutSeconds,
+                new DateTimeZone($settings->timezone),
             );
         }
 
-        if ($this->config->notificationDriver() === 'brevo') {
+        if ($settings->driver === 'brevo') {
             // Production sending stays off until O-3 section 8 evidence is
             // accepted. Note what an unactivated transport does: it fails
             // loudly per message rather than falling back to the log driver,
@@ -986,19 +988,19 @@ final class Application
             // queue look healthy while nothing left the building.
             return new BrevoTransport(
                 new CurlHttpClient(),
-                $this->config->brevoApiKey(),
-                $this->config->brevoSender(),
-                $this->config->brevoSenderName(),
+                $settings->brevoApiKey,
+                $settings->brevoSender,
+                $settings->brevoSenderName,
                 BrevoTransport::ENDPOINT,
                 10,
-                new DateTimeZone($this->config->timezone()),
-                !$this->config->isProduction() || $this->config->mailActivationApproved(),
+                new DateTimeZone($settings->timezone),
+                !$settings->production || $settings->approved,
             );
         }
 
         return new LogTransport(
             $this->config->root('var/logs/notifications.log'),
-            new DateTimeZone($this->config->timezone()),
+            new DateTimeZone($settings->timezone),
         );
     }
 
