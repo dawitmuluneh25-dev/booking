@@ -1,9 +1,12 @@
 # Retention schedule — Legal validation and activation record
 
 **Decision:** HR-ENG-DEC-R1-003 **D-02** (22 November 2026).
-**Schedule:** `App\Domain\RetentionSchedule`, adopted 24 November 2026, switched off.
-**Validation:** given **25 November 2026** by **Gemechisa Dalu** (Legal / Data Protection).
+**Schedule:** `App\Domain\RetentionSchedule`, adopted 24 November 2026, amended 26 November 2026.
+**Validation:** given **25 November 2026** by **Gemechisa Dalu** (Legal / Data Protection); **re-confirmed
+27 November 2026** against the amended table.
+**Record:** `database/operations/retention-validation.php` — `release:gates` reads this file, not this page.
 **Activation:** `RETENTION_SCHEDULE_ACTIVE=true` in the production environment.
+**Gate:** `[MET]` since the 27 November re-confirmation.
 
 ---
 
@@ -279,9 +282,9 @@ documents. Neither of those is the evidence of anything else.
 validation is re-approved, not extended. Three classes and one new class have altered, so the schedule is
 running on figures the 25 November signature does not cover.
 
-`release:gates` reports retention activation as `PARTIAL` and will keep doing so, because the repository can
-confirm the schedule runs and cannot confirm that a person validated it. That is the gate behaving correctly,
-not a defect to work around.
+`release:gates` reported retention activation as `PARTIAL` between 26 and 27 November, because the repository
+can confirm the schedule runs and cannot confirm that a person validated it. The re-confirmation in §8 is
+what closed it — not a flag, and not this paragraph. The gate was behaving correctly, not failing.
 
 Two classes left §5a's gap list on 26 November 2026. `dispatch_runs` moved from unscheduled to five years and
 gained a sweep the same day; `uploaded_clinical_documents` gained the sweep that applies its own period
@@ -291,3 +294,75 @@ That leaves **two**: `clinical_and_procedure` and `security_and_audit`, both wit
 are the two that cannot be finished by writing code alone. Deleting audit rows is a decision a clinical
 system should take deliberately, and legal hold has to exist before it does; deleting procedure records is
 the same question pointed at the clinical record itself.
+---
+
+## 8. The validation record, and why the gate can now move
+
+Until 26 November 2026 the gate had two answers: `open` while `RETENTION_SCHEDULE_ACTIVE` was off, and
+`partial` while it was on. There was no `met` branch, so the row could not stop asking — and a gate that
+can never close stops being read, which is how §7b's gap would have survived indefinitely.
+
+The validation is now a record at **`database/operations/retention-validation.php`**: who validated, the
+office they act for, the date, what they validated, and a fingerprint of the schedule as it stood. The gate
+compares that fingerprint with `RetentionSchedule::fingerprint()` and reports one of four states.
+
+| State | Meaning | Gate |
+|---|---|---|
+| `unrecorded` | No file, or nobody named | `partial` |
+| `incomplete` | Named, but no date, no scope, or an office other than Legal / Data Protection | `partial` |
+| `stale` | Complete, but the schedule changed after the date recorded | `partial` |
+| `current` | Complete, and the fingerprint matches the table this build executes | `met` |
+
+**The record read `stale` for exactly one day, and that is the mechanism working.** Gemechisa Dalu validated
+the schedule on 25 November 2026 (§1). The next day four classes moved and one was added (§7). A validation
+given on the 25th cannot cover a table adopted on the 26th, so between those dates the record named the real
+approver and the real date and left the fingerprint null — inventing a hash for the 25th would have been a
+fabricated provenance for a genuine approval.
+
+On **27 November 2026** the same approver re-confirmed the table as it then stood, and the record now carries
+that date and the fingerprint `cad40459f901…`. The gate reads `met`. What matters for the future is what
+happens next time a period moves: the literal fingerprint stops matching, the row returns to `partial` on
+that commit, and a person has to look at the table again. The closure is a signature, not a switch.
+
+### 8a. Why the fingerprint is a literal
+
+`schedule_fingerprint` is written into the file, not computed from `RetentionSchedule` at load time. A file
+that recomputed itself would always agree with the table, and a check that always agrees is decoration. The
+literal is what makes an amendment un-validate itself: change a period, add a class, or move the 35-day
+backup maximum, and the recorded hash no longer matches — on that commit, without anyone remembering to
+revoke the approval.
+
+### 8b. What the record cannot do
+
+It cannot verify that the named person exists, holds the office, or read what they were given. It records an
+assertion and checks its **scope**, not its sincerity. The signature stays a human act, and no command fills
+the file in — §3.3 forbids a mechanism that turns its own rows green, and a program that could mark its own
+attestation current would be exactly that.
+
+To re-validate: run `php bin/console.php retention:plan`, which prints the table and its fingerprint; have
+Legal / Data Protection confirm the periods, the lawful basis, the preservation exceptions and the applicable
+Ethiopian requirements against that table; then update `approved_on` and copy the printed fingerprint into
+`schedule_fingerprint`. Commit. The commit is the provenance.
+
+One thing a validator is entitled to be told before they sign: `clinical_and_procedure` and
+`security_and_audit` still have periods with no sweep behind them (§5c). The period is right and nothing
+applies it. That is a coverage gap, reported by `retention:plan` and distinct from this validation — but a
+confirmation given without knowing it would not be an informed one.
+
+### 8c. Re-confirmation, 27 November 2026
+
+| Field | Value |
+|---|---|
+| Approver | Gemechisa Dalu |
+| Office | Legal / Data Protection |
+| Date | 2026-11-27 |
+| Scope | The periods, the lawful basis, the preservation exceptions and the applicable Ethiopian requirements, as the schedule stood on 27 November 2026 |
+| Fingerprint | `cad40459f901073f26e3a6901a2a4150cf6b4fc22a186623eb2525d9780fedce` |
+
+Confirmed: `clinical_and_procedure` 1,825 days · `referral_and_intake` 2,557 · `uploaded_clinical_documents`
+1,825 · `appointment_and_administrative` 2,557 · `notification_and_outbox` 365 · `security_and_audit` 2,557 ·
+`dispatch_runs` 1,825 · backups 35 days maximum, 14 copies.
+
+The confirmation was given with the coverage gap stated — two classes have periods and nothing applies them
+(§5c). It does not qualify the approval, and it is recorded here so no later reader assumes the signatory was
+kept in the dark about it.

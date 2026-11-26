@@ -304,6 +304,43 @@ final class CredentialInventoryTest extends TestCase
         self::assertTrue($inventory->hasFailure($report, true));
     }
 
+    /**
+     * A request is not a rotation.
+     *
+     * D-10's panel-password finding is an exposure event, and the one thing worse than no record is a
+     * record that says it was fixed. The date of the *request* is worth holding — a request with no date
+     * is a sentence in a chat log, and this project has already watched a control gap survive on those —
+     * but it must not change the state, and `--require-recorded` must still fail on the row.
+     */
+    public function testARequestedRotationIsRecordedWithoutBeingCountedAsDone(): void
+    {
+        $inventory = $this->inventory([
+            $this->entry([
+                'key' => 'PANEL_PASSWORD',
+                'source' => 'external',
+                'kind' => 'hosting',
+                'office' => 'Operations Lead',
+                'rotation_requested_on' => '2026-11-27',
+            ]),
+        ]);
+        $report = $inventory->report(self::TODAY, []);
+
+        self::assertSame('unobservable', $report[0]['state']);
+        self::assertStringContainsString('rotation requested 2026-11-27', $report[0]['detail']);
+
+        // Requested, not done: the release gate must keep failing the row.
+        self::assertTrue($inventory->hasFailure($report, true));
+    }
+
+    public function testAnImpossibleRequestDateIsRefusedAtLoad(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->inventory([
+            $this->entry(['rotation_requested_on' => '2026-02-30']),
+        ]);
+    }
+
     public function testTheBackupKeyWithARotationIsGovernedByTheArchiveRule(): void
     {
         $row = $this->row(

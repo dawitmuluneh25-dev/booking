@@ -101,7 +101,12 @@ return [
             // reports the rotation gap for this row.
             'custodian' => 'Bewnet',
             'interval_days' => 90,
+            // D-10 treats this as an exposure event that has already happened, not a tidy-up. The owner
+            // asked for it on 27 November 2026; `rotated_on` stays null until Bewnet has actually changed
+            // it in the panel, because a request recorded as a rotation is the same lie as no record at
+            // all — only better hidden.
             'rotated_on' => null,
+            'rotation_requested_on' => '2026-11-27',
         ],
         [
             'key' => 'STAGING_BASIC_AUTH',
@@ -113,6 +118,7 @@ return [
             'custodian' => 'Bewnet',
             'interval_days' => 90,
             'rotated_on' => null,
+            'rotation_requested_on' => '2026-11-27',
         ],
         [
             'key' => 'ADMIN_LOGIN',

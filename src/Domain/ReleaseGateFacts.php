@@ -34,6 +34,11 @@ final readonly class ReleaseGateFacts
      * @param int      $credentialsWithRotation those carrying a rotation date
      * @param int      $credentialsWithCustodian those naming a person
      * @param bool     $recoveryKeyPresent      the D-08 independent recovery copy exists
+     * @param string|null $retentionValidation  `RetentionValidationRecord::*`; null when the caller
+     *                                          cannot read the register, which is not the same as
+     *                                          "no validation" but sorts with it
+     * @param string|null $retentionValidationDetail the record's own explanation, so the gate can
+     *                                          quote it rather than paraphrase
      */
     public function __construct(
         public int $policyPagesTotal = 0,
@@ -51,6 +56,8 @@ final readonly class ReleaseGateFacts
         public int $credentialsWithRotation = 0,
         public int $credentialsWithCustodian = 0,
         public bool $recoveryKeyPresent = false,
+        public ?string $retentionValidation = null,
+        public ?string $retentionValidationDetail = null,
     ) {
     }
 }

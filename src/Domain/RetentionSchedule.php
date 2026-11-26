@@ -106,6 +106,44 @@ final class RetentionSchedule
         return self::CLASSES;
     }
 
+    /**
+     * A hash of the schedule as adopted, so a validation can name what it validated.
+     *
+     * D-02's condition is a validation of "the periods, the lawful basis and the preservation
+     * exceptions" — before production activation, and once. A once-only approval against a table that
+     * can change is not a control: move a class from five years to seven and the approval silently
+     * extends to cover something nobody looked at. The fingerprint makes that visible, because the
+     * validation record stores the fingerprint it was given and the gate compares the two. A changed
+     * period, an added class or a renamed one all change the hash; reordering the table does not, since
+     * order carries no meaning here.
+     *
+     * The backup limits are in scope because they are retention periods in the same decision — 35 days
+     * and a 14-copy cap sit in D-02's own table — and a validation that excluded them would be a
+     * validation of most of the schedule.
+     */
+    public static function fingerprint(): string
+    {
+        $classes = self::CLASSES;
+        ksort($classes);
+
+        $lines = [];
+
+        foreach ($classes as $recordClass => $days) {
+            $lines[] = $recordClass . '=' . $days;
+        }
+
+        $lines[] = 'backup_max_age_days=' . self::BACKUP_MAX_AGE_DAYS;
+        $lines[] = 'backup_copy_cap=' . self::BACKUP_COPY_CAP;
+
+        return hash('sha256', implode("\n", $lines));
+    }
+
+    /** The part of the fingerprint a person can compare by eye in a terminal or a document. */
+    public static function fingerprintShort(): string
+    {
+        return substr(self::fingerprint(), 0, 12);
+    }
+
     public function backupMaxAgeDays(): int
     {
         return self::BACKUP_MAX_AGE_DAYS;

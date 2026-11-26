@@ -6,6 +6,7 @@ namespace Tests\Unit;
 
 use App\Domain\ReleaseGateFacts;
 use App\Domain\ReleaseGates;
+use App\Support\RetentionValidationRecord;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -41,6 +42,8 @@ final class ReleaseGatesTest extends TestCase
             'credentialsWithRotation' => 0,
             'credentialsWithCustodian' => 0,
             'recoveryKeyPresent' => false,
+            'retentionValidation' => null,
+            'retentionValidationDetail' => null,
         ];
 
         /** @var array<string, mixed> $merged */
@@ -70,6 +73,12 @@ final class ReleaseGatesTest extends TestCase
             credentialsWithRotation: $count($merged['credentialsWithRotation']),
             credentialsWithCustodian: $count($merged['credentialsWithCustodian']),
             recoveryKeyPresent: $flag($merged['recoveryKeyPresent']),
+            retentionValidation: is_string($merged['retentionValidation'])
+                ? $merged['retentionValidation']
+                : null,
+            retentionValidationDetail: is_string($merged['retentionValidationDetail'])
+                ? $merged['retentionValidationDetail']
+                : null,
         );
     }
 
@@ -155,7 +164,40 @@ final class ReleaseGatesTest extends TestCase
         $gate = $this->gate('retention_activation', ['retentionActive' => true]);
 
         self::assertSame('partial', $gate['state']);
-        self::assertStringContainsString('attestation', $gate['detail']);
+        self::assertStringContainsString('No validation record', $gate['detail']);
+    }
+
+    /**
+     * And with a current record it is met — the branch that did not exist until 26 November 2026, when
+     * the gate could only ever say `open` or `partial` and therefore never stop asking.
+     */
+    public function testAValidatedScheduleMeetsTheRetentionGate(): void
+    {
+        $gate = $this->gate('retention_activation', [
+            'retentionActive' => true,
+            'retentionValidation' => RetentionValidationRecord::CURRENT,
+            'retentionValidationDetail' => 'Validated by Gemechisa Dalu on 2026-11-27.',
+        ]);
+
+        self::assertSame('met', $gate['state']);
+        self::assertStringContainsString('Gemechisa Dalu', $gate['detail']);
+        // Met is not the same as clean: the two unswept classes stay named in the row so a green gate
+        // cannot be read as "retention is finished".
+        self::assertStringContainsString('clinical_and_procedure', $gate['detail']);
+    }
+
+    public function testAStaleValidationLeavesTheGatePartialAndSaysWhy(): void
+    {
+        // The property the prose version could not have: the schedule moved, so the approval stopped
+        // covering it, and the gate says so without anyone having to remember to revoke anything.
+        $gate = $this->gate('retention_activation', [
+            'retentionActive' => true,
+            'retentionValidation' => RetentionValidationRecord::STALE,
+            'retentionValidationDetail' => 'The schedule changed after 2026-11-27.',
+        ]);
+
+        self::assertSame('partial', $gate['state']);
+        self::assertStringContainsString('The schedule changed after 2026-11-27.', $gate['detail']);
     }
 
     public function testTheIntussusceptionGateTurnsOnPublicationWhichD03MakesContingent(): void

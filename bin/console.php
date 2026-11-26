@@ -846,6 +846,13 @@ function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
 
     $recovery = $config->backupRecoveryKeyFile();
 
+    // Read from the register, not from the environment: D-02's condition is a validation, and the flag
+    // only says the periods run. A checkout with no record reports `unrecorded`, which the gate treats
+    // as `partial` — the safe direction, and the one that does not require a file to exist to be honest.
+    $validation = \App\Support\RetentionValidationRecord::fromFile(
+        $app->root('database/operations/retention-validation.php'),
+    );
+
     return new \App\Domain\ReleaseGateFacts(
         policyPagesTotal: $policy['total'],
         policyPagesPublished: $policy['published'],
@@ -865,6 +872,8 @@ function collectReleaseGateFacts(Application $app): \App\Domain\ReleaseGateFacts
         credentialsWithRotation: $credentials['rotated'],
         credentialsWithCustodian: $credentials['named'],
         recoveryKeyPresent: $recovery !== null && is_file($recovery),
+        retentionValidation: $validation->state,
+        retentionValidationDetail: $validation->summary(),
     );
 }
 
@@ -1948,10 +1957,25 @@ function retentionScheduleReport(Application $app): void
     );
 
     if ($schedule->isActive()) {
-        echo PHP_EOL . 'The schedule is ACTIVE: Legal validation is recorded and these periods run.' . PHP_EOL;
+        // "Legal validation is recorded" was this line's claim before there was anything to record. The
+        // flag says the schedule runs; whether it was validated is a different question, answered below
+        // by the record — and the old sentence was the kind of confidence that outlives its evidence.
+        echo PHP_EOL . 'The schedule is ACTIVE: these periods run.' . PHP_EOL;
     } else {
         echo PHP_EOL . 'The schedule is NOT ACTIVE. ' . wordwrap($schedule->inactiveReason(), 100) . PHP_EOL;
     }
+
+    // The validation D-02 requires, as a record rather than a paragraph. Printed here because this is
+    // where a person reads the table the validation is about: whoever fills the register in needs the
+    // fingerprint that is on screen next to the periods they are confirming.
+    $validation = \App\Support\RetentionValidationRecord::fromFile(
+        $app->root('database/operations/retention-validation.php'),
+    );
+
+    echo PHP_EOL . 'D-02 validation — who confirmed this table' . PHP_EOL;
+    echo '  ' . wordwrap($validation->summary(), 96, PHP_EOL . '  ') . PHP_EOL;
+    echo '  schedule fingerprint ' . \App\Domain\RetentionSchedule::fingerprintShort()
+        . '; the record must carry this value to count as current.' . PHP_EOL;
 
     // A period and a purge path are different things, and the table above cannot
     // show the difference: a class with a declared period and no code reads exactly

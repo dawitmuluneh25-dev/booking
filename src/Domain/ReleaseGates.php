@@ -176,13 +176,19 @@ final class ReleaseGates
     }
 
     /**
-     * A flag is an attestation, not evidence.
+     * A flag is an attestation, not evidence. A record with a fingerprint is evidence of an attestation.
      *
      * `RETENTION_SCHEDULE_ACTIVE=true` means somebody in Legal's name decided the periods in D-02 may
-     * run. Nothing in this repository can confirm that decision was taken, so a set flag is `partial` —
-     * the activation is real, the validation behind it is asserted. That is the most this class may say,
-     * and saying more would be exactly the substitution of a variable for an approval that D-02 warns
-     * about.
+     * run. Nothing in this repository can confirm that decision was taken, so a set flag alone is
+     * `partial` — the activation is real, the validation behind it is asserted.
+     *
+     * That was the whole story until 26 November 2026, and it made the gate impossible to close: a
+     * row that can only say "asserted" forever stops being read. The record at
+     * `database/operations/retention-validation.php` carries the validator, the date, the scope and a
+     * fingerprint of the schedule they validated, so the gate can now ask a sharper question — does the
+     * schedule this build executes still match the one that was validated? If it does, the row is
+     * `met`; if the table moved, the fingerprint moved with it and the row is `partial` again with the
+     * change named. The approval is still a human act; only its scope is now checkable.
      *
      * @return array{state: string, detail: string}
      */
@@ -197,12 +203,24 @@ final class ReleaseGates
             ];
         }
 
+        if ($this->facts->retentionValidation === \App\Support\RetentionValidationRecord::CURRENT) {
+            return [
+                'state' => self::MET,
+                'detail' => ($this->facts->retentionValidationDetail ?? 'The validation record matches the'
+                    . ' schedule this build executes.') . ' Two classes still have periods and no sweep'
+                    . ' (clinical_and_procedure, security_and_audit); that is a coverage gap reported by'
+                    . ' retention:plan, not a validation gap, and it does not make the period wrong.',
+            ];
+        }
+
         return [
             'state' => self::PARTIAL,
             'detail' => 'RETENTION_SCHEDULE_ACTIVE is on and the class sweeps run: bookings, referrals and'
-                . ' documents at their class period, outbox rows retired at 365 days. The validation behind'
-                . ' it is an attestation — the repository can confirm the schedule runs, not that Legal /'
-                . ' Data Protection validated the periods, lawful basis and exceptions D-02 requires.',
+                . ' documents at their class period, outbox rows retired at 365 days. '
+                . ($this->facts->retentionValidationDetail ?? 'No validation record could be read.')
+                . ' D-02 requires Legal / Data Protection to validate the periods, lawful basis and'
+                . ' exceptions before production activation; the record at'
+                . ' database/operations/retention-validation.php is where that is asserted.',
         ];
     }
 

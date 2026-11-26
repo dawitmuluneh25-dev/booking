@@ -60,7 +60,8 @@ final class CredentialInventory
      *     office: string,
      *     custodian: ?string,
      *     interval_days: ?int,
-     *     rotated_on: ?string
+     *     rotated_on: ?string,
+     *     rotation_requested_on: ?string
      * }>
      */
     private array $credentials = [];
@@ -166,7 +167,8 @@ final class CredentialInventory
      *     office: string,
      *     custodian: ?string,
      *     interval_days: ?int,
-     *     rotated_on: ?string
+     *     rotated_on: ?string,
+     *     rotation_requested_on: ?string
      * }>
      */
     public function credentials(): array
@@ -317,7 +319,8 @@ final class CredentialInventory
      *     office: string,
      *     custodian: ?string,
      *     interval_days: ?int,
-     *     rotated_on: ?string
+     *     rotated_on: ?string,
+     *     rotation_requested_on: ?string
      * } $entry
      * @param list<string> $configured
      *
@@ -344,6 +347,18 @@ final class CredentialInventory
         ];
 
         if ($entry['source'] === 'external') {
+            // The rotation of an external secret cannot be performed or observed from this host, so the
+            // only thing this register can hold is the request: when it was asked for, and by when it
+            // must happen. Without the date the request is a sentence in a chat log, which is how a
+            // panel password stays unchanged for a year while everyone believes it was raised.
+            if ($entry['rotation_requested_on'] !== null) {
+                return $base + [
+                    'state' => 'unobservable',
+                    'detail' => 'held outside this host; rotation requested '
+                        . $entry['rotation_requested_on'] . ', not observable from here',
+                ];
+            }
+
             return $base + [
                 'state' => 'unobservable',
                 'detail' => 'held outside this host; presence and rotation cannot be read from here',
@@ -431,7 +446,8 @@ final class CredentialInventory
      *     office: string,
      *     custodian: ?string,
      *     interval_days: ?int,
-     *     rotated_on: ?string
+     *     rotated_on: ?string,
+     *     rotation_requested_on: ?string
      * }
      */
     private static function normalise(array $entry): array
@@ -444,6 +460,7 @@ final class CredentialInventory
         $custodian = $entry['custodian'] ?? null;
         $interval = $entry['interval_days'] ?? null;
         $rotatedOn = $entry['rotated_on'] ?? null;
+        $requestedOn = $entry['rotation_requested_on'] ?? null;
 
         return [
             'key' => is_string($key) ? $key : '',
@@ -454,6 +471,7 @@ final class CredentialInventory
             'custodian' => is_string($custodian) ? $custodian : null,
             'interval_days' => is_int($interval) ? $interval : null,
             'rotated_on' => is_string($rotatedOn) ? $rotatedOn : null,
+            'rotation_requested_on' => is_string($requestedOn) ? $requestedOn : null,
         ];
     }
 
@@ -466,7 +484,8 @@ final class CredentialInventory
      *     office: string,
      *     custodian: ?string,
      *     interval_days: ?int,
-     *     rotated_on: ?string
+     *     rotated_on: ?string,
+     *     rotation_requested_on: ?string
      * } $entry
      */
     private function assertEntryIsWellFormed(array $entry): void
@@ -513,6 +532,12 @@ final class CredentialInventory
 
         if ($entry['rotated_on'] !== null) {
             self::today($entry['rotated_on']);
+        }
+
+        // A request is a date, not a promise: the same parse, so an impossible one is refused here
+        // rather than printed as though it meant something.
+        if ($entry['rotation_requested_on'] !== null) {
+            self::today($entry['rotation_requested_on']);
         }
     }
 

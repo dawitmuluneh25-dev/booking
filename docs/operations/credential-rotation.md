@@ -205,10 +205,49 @@ paste into a report; the register says so rather than claiming a control that on
 | Rotation on record for any credential | **None.** Every credential reports `unrecorded` |
 | Named custodian for any credential | **Two of eight.** The hosting pair, from the 26 November appointments. `--require-recorded` still fails |
 | Credentials kept out of source control | `.env` and `.env.*` are ignored; `.env.example` documents names only. The panel credential in `outputs/.staging-credentials.txt` is **outside** this repository and still on disk (S2) |
-| Panel and FTPS password rotated | **Not done** (S1). Under D-10 this is an exposure event that has already occurred |
+| Panel and FTPS password rotated | **Not done** (S1). Under D-10 this is an exposure event that has already occurred. **Requested 27 November 2026**; the register carries `rotation_requested_on` and the row still reads `unobservable` |
+| Staging basic-auth rotated | **Not done.** Requested 27 November 2026, same custodian, same row state |
 | Backup key rotated | Not rotated; no rotation needed, and §8 governs it when one is |
+| Independent recovery copy of the backup key | **Placed 27 November 2026** at `C:\Users\dev\booking-recovery\backup-encryption.key`, named by `BACKUP_RECOVERY_KEY_FILE`. See §10 for what that does and does not achieve |
 | Rotate-before-release gate | `security:credentials --require-recorded` exists and currently exits 1, which is the true state |
 
 The gap that matters is not the register. It is that **no credential in this system has a verifiable
 rotation history**, and the panel password is the one that has demonstrably left the building. The
 register makes both facts visible on every run; only the owner and Operations can close them.
+
+---
+
+## 10. The recovery copy, and the independence it does not have
+
+D-08 requires an independent copy of `BACKUP_ENCRYPTION_KEY` in a separate protected place. Until 27
+November 2026 there was none on the record: `BACKUP_RECOVERY_KEY_FILE` was unset and `backup:key-check`
+warned on every run.
+
+**What was done, on the owner's instruction.** A copy was written to
+`C:\Users\dev\booking-recovery\backup-encryption.key`, outside the application tree and outside the backup
+directory, and `BACKUP_RECOVERY_KEY_FILE` was set to that path. `backup:key-check` now reports `[OK] Recovery
+copy`.
+
+**What that does and does not achieve, stated plainly because the check cannot say it.**
+
+- **It does:** make the key recoverable if the `.env` file alone is lost or corrupted, and it keeps the copy
+  out of the document root and away from the archives it unlocks. Those are real.
+- **It does not:** survive the loss this control exists for. The copy is on the same host as the key it
+  protects, so a disk failure, a ransomware event or a full account compromise takes both. `KeyCustody`
+  verifies a path, not a location, which is why the check passing is not the same as D-08 being satisfied.
+
+A genuinely independent copy — on another machine, or in a password manager outside this host — remains the
+requirement. When one exists, point `BACKUP_RECOVERY_KEY_FILE` at it and this section stops applying. The
+honest reading of the current state is: **recoverable from a file-level mistake, not from a host-level one.**
+
+### 10a. Why a request is a date and not a sentence
+
+`rotation_requested_on` exists because the two credentials that matter most here cannot be rotated from this
+host: `PANEL_PASSWORD` and `STAGING_BASIC_AUTH` live in a hosting panel operated by the Operations Lead. An
+engineering request to rotate them previously existed only in conversation, and a control gap that lives only
+in conversation survives until someone happens to remember it.
+
+The field records when the request was made and leaves `rotated_on` null until the rotation actually happened.
+`security:credentials` prints it (`rotation requested 2026-11-27, not observable from here`), and
+`--require-recorded` still fails the row. A request recorded as a rotation would be the same lie as no record
+at all, only better hidden.
