@@ -42,11 +42,24 @@ not a credential. Two tests hold that claim to the code: one fails when a key is
 `routes/` or `public/` and classified nowhere, the other when `.env.example` and the register disagree in
 either direction. A new secret therefore arrives as a red build, not as a ninth undocumented variable.
 
-**`custodian` is null everywhere, deliberately.** D-10 asks for a named owner. Naming a person is an
-operational act (D-07), and the register is edited by engineering; a name typed here would be the
-invented identity that decision forbids. The `office` is filled from the approval record that carries
-D-10. Until an office-holder signs the register, `--require-recorded` fails — which is the release gate
-this is meant to be.
+**Custody is split by domain, decided 26 November 2026.** D-10 asks for a named owner per secret. The
+owner's answer was that custody follows the domain rather than sitting with one person, which maps onto the
+`office` values already in the register:
+
+| Domain | Secrets | Accountable office | Named custodian |
+|---|---|---|---|
+| Application | `DB_PASSWORD`, `APP_SECRET`, `BACKUP_ENCRYPTION_KEY`, `NOTIFY_BREVO_API_KEY`, `NOTIFY_HTTP_TOKEN` | Engineering Lead | **none** — no Engineering Lead has been appointed |
+| Hosting | `PANEL_PASSWORD`, `STAGING_BASIC_AUTH` | Operations Lead | **Bewnet**, holder of `operations_lead` since 26 November 2026 |
+| Login | `ADMIN_LOGIN` | Product Owner | **none recorded** — the office-holder is the account owner, who has not named themselves here |
+
+The two names that exist came from the operational appointments approved on 26 November 2026, not from
+engineering filling in a blank. That distinction is the whole reason the field is trustworthy: a name that
+entered the project through an approval is an operational act, and a name typed by engineering is the
+invented identity D-07 forbids. Two of eight custodians is therefore the honest count, and
+`--require-recorded` still fails — which is the release gate this is meant to be.
+
+**Still missing:** an appointed Engineering Lead, and the Product Owner naming themselves (or delegating)
+for `ADMIN_LOGIN`. Until both exist, five of the eight secrets have no custodian.
 
 ---
 
@@ -177,7 +190,7 @@ paste into a report; the register says so rather than claiming a control that on
 | Register, with an accountable office per secret | Done — eight entries, eight offices |
 | Every environment key classified, both directions | Done, and guarded by tests |
 | Rotation on record for any credential | **None.** Every credential reports `unrecorded` |
-| Named custodian for any credential | **None.** `--require-recorded` fails on all eight |
+| Named custodian for any credential | **Two of eight.** The hosting pair, from the 26 November appointments. `--require-recorded` still fails |
 | Credentials kept out of source control | `.env` and `.env.*` are ignored; `.env.example` documents names only. The panel credential in `outputs/.staging-credentials.txt` is **outside** this repository and still on disk (S2) |
 | Panel and FTPS password rotated | **Not done** (S1). Under D-10 this is an exposure event that has already occurred |
 | Backup key rotated | Not rotated; no rotation needed, and §8 governs it when one is |

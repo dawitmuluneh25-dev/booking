@@ -13,10 +13,14 @@
  * can be reconstructed, and inventing one would be worse than the gap. `security:credentials` prints
  * that gap on every run, and `--require-recorded` turns it into a build failure for the release gate.
  *
- * `custodian` is a person. It is null wherever nobody has been named, because naming people is an
- * operational act (D-07) and a name typed by engineering would be the invented identity that decision
- * forbids. The `office` field is the accountable role, and it is filled from the approval record that
- * carries D-10, not from assumption.
+ * `custodian` is a person. The owner decided on 26 November 2026 that custody is **split by domain**:
+ * application secrets belong to Engineering, the hosting surface to Operations, and the application login
+ * to the Product Owner. Where an office-holder exists in the operational appointments, the custodian is
+ * named from that record — a name that entered the project through an approval, not through engineering
+ * filling in a blank. Where the office is vacant or was never appointed, the field stays null, because
+ * naming people is an operational act (D-07) and a name typed by engineering would be the invented
+ * identity that decision forbids. The `office` field is the accountable role, filled from the approval
+ * record that carries D-10, not from assumption.
  *
  * Editing this file is how a rotation is recorded. See docs/operations/credential-rotation.md.
  */
@@ -84,7 +88,11 @@ return [
             'kind' => 'hosting',
             'function' => 'DirectAdmin panel login and the FTPS account (one secret, two surfaces)',
             'office' => 'Operations Lead',
-            'custodian' => null,
+            // Named 26 November 2026, from the approved `operations_lead` appointment rather than from a
+            // name typed by engineering. Holding the office is what makes this person the custodian; it is
+            // not an attestation that they have taken custody, which is why `security:credentials` still
+            // reports the rotation gap for this row.
+            'custodian' => 'Bewnet',
             'interval_days' => 90,
             'rotated_on' => null,
         ],
@@ -94,7 +102,8 @@ return [
             'kind' => 'hosting',
             'function' => 'htpasswd entry in front of the staging site while it is not public',
             'office' => 'Operations Lead',
-            'custodian' => null,
+            // Same custodian as the panel, and for the same reason: one person holds the hosting surface.
+            'custodian' => 'Bewnet',
             'interval_days' => 90,
             'rotated_on' => null,
         ],
