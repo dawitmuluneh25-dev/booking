@@ -22,6 +22,13 @@
  * identity that decision forbids. The `office` field is the accountable role, filled from the approval
  * record that carries D-10, not from assumption.
  *
+ * All eight now name a person, after the owner supplied the missing name on 26 November 2026. A named
+ * custodian is not a rotation history: `rotated_on` is still null on every row, and the report says so.
+ * The concentration is also worth stating plainly — one person is custodian of six secrets and holds
+ * both the Engineering Lead and Product Owner offices, while another holds the pair that guards the
+ * hosting panel. That is a defensible small-clinic arrangement and a single point of failure, and both
+ * of those things are true at once.
+ *
  * Editing this file is how a rotation is recorded. See docs/operations/credential-rotation.md.
  */
 
@@ -33,7 +40,7 @@ return [
             'kind' => 'database',
             'function' => 'Runtime database user: every application query, every migration',
             'office' => 'Engineering Lead',
-            'custodian' => null,
+            'custodian' => 'Dawit Radiologist',
             'interval_days' => 90,
             'rotated_on' => null,
         ],
@@ -43,7 +50,7 @@ return [
             'kind' => 'application',
             'function' => 'HMAC key behind the account-request throttle; unset falls back to a derived value',
             'office' => 'Engineering Lead',
-            'custodian' => null,
+            'custodian' => 'Dawit Radiologist',
             'interval_days' => 90,
             'rotated_on' => null,
         ],
@@ -53,7 +60,7 @@ return [
             'kind' => 'backup-key',
             'function' => 'Encrypts every database archive; custody is governed by D-08',
             'office' => 'Engineering Lead',
-            'custodian' => null,
+            'custodian' => 'Dawit Radiologist',
             // Null rather than 90: D-10 governs this key by the archive rule, not by the calendar.
             // Rotating it on a schedule would strand every archive encrypted under the old key.
             'interval_days' => null,
@@ -65,7 +72,7 @@ return [
             'kind' => 'api',
             'function' => 'Brevo transactional email; not activated in production (NOTIFY_PRODUCTION_APPROVED)',
             'office' => 'Engineering Lead',
-            'custodian' => null,
+            'custodian' => 'Dawit Radiologist',
             'interval_days' => 90,
             'rotated_on' => null,
         ],
@@ -75,7 +82,7 @@ return [
             'kind' => 'api',
             'function' => 'Bearer token for the notification gateway bridge; the adopted driver for D-09',
             'office' => 'Engineering Lead',
-            'custodian' => null,
+            'custodian' => 'Dawit Radiologist',
             'interval_days' => 90,
             'rotated_on' => null,
         ],
@@ -113,7 +120,7 @@ return [
             'kind' => 'application',
             'function' => 'The admin@hakimerad.com application account; a database row, not a variable',
             'office' => 'Product Owner',
-            'custodian' => null,
+            'custodian' => 'Dawit Radiologist',
             'interval_days' => 90,
             'rotated_on' => null,
         ],

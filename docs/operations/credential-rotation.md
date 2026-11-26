@@ -48,18 +48,25 @@ owner's answer was that custody follows the domain rather than sitting with one 
 
 | Domain | Secrets | Accountable office | Named custodian |
 |---|---|---|---|
-| Application | `DB_PASSWORD`, `APP_SECRET`, `BACKUP_ENCRYPTION_KEY`, `NOTIFY_BREVO_API_KEY`, `NOTIFY_HTTP_TOKEN` | Engineering Lead | **none** — no Engineering Lead has been appointed |
+| Application | `DB_PASSWORD`, `APP_SECRET`, `BACKUP_ENCRYPTION_KEY`, `NOTIFY_BREVO_API_KEY`, `NOTIFY_HTTP_TOKEN` | Engineering Lead | **Dawit Radiologist**, who also holds the Engineering Lead office |
 | Hosting | `PANEL_PASSWORD`, `STAGING_BASIC_AUTH` | Operations Lead | **Bewnet**, holder of `operations_lead` since 26 November 2026 |
-| Login | `ADMIN_LOGIN` | Product Owner | **none recorded** — the office-holder is the account owner, who has not named themselves here |
+| Login | `ADMIN_LOGIN` | Product Owner | **Dawit Radiologist**, the account owner |
 
-The two names that exist came from the operational appointments approved on 26 November 2026, not from
-engineering filling in a blank. That distinction is the whole reason the field is trustworthy: a name that
-entered the project through an approval is an operational act, and a name typed by engineering is the
-invented identity D-07 forbids. Two of eight custodians is therefore the honest count, and
-`--require-recorded` still fails — which is the release gate this is meant to be.
+The names came from the operational appointments approved on 26 November 2026 and from the owner naming
+themselves, not from engineering filling in a blank. That distinction is the whole reason the field is
+trustworthy: a name that entered the project through an approval is an operational act, and a name typed by
+engineering is the invented identity D-07 forbids.
 
-**Still missing:** an appointed Engineering Lead, and the Product Owner naming themselves (or delegating)
-for `ADMIN_LOGIN`. Until both exist, five of the eight secrets have no custodian.
+**All eight are now named, and the gate still fails.** `--require-recorded` tests `rotated_on` as well as
+`custodian`, and every `rotated_on` is still null because no credential in this system has a verifiable
+rotation history. A custodian is a person to ask; it is not evidence that anything was rotated.
+
+**What the distribution actually looks like.** Six secrets sit with one person, who holds both the Engineering
+Lead and Product Owner offices. The other two sit with the Operations Lead, and those two are the panel and
+FTPS credentials that share one password. So the arrangements that look like separation on paper collapse to
+two people, and one of them is the only person who can restore a backup. Recorded rather than fixed: at this
+clinic's size that may be the only workable arrangement, but it should be a decision somebody took rather than
+a pattern that emerged.
 
 **On the interval, 26 November 2026.** A 180-day interval was proposed and considered, and rejected. D-10
 sets a *maximum* of 90 days and allows a deviation only towards something **stricter**; 180 is the opposite
