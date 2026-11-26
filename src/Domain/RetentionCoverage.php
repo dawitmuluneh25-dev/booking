@@ -47,10 +47,12 @@ final class RetentionCoverage
         'appointment_and_administrative' => self::ENFORCED,
         'referral_and_intake' => self::ENFORCED,
         'notification_and_outbox' => self::ENFORCED,
-        // Referral documents are redacted with their referral. An upload that is not
-        // attached to a referral is not reached by that sweep, and no other path
-        // reaches it either — so the class is partly covered, not covered.
-        'uploaded_clinical_documents' => self::PARTIAL,
+        // Documents have their own sweep from 26 November 2026. The earlier note said an upload
+        // outside a referral was unreachable, which described a category that cannot exist:
+        // `referral_documents.referral_id` is NOT NULL. The real gap was that documents were only
+        // redacted when their referral was, so they followed the referral's 2,557-day clock and never
+        // their own 1,825. `PdoClinicalDocumentRetentionRepository` applies the period directly.
+        'uploaded_clinical_documents' => self::ENFORCED,
         'clinical_and_procedure' => self::DECLARED_ONLY,
         'security_and_audit' => self::DECLARED_ONLY,
         // Added 26 November 2026. `PdoDispatchRunRetentionRepository` deletes the whole row rather than

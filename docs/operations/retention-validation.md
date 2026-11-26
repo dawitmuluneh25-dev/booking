@@ -146,7 +146,7 @@ database is what caught it.
 | `appointment_and_administrative` | 2557 days | yes | `PdoRetentionRepository` redacts `bookings` |
 | `referral_and_intake` | 2557 days | yes | redacts `referrals` and deletes their tracking tokens |
 | `notification_and_outbox` | 365 days | yes | redaction, active only under the schedule |
-| `uploaded_clinical_documents` | 1825 days | **partly** | only redacted when their referral is, so they follow the referral's 2,557-day clock instead of their own 1,825 — see §5c |
+| `uploaded_clinical_documents` | 1825 days | **yes** | `PdoClinicalDocumentRetentionRepository` sweeps documents on their own 1,825-day clock, independently of the parent referral — see §5c |
 | `clinical_and_procedure` | 1825 days | **no** | declared, nothing applies it |
 | `security_and_audit` | 2557 days | **no** | declared, nothing applies it — and now the longest period in the schedule |
 | `dispatch_runs` | 1825 days | **yes** | `PdoDispatchRunRetentionRepository` deletes the row — added 26 November 2026, the first class whose act is removal rather than redaction |
@@ -216,6 +216,24 @@ Consequences worth stating before it is closed:
 - `document_access_events` (migration 0016) references documents and is not in the schedule at all. A sweep
   that removes a document while its access log stays is a smaller version of the same problem.
 
+**Closed on 26 November 2026.** `ClinicalDocumentRetentionService` now applies the class directly:
+`redacted_at IS NULL AND created_at < cutoff`, bytes deleted first, then the row redacted and marked
+deleted, in batches, recording against `retention_runs.uploaded_documents_redacted`.
+
+The ordering is the part that can lose data, so it has a test rather than a comment: **bytes first, then
+the row.** A file delete that fails leaves the row untouched and the sweep throws. The reverse order
+produces a redacted row whose file is still in private storage with nothing left to enumerate it by — the
+row no longer names the document, so nobody can discover what is still there.
+
+The parent referral is never touched by this sweep, and `ClinicalDocumentRetentionTest` asserts that
+against a real foreign key. That constraint is what makes the class distinct: a document reaches this
+sweep only because it is older than 1,825 days while its referral is younger than 2,557 — so the referral
+is still protected, and redacting it here would destroy a record the schedule says to keep.
+
+**Left open, and stated rather than fixed:** `document_access_events` still has no class in the schedule.
+A document removed on its own period now leaves an access log behind, which is the same problem one table
+down. It needs a period decision before it needs code.
+
 ## 6. Signature
 
 | Role | Name | Date | Scope |
@@ -265,10 +283,11 @@ running on figures the 25 November signature does not cover.
 confirm the schedule runs and cannot confirm that a person validated it. That is the gate behaving correctly,
 not a defect to work around.
 
-`dispatch_runs` moved from unscheduled to five years and gained a sweep the same day, which closes one of the
-gaps in §5a and leaves three: `clinical_and_procedure` and `security_and_audit` with a period and no sweep,
-and uploads outside a referral with no path at all.
+Two classes left §5a's gap list on 26 November 2026. `dispatch_runs` moved from unscheduled to five years and
+gained a sweep the same day; `uploaded_clinical_documents` gained the sweep that applies its own period
+rather than inheriting its referral's.
 
-The two that remain are the ones that cannot be finished by writing code alone. Deleting audit rows is a
-decision a clinical system should take deliberately, and legal hold has to exist before it does; deleting
-procedure records is the same question pointed at the clinical record itself.
+That leaves **two**: `clinical_and_procedure` and `security_and_audit`, both with a period and no sweep. They
+are the two that cannot be finished by writing code alone. Deleting audit rows is a decision a clinical
+system should take deliberately, and legal hold has to exist before it does; deleting procedure records is
+the same question pointed at the clinical record itself.

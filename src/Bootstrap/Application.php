@@ -104,6 +104,8 @@ use App\Domain\Transaction;
 use App\Domain\TriageReferral;
 use App\Domain\UrgentCaseRepository;
 use App\Domain\RetentionService;
+use App\Domain\ClinicalDocumentRetentionRepository;
+use App\Domain\ClinicalDocumentRetentionService;
 use App\Domain\DispatchRunRepository;
 use App\Domain\DispatchRunRetentionRepository;
 use App\Domain\DispatchRunRetentionService;
@@ -129,6 +131,7 @@ use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoDocumentRepository;
 use App\Repositories\PdoNotificationRetentionRepository;
 use App\Repositories\PdoOperationalAppointmentRepository;
+use App\Repositories\PdoClinicalDocumentRetentionRepository;
 use App\Repositories\PdoDispatchRunRepository;
 use App\Repositories\PdoDispatchRunRetentionRepository;
 use App\Repositories\PdoNotificationQueueRepository;
@@ -359,6 +362,8 @@ final class Application
     private ?DispatchRunRepository $dispatchRuns = null;
 
     private ?DispatchRunRetentionRepository $dispatchRunRetentionRepository = null;
+
+    private ?ClinicalDocumentRetentionRepository $clinicalDocumentRetentionRepository = null;
 
     private ?AuditTrail $auditTrail = null;
 
@@ -1152,6 +1157,17 @@ final class Application
     public function notificationQueue(): NotificationQueueRepository
     {
         return $this->notificationQueue ??= new PdoNotificationQueueRepository($this->pdo());
+    }
+
+    public function clinicalDocumentRetention(int $days): ClinicalDocumentRetentionService
+    {
+        $repository = $this->clinicalDocumentRetentionRepository
+            ??= new PdoClinicalDocumentRetentionRepository($this->pdo());
+
+        // The storage is the same one uploads write to. A sweep that deleted rows and left bytes behind
+        // would be the exact failure the ordering inside the service exists to prevent, so it is the same
+        // instance, not a second one built from the same path.
+        return new ClinicalDocumentRetentionService($repository, $this->documentStorage(), new RetentionPolicy($days));
     }
 
     public function dispatchRunRetention(int $days): DispatchRunRetentionService

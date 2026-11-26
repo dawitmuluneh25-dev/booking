@@ -49,16 +49,28 @@ final class RetentionCoverageTest extends TestCase
         self::assertContains('security_and_audit (declared_only)', RetentionCoverage::problems($rows));
     }
 
-    public function testAPartlyCoveredClassSaysWhichPart(): void
+    public function testUploadedDocumentsAreEnforcedOnTheirOwnClock(): void
     {
-        // Referral documents are redacted with their referral; an upload outside a
-        // referral is not. Calling that "enforced" would be the false reassurance the
-        // whole report exists to avoid.
-        $rows = RetentionCoverage::gaps(['uploaded_clinical_documents' => 2557]);
+        // Until 26 November 2026 this class was `partial`, and the note named a population that cannot
+        // exist: `referral_documents.referral_id` is NOT NULL, so there are no uploads outside a
+        // referral. The real gap was a missing trigger, and the class now has its own sweep on its own
+        // 1,825-day period rather than riding its referral's 2,557-day one.
+        $rows = RetentionCoverage::gaps(['uploaded_clinical_documents' => 1825]);
 
-        self::assertSame(RetentionCoverage::PARTIAL, $rows[0]['status']);
-        self::assertStringContainsString('referral documents', (string) $rows[0]['note']);
-        self::assertStringContainsString('not', (string) $rows[0]['note']);
+        self::assertSame(RetentionCoverage::ENFORCED, $rows[0]['status']);
+        self::assertNotContains('uploaded_clinical_documents (enforced)', RetentionCoverage::problems($rows));
+    }
+
+    public function testAPartlyCoveredClassIsStillAProblem(): void
+    {
+        // `partial` exists because a boolean could not say "some of this class is swept and some is
+        // not". A declared period is not enough to clear it — only `enforced` is — so a partly covered
+        // class has to keep appearing in the problem list with its period intact.
+        $problems = RetentionCoverage::problems([
+            ['class' => 'some_future_class', 'status' => RetentionCoverage::PARTIAL, 'days' => 1825, 'note' => ''],
+        ]);
+
+        self::assertSame(['some_future_class (partial)'], $problems);
     }
 
     public function testAnEmptyScheduleReportsNoRowsAtAll(): void
@@ -87,12 +99,11 @@ final class RetentionCoverageTest extends TestCase
         self::assertSame(
             [
                 'clinical_and_procedure (declared_only)',
-                'uploaded_clinical_documents (partial)',
                 'security_and_audit (declared_only)',
             ],
             $problems,
-            'Three classes are purged or fully covered; the rest are not. dispatch_runs left this list on'
-                . ' 26 November 2026 when its sweep was written.',
+            'Two classes have a period and no sweep. dispatch_runs left this list on 26 November 2026 and'
+                . ' uploaded_clinical_documents followed the same day, both when their sweeps were written.',
         );
     }
 

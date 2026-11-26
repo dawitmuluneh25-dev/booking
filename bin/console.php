@@ -1883,10 +1883,28 @@ function retentionPlan(Application $app): int
         );
     }
 
+    // Documents on their own clock. The referral line above counts referrals whose documents go with
+    // them; this counts the ones that expire while their referral is still inside its own period, which
+    // is a population the referral sweep can never reach. Two lines because they are two acts.
+    $uploads = null;
+
+    if ($schedule->isActive()) {
+        $uploads = $app->clinicalDocumentRetention(
+            $schedule->daysFor('uploaded_clinical_documents')
+        )->plan();
+
+        printf(
+            "uploads   : %d document(s) past %d days on their own period\n",
+            $uploads['eligible'],
+            $uploads['days'],
+        );
+    }
+
     $pending = $plan['eligible'] > 0
         || $referrals['eligible'] > 0
         || ($notifications !== null && $notifications['eligible'] > 0)
-        || ($dispatchRuns !== null && $dispatchRuns['eligible'] > 0);
+        || ($dispatchRuns !== null && $dispatchRuns['eligible'] > 0)
+        || ($uploads !== null && $uploads['eligible'] > 0);
 
     if ($pending) {
         echo PHP_EOL . "Run: php bin/console retention:purge --yes" . PHP_EOL;
@@ -1998,6 +2016,10 @@ function retentionPurge(Application $app, array $options): int
             ? $app->dispatchRunRetention($schedule->daysFor('dispatch_runs'))
             : null;
 
+        $uploadService = $schedule->isActive()
+            ? $app->clinicalDocumentRetention($schedule->daysFor('uploaded_clinical_documents'))
+            : null;
+
         if (!$confirmed) {
             $plan = $service->plan();
             $referrals = $referralService->plan();
@@ -2031,6 +2053,17 @@ function retentionPurge(Application $app, array $options): int
                 );
             }
 
+            if ($uploadService !== null) {
+                $uploads = $uploadService->plan();
+
+                printf(
+                    "         %d uploaded document(s) would be redacted and removed (%d days, cutoff %s)\n",
+                    $uploads['eligible'],
+                    $uploads['days'],
+                    $uploads['cutoff'],
+                );
+            }
+
             echo "Nothing changed. Re-run with --yes to redact." . PHP_EOL;
 
             return 1;
@@ -2040,6 +2073,7 @@ function retentionPurge(Application $app, array $options): int
         $documentResult = $referralService->purge('cli:retention', $batch);
         $notificationResult = $notificationService?->purge('cli:retention', $batch);
         $dispatchRunResult = $dispatchRunService?->purge('cli:retention', $batch);
+        $uploadResult = $uploadService?->purge('cli:retention', $batch);
     } catch (Throwable $exception) {
         fwrite(STDERR, 'Retention failed: ' . $exception->getMessage() . PHP_EOL);
 
@@ -2073,6 +2107,15 @@ function retentionPurge(Application $app, array $options): int
             $dispatchRunResult['removed'],
             $dispatchRunResult['batches'],
             $dispatchRunResult['cutoff'],
+        );
+    }
+
+    if ($uploadResult !== null) {
+        printf(
+            "redacted %d uploaded document(s), removed %d file(s), cutoff %s\n",
+            $uploadResult['documents'],
+            $uploadResult['files'],
+            $uploadResult['cutoff'],
         );
     }
 
