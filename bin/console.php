@@ -1913,11 +1913,41 @@ function retentionScheduleReport(Application $app): void
 
     if ($schedule->isActive()) {
         echo PHP_EOL . 'The schedule is ACTIVE: Legal validation is recorded and these periods run.' . PHP_EOL;
+    } else {
+        echo PHP_EOL . 'The schedule is NOT ACTIVE. ' . wordwrap($schedule->inactiveReason(), 100) . PHP_EOL;
+    }
+
+    // A period and a purge path are different things, and the table above cannot
+    // show the difference: a class with a declared period and no code reads exactly
+    // like a class being emptied on schedule.
+    $rows = \App\Domain\RetentionCoverage::gaps($schedule->classes());
+
+    echo PHP_EOL . 'Coverage — does anything apply the period?' . PHP_EOL;
+
+    foreach ($rows as $row) {
+        printf(
+            "  %-32s %-16s %s\n",
+            $row['class'],
+            $row['status'],
+            $row['days'] === null ? '' : $row['days'] . ' days',
+        );
+
+        if ($row['status'] !== \App\Domain\RetentionCoverage::ENFORCED) {
+            echo '  ' . str_repeat(' ', 32) . wordwrap($row['note'], 84, PHP_EOL . str_repeat(' ', 51)) . PHP_EOL;
+        }
+    }
+
+    $problems = \App\Domain\RetentionCoverage::problems($rows);
+
+    if ($problems === []) {
+        echo PHP_EOL . 'Every declared class has a purge path.' . PHP_EOL;
 
         return;
     }
 
-    echo PHP_EOL . 'The schedule is NOT ACTIVE. ' . wordwrap($schedule->inactiveReason(), 100) . PHP_EOL;
+    echo PHP_EOL . 'Not covered: ' . implode(', ', $problems) . PHP_EOL;
+    echo 'These are known and recorded in docs/operations/retention-validation.md; they are not a'
+        . ' code defect to fix silently, because the period is a legal decision.' . PHP_EOL;
 }
 
 /**

@@ -130,6 +130,34 @@ pretend otherwise.
   enforced — see the schedule's own note. Encryption and restore testing are D-08/D-09's subject; the
   arithmetic is recorded there.
 
+## 5a. Coverage — which classes have a purge path (26 November 2026)
+
+A period in the schedule and code that applies it are different things, and `retention:plan` could not show
+the difference: a class with a declared period and no code read exactly like a class being emptied on
+schedule. It now prints a coverage line per class and names every one whose period nothing applies.
+
+| Class | Period | Enforced | Position |
+|---|---|---|---|
+| `bookings` | 2557 days | yes | redaction path |
+| `referrals` | 2557 days | yes | redaction path |
+| `notification_and_outbox` | 365 days | yes | redaction, active only under the schedule |
+| `security_and_audit` | 2557 days | **no** | declared, nothing applies it |
+| `dispatch_runs` | — | **no** | holds history with no period at all (added §54) |
+
+Both gaps are recorded rather than fixed, and the reason is the same for both: a period is a legal decision,
+not an engineering one, and the mistake to avoid is an engineer choosing a number and calling it retention.
+
+- **`security_and_audit`** is the more serious of the two. An audit trail that is declared to expire and
+  never does is a record kept beyond its stated basis. It also has an obvious tension to resolve first:
+  deleting the evidence of who changed what is itself something a clinical system should think about
+  deliberately, and legal hold has to exist before audit records can be removed.
+- **`dispatch_runs`** is smaller in consequence — a delivery schedule and counts, no patient detail — but it
+  is still operational history, and at one row per five minutes it grows about 105,000 rows a year.
+
+**What is needed to close either:** a period approved by the same role that approved §6, and a purge path
+that respects legal hold. Until then they appear in `retention:plan` under "Not covered", which is the point:
+the report is the record, not the absence of a report.
+
 ## 6. Signature
 
 | Role | Name | Date | Scope |
