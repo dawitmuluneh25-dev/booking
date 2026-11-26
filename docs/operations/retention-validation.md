@@ -146,7 +146,7 @@ database is what caught it.
 | `appointment_and_administrative` | 2557 days | yes | `PdoRetentionRepository` redacts `bookings` |
 | `referral_and_intake` | 2557 days | yes | redacts `referrals` and deletes their tracking tokens |
 | `notification_and_outbox` | 365 days | yes | redaction, active only under the schedule |
-| `uploaded_clinical_documents` | 1825 days | **partly** | referral documents are redacted with their referral; uploads outside a referral are not reached |
+| `uploaded_clinical_documents` | 1825 days | **partly** | only redacted when their referral is, so they follow the referral's 2,557-day clock instead of their own 1,825 — see §5c |
 | `clinical_and_procedure` | 1825 days | **no** | declared, nothing applies it |
 | `security_and_audit` | 2557 days | **no** | declared, nothing applies it — and now the longest period in the schedule |
 | `dispatch_runs` | 1825 days | **yes** | `PdoDispatchRunRetentionRepository` deletes the row — added 26 November 2026, the first class whose act is removal rather than redaction |
@@ -185,6 +185,36 @@ ledger's own remaining purpose is liveness, and `notify:dispatch-check` reads th
 
 The boundary is `started_at < cutoff`, not `<=`. A row written exactly on the cutoff is the oldest thing still
 inside the period, and an off-by-one there would remove a day of ledger at the edge of every run.
+
+### 5c. The `uploaded_clinical_documents` gap was described wrongly
+
+The row above used to say the class was *"partly applied: referral documents are redacted with their referral,
+uploads outside a referral are not"*. **There is no such thing as an upload outside a referral.**
+`referral_documents.referral_id` is `NOT NULL` with a foreign key to `referrals`, and it has been since
+migration 0009. Every document this system stores belongs to a referral. The phrase described a category that
+cannot exist.
+
+The class is nevertheless `partial`, and for a different reason:
+
+| | Period | What actually happens |
+|---|---|---|
+| `referral_and_intake` | 2,557 days | swept on its own cutoff |
+| `uploaded_clinical_documents` | 1,825 days | swept **only inside** `ReferralRetentionService::redactOne()`, when its parent referral is swept |
+
+So a document attached to a referral that is still inside its seven-year window is retained past its own
+five-year period — indefinitely, if the referral is retained to term. The document class's shorter period is
+never applied on its own. That is the gap: **not a missing table, a missing trigger.**
+
+Consequences worth stating before it is closed:
+
+- The sweep has to remove the bytes as well as the row's identity, and it must do so in the same order the
+  referral sweep uses — file first, then the row — or a failed delete leaves a redacted record whose file is
+  still in private storage with nothing left to find it by.
+- Closing it makes a document class redaction happen while its parent referral is still live. That is correct
+  under the schedule, and it is the first time this system deletes a clinical attachment without deleting the
+  record it was attached to. It should be an explicit act, not a side effect of the 1,825-day figure.
+- `document_access_events` (migration 0016) references documents and is not in the schedule at all. A sweep
+  that removes a document while its access log stays is a smaller version of the same problem.
 
 ## 6. Signature
 
