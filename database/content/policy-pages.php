@@ -57,8 +57,10 @@ return [
         'key' => 'policy.privacy',
         'title' => 'Privacy Notice',
         'author' => 'HR-WEB-CONTENT-R1-001 policy pack',
+        // 27 November 2026, not the 25th: the approval covering this page is the one given for the amended
+        // retention wording, not the earlier signature over the "7 years" sentence.
         'approver' => 'Gemechisa Dalu',
-        'approved_on' => '2026-11-25',
+        'approved_on' => '2026-11-27',
         'effective_on' => '2026-12-18',
         'review_on' => '2028-01-12',
         'translation_review_status' => 'source',
@@ -146,19 +148,29 @@ return [
                 ],
             ],
             [
-                // Heading is editorial — the decision supplied the paragraphs, not a heading. The paragraphs
-                // below are the approved retention wording, DEC-2026-11-20-03 (20 November 2026), verbatim,
-                // including its second sentence, which is ungrammatical as approved. It is transcribed rather
-                // than improved for the same reason every other sentence here is: these are the words the
-                // policy owner signed, and a tidied version is a different sentence nobody approved.
+                // Heading is editorial — the decision supplied the paragraphs, not a heading.
+                //
+                // First paragraph: the approved wording, DEC-2026-11-20-03 (20 November 2026), verbatim.
+                // Second paragraph: amended 27 November 2026, because the approved sentence said records were
+                // kept "7 years" and the schedule adopted under D-02 keeps clinical and procedure records for
+                // five. Publishing the original would have put the notice in conflict with the system it
+                // describes — the exact drift this file exists to prevent, arriving from the approved side.
+                //
+                // The amendment states each class's period and makes any longer period required by the MOH
+                // directive prevail. That second clause is not decoration: nobody has established that the
+                // directive permits five years for clinical records, so the notice must not assert it does.
                 'heading' => 'How long information is kept',
                 'paragraphs' => [
                     'HakimeRAD retains personal and health information only for as long as is justified by the '
                         . 'purposes for which it is processed and by applicable legal, professional and '
                         . 'institutional requirements.',
                     'The applicable retention and disposal arrangements are governed by the approved '
-                        . 'records-retention policy. In this case 7 years by Ethiopian medical record keeping '
-                        . 'directive by MOH.',
+                        . 'records-retention policy, which sets a period for each category of record: clinical '
+                        . 'and procedure records, and clinical documents uploaded to a referral, are kept for '
+                        . '5 years; referrals, appointments and audit records for 7 years; notification records '
+                        . 'for 12 months; and encrypted backups for no more than 35 days. Where the Ethiopian '
+                        . 'medical record keeping directive issued by the Ministry of Health, or another '
+                        . 'applicable requirement, requires a longer period, that longer period applies.',
                 ],
             ],
             [

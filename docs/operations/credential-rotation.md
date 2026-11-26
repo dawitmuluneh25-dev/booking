@@ -205,10 +205,10 @@ paste into a report; the register says so rather than claiming a control that on
 | Rotation on record for any credential | **None.** Every credential reports `unrecorded` |
 | Named custodian for any credential | **Two of eight.** The hosting pair, from the 26 November appointments. `--require-recorded` still fails |
 | Credentials kept out of source control | `.env` and `.env.*` are ignored; `.env.example` documents names only. The panel credential in `outputs/.staging-credentials.txt` is **outside** this repository and still on disk (S2) |
-| Panel and FTPS password rotated | **Not done** (S1). Under D-10 this is an exposure event that has already occurred. **Requested 27 November 2026**; the register carries `rotation_requested_on` and the row still reads `unobservable` |
-| Staging basic-auth rotated | **Not done.** Requested 27 November 2026, same custodian, same row state |
+| Panel and FTPS password rotated | **Not done** (S1). Under D-10 this is an exposure event that has already occurred. **Requested 26 November 2026**; the register carries `rotation_requested_on` and the row still reads `unobservable` |
+| Staging basic-auth rotated | **Not done.** Requested 26 November 2026, same custodian, same row state |
 | Backup key rotated | Not rotated; no rotation needed, and §8 governs it when one is |
-| Independent recovery copy of the backup key | **Placed 27 November 2026** at `C:\Users\dev\booking-recovery\backup-encryption.key`, named by `BACKUP_RECOVERY_KEY_FILE`. See §10 for what that does and does not achieve |
+| Independent recovery copy of the backup key | **Placed 26 November 2026** at `C:\Users\dev\booking-recovery\backup-encryption.key`, named by `BACKUP_RECOVERY_KEY_FILE`. See §10 for what that does and does not achieve |
 | Rotate-before-release gate | `security:credentials --require-recorded` exists and currently exits 1, which is the true state |
 
 The gap that matters is not the register. It is that **no credential in this system has a verifiable
@@ -248,6 +248,6 @@ engineering request to rotate them previously existed only in conversation, and 
 in conversation survives until someone happens to remember it.
 
 The field records when the request was made and leaves `rotated_on` null until the rotation actually happened.
-`security:credentials` prints it (`rotation requested 2026-11-27, not observable from here`), and
+`security:credentials` prints it (`rotation requested 2026-11-26, not observable from here`), and
 `--require-recorded` still fails the row. A request recorded as a rotation would be the same lie as no record
 at all, only better hidden.

@@ -52,7 +52,12 @@ return [
             'office' => 'Engineering Lead',
             'custodian' => 'Dawit Muluneh',
             'interval_days' => 90,
-            'rotated_on' => null,
+            // Generated and installed on this instance on 26 November 2026. Until then the value was absent
+            // and the throttle keyed off a hash of the database password and base URL — a documented
+            // fallback, and weaker than a generated secret because it is not independent of the database.
+            // This date is the local instance's; a production deployment sets its own value and records its
+            // own date, because the two never share a secret.
+            'rotated_on' => '2026-11-26',
         ],
         [
             'key' => 'BACKUP_ENCRYPTION_KEY',
@@ -102,11 +107,11 @@ return [
             'custodian' => 'Bewnet',
             'interval_days' => 90,
             // D-10 treats this as an exposure event that has already happened, not a tidy-up. The owner
-            // asked for it on 27 November 2026; `rotated_on` stays null until Bewnet has actually changed
+            // asked for it on 26 November 2026; `rotated_on` stays null until Bewnet has actually changed
             // it in the panel, because a request recorded as a rotation is the same lie as no record at
             // all — only better hidden.
             'rotated_on' => null,
-            'rotation_requested_on' => '2026-11-27',
+            'rotation_requested_on' => '2026-11-26',
         ],
         [
             'key' => 'STAGING_BASIC_AUTH',
@@ -118,7 +123,7 @@ return [
             'custodian' => 'Bewnet',
             'interval_days' => 90,
             'rotated_on' => null,
-            'rotation_requested_on' => '2026-11-27',
+            'rotation_requested_on' => '2026-11-26',
         ],
         [
             'key' => 'ADMIN_LOGIN',

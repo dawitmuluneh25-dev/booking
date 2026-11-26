@@ -3,10 +3,10 @@
 **Decision:** HR-ENG-DEC-R1-003 **D-02** (22 November 2026).
 **Schedule:** `App\Domain\RetentionSchedule`, adopted 24 November 2026, amended 26 November 2026.
 **Validation:** given **25 November 2026** by **Gemechisa Dalu** (Legal / Data Protection); **re-confirmed
-27 November 2026** against the amended table.
+26 November 2026** against the amended table.
 **Record:** `database/operations/retention-validation.php` — `release:gates` reads this file, not this page.
 **Activation:** `RETENTION_SCHEDULE_ACTIVE=true` in the production environment.
-**Gate:** `[MET]` since the 27 November re-confirmation.
+**Gate:** `[MET]` since the 26 November re-confirmation.
 
 ---
 
@@ -282,9 +282,10 @@ documents. Neither of those is the evidence of anything else.
 validation is re-approved, not extended. Three classes and one new class have altered, so the schedule is
 running on figures the 25 November signature does not cover.
 
-`release:gates` reported retention activation as `PARTIAL` between 26 and 27 November, because the repository
-can confirm the schedule runs and cannot confirm that a person validated it. The re-confirmation in §8 is
-what closed it — not a flag, and not this paragraph. The gate was behaving correctly, not failing.
+`release:gates` reported retention activation as `PARTIAL` from the amendment until the re-confirmation later
+the same day, because the repository can confirm the schedule runs and cannot confirm that a person validated
+it. The re-confirmation in §8 is what closed it — not a flag, and not this paragraph. The gate was behaving
+correctly, not failing.
 
 Two classes left §5a's gap list on 26 November 2026. `dispatch_runs` moved from unscheduled to five years and
 gained a sweep the same day; `uploaded_clinical_documents` gained the sweep that applies its own period
@@ -313,13 +314,15 @@ compares that fingerprint with `RetentionSchedule::fingerprint()` and reports on
 | `stale` | Complete, but the schedule changed after the date recorded | `partial` |
 | `current` | Complete, and the fingerprint matches the table this build executes | `met` |
 
-**The record read `stale` for exactly one day, and that is the mechanism working.** Gemechisa Dalu validated
-the schedule on 25 November 2026 (§1). The next day four classes moved and one was added (§7). A validation
-given on the 25th cannot cover a table adopted on the 26th, so between those dates the record named the real
+**The record read `stale` for a few hours, and that is the mechanism working.** Gemechisa Dalu validated
+the schedule on 25 November 2026 (§1). The next day four classes moved and one was added (§7), and the
+re-confirmation came the same afternoon — so the window between "the table moved" and "someone looked at it
+again" was hours, not weeks. A validation given on the 25th cannot cover a table adopted on the 26th, so
+between those points the record named the real
 approver and the real date and left the fingerprint null — inventing a hash for the 25th would have been a
 fabricated provenance for a genuine approval.
 
-On **27 November 2026** the same approver re-confirmed the table as it then stood, and the record now carries
+On **26 November 2026** the same approver re-confirmed the table as it then stood, and the record now carries
 that date and the fingerprint `cad40459f901…`. The gate reads `met`. What matters for the future is what
 happens next time a period moves: the literal fingerprint stops matching, the row returns to `partial` on
 that commit, and a person has to look at the table again. The closure is a signature, not a switch.
@@ -349,14 +352,14 @@ One thing a validator is entitled to be told before they sign: `clinical_and_pro
 applies it. That is a coverage gap, reported by `retention:plan` and distinct from this validation — but a
 confirmation given without knowing it would not be an informed one.
 
-### 8c. Re-confirmation, 27 November 2026
+### 8c. Re-confirmation, 26 November 2026
 
 | Field | Value |
 |---|---|
 | Approver | Gemechisa Dalu |
 | Office | Legal / Data Protection |
-| Date | 2026-11-27 |
-| Scope | The periods, the lawful basis, the preservation exceptions and the applicable Ethiopian requirements, as the schedule stood on 27 November 2026 |
+| Date | 2026-11-26 |
+| Scope | The periods, the lawful basis, the preservation exceptions and the applicable Ethiopian requirements, as the schedule stood on 26 November 2026 |
 | Fingerprint | `cad40459f901073f26e3a6901a2a4150cf6b4fc22a186623eb2525d9780fedce` |
 
 Confirmed: `clinical_and_procedure` 1,825 days · `referral_and_intake` 2,557 · `uploaded_clinical_documents`

@@ -8,17 +8,18 @@
  * paragraph in `docs/operations/retention-validation.md` as the thing the gate checks. The paragraph
  * still explains the validation; this file is what a machine can compare.
  *
- * **The record is current, and this paragraph is why it was not, until 27 November 2026.** Gemechisa
+ * **The record is current, and this paragraph is why it was not, until 26 November 2026.** Gemechisa
  * Dalu validated the schedule on 25 November 2026. The next day the table changed: four classes moved,
  * `dispatch_runs` was added, and the audit trail moved back to seven years. Between those two dates the
  * record reads `stale` — the fingerprint it carried no longer described the table — and the gate said
  * so rather than repeating an approval that had stopped covering what it named.
  *
- * On 27 November the same approver confirmed the table as it then stood, including the two classes
- * that still have a period and no sweep. That confirmation is the one recorded below: date 27 November,
+ * On 26 November the same approver confirmed the table as it then stood, including the two classes
+ * that still have a period and no sweep. That confirmation is the one recorded below: date 26 November,
  * fingerprint of the table printed by `retention:plan` at that moment. The `stale` state is not a stage
- * the mechanism skipped; it is what the mechanism was built to produce, and it produced it for exactly
- * one day before a person closed it.
+ * the mechanism skipped; it is what the mechanism was built to produce, and it produced it for a few
+ * hours before a person closed it — the amendment and the re-confirmation fall on the same calendar day,
+ * which is worth noting rather than smoothing over.
  *
  * How to complete it, once the office has confirmed:
  *
@@ -42,14 +43,14 @@ return [
     // The office they act for. D-02 names it; a record approved by any other office is incomplete.
     'office' => 'Legal / Data Protection',
 
-    // The date of the confirmation that covers the table below — 27 November 2026, re-confirming the
+    // The date of the confirmation that covers the table below — 26 November 2026, re-confirming the
     // periods adopted on the 26th. The earlier 25 November validation is recorded in
     // docs/operations/retention-validation.md §1 and §7; it is history, not the basis for this row.
-    'approved_on' => '2026-11-27',
+    'approved_on' => '2026-11-26',
 
     // What was validated. Quoted from the document rather than paraphrased, so the two cannot drift.
     'scope' => 'The periods, the lawful basis for holding each class, the preservation exceptions D-02 '
-        . 'names, and the applicable Ethiopian requirements — as the schedule stood on 27 November 2026, '
+        . 'names, and the applicable Ethiopian requirements — as the schedule stood on 26 November 2026, '
         . 'including the 26 November amendment.',
 
     // The value `retention:plan` printed when the confirmation was given. A literal on purpose: see the
@@ -57,7 +58,7 @@ return [
     // the commit that does it, which is the whole point of keeping it here rather than computing it.
     'schedule_fingerprint' => 'cad40459f901073f26e3a6901a2a4150cf6b4fc22a186623eb2525d9780fedce',
 
-    'notes' => 'Confirmed for the table as it stood on 27 November 2026: clinical_and_procedure 1,825 '
+    'notes' => 'Confirmed for the table as it stood on 26 November 2026: clinical_and_procedure 1,825 '
         . 'days, referral_and_intake 2,557, uploaded_clinical_documents 1,825, '
         . 'appointment_and_administrative 2,557, notification_and_outbox 365, security_and_audit 2,557, '
         . 'dispatch_runs 1,825, backups 35 days maximum and 14 copies. The confirmation was given with '

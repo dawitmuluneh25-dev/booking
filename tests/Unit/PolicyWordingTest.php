@@ -43,15 +43,23 @@ final class PolicyWordingTest extends TestCase
                         . 'address identified security weaknesses.',
                 ],
             ],
-            'retention — DEC-2026-11-20-03' => [
+            // Amended 27 November 2026. DEC-2026-11-20-03's second sentence said "7 years"; D-02's schedule
+            // keeps clinical and procedure records for five. The pin moved with the amendment, which is what
+            // this test is for — an edit to the notice cannot happen without someone editing this array and
+            // saying, in a diff, that the approved wording changed.
+            'retention — DEC-2026-11-20-03 as amended 27 November 2026' => [
                 'How long information is kept',
                 [
                     'HakimeRAD retains personal and health information only for as long as is justified by the '
                         . 'purposes for which it is processed and by applicable legal, professional and '
                         . 'institutional requirements.',
                     'The applicable retention and disposal arrangements are governed by the approved '
-                        . 'records-retention policy. In this case 7 years by Ethiopian medical record keeping '
-                        . 'directive by MOH.',
+                        . 'records-retention policy, which sets a period for each category of record: clinical '
+                        . 'and procedure records, and clinical documents uploaded to a referral, are kept for '
+                        . '5 years; referrals, appointments and audit records for 7 years; notification records '
+                        . 'for 12 months; and encrypted backups for no more than 35 days. Where the Ethiopian '
+                        . 'medical record keeping directive issued by the Ministry of Health, or another '
+                        . 'applicable requirement, requires a longer period, that longer period applies.',
                 ],
             ],
             'cookies and third parties — DEC-2026-11-20-04' => [
@@ -113,12 +121,24 @@ final class PolicyWordingTest extends TestCase
      * the approval is the one that was given, no clinical reviewer appears on a policy page, and the
      * review date is still D-01's — the only date nobody has re-decided.
      *
+     * **The privacy page moved to 27 November 2026**, when its retention paragraph was amended to match the
+     * schedule. `policy.booking` and `policy.referral` still carry the 25th: nothing in them changed, and
+     * copying the newer date onto them would claim an approval that was never re-given.
+     *
      * If it fails, either a provenance value was invented or somebody moved a document-control date
      * without a decision. Both are the failures this file exists to catch, in that order of likelihood.
      */
     public function testThePolicyPagesCarryTheApprovalTheyWereGiven(): void
     {
-        foreach (['policy.privacy', 'policy.booking', 'policy.referral'] as $key) {
+        // The date each page was actually approved over. The privacy notice was re-approved on 27 November
+        // 2026 for its amended retention wording; the other two have not changed since the 25th.
+        $approvedOn = [
+            'policy.privacy' => '2026-11-27',
+            'policy.booking' => '2026-11-25',
+            'policy.referral' => '2026-11-25',
+        ];
+
+        foreach ($approvedOn as $key => $expected) {
             $page = $this->page($key);
 
             self::assertSame(
@@ -128,7 +148,7 @@ final class PolicyWordingTest extends TestCase
             );
             self::assertSame('2028-01-12', $page['review_on'] ?? null, $key . ' does not carry D-01\'s review date.');
             self::assertSame('Gemechisa Dalu', $page['approver'] ?? null, $key . ' names the wrong approver.');
-            self::assertSame('2026-11-25', $page['approved_on'] ?? null, $key . ' carries the wrong approval date.');
+            self::assertSame($expected, $page['approved_on'] ?? null, $key . ' carries the wrong approval date.');
 
             self::assertArrayNotHasKey(
                 'clinical_reviewer',

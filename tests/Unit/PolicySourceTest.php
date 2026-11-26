@@ -223,13 +223,21 @@ final class PolicySourceTest extends TestCase
     {
         $source = new ContentSource();
 
+        // The privacy notice was re-approved on 27 November 2026 for its amended retention paragraph; the
+        // booking and referral pages have not changed since the 25th and must not borrow the newer date.
+        $approvedOn = ['policy.privacy' => '2026-11-27'];
+
         foreach (self::pages() as $page) {
             $draft = $source->toDraft($page, '2026-11-25 20:00:00');
             $key = self::header($page, 'key');
 
             self::assertNull($draft->clinicalReviewer, $key . ' names a clinical reviewer.');
             self::assertSame(self::APPROVER, $draft->approver, $key . ' names the wrong approver.');
-            self::assertSame(self::APPROVED_ON, $draft->approvedOn, $key . ' carries the wrong approval date.');
+            self::assertSame(
+                $approvedOn[$key] ?? self::APPROVED_ON,
+                $draft->approvedOn,
+                $key . ' carries the wrong approval date.',
+            );
             self::assertSame(self::EFFECTIVE_ON, $draft->effectiveOn, $key . ' carries the wrong effective date.');
 
             // D-01 fixed the review date and only the effective date was re-set by the approver.
