@@ -61,6 +61,12 @@ invented identity D-07 forbids. Two of eight custodians is therefore the honest 
 **Still missing:** an appointed Engineering Lead, and the Product Owner naming themselves (or delegating)
 for `ADMIN_LOGIN`. Until both exist, five of the eight secrets have no custodian.
 
+**On the interval, 26 November 2026.** A 180-day interval was proposed and considered, and rejected. D-10
+sets a *maximum* of 90 days and allows a deviation only towards something **stricter**; 180 is the opposite
+direction, so adopting it would have meant amending the decision rather than applying it. The owner chose to
+keep 90. Nothing in the register or `ROTATION_INTERVAL_DAYS` changed, and the recommendation is recorded here
+because "we thought about loosening it and did not" is worth more than silence.
+
 ---
 
 ## 3. The five events that require immediate rotation
