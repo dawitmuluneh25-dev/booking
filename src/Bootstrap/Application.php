@@ -104,6 +104,7 @@ use App\Domain\Transaction;
 use App\Domain\TriageReferral;
 use App\Domain\UrgentCaseRepository;
 use App\Domain\RetentionService;
+use App\Domain\DispatchRunRepository;
 use App\Domain\UserRepository;
 use App\Notifications\BrevoTransport;
 use App\Notifications\MisconfiguredTransport;
@@ -126,6 +127,7 @@ use App\Repositories\PdoClinicCalendar;
 use App\Repositories\PdoDocumentRepository;
 use App\Repositories\PdoNotificationRetentionRepository;
 use App\Repositories\PdoOperationalAppointmentRepository;
+use App\Repositories\PdoDispatchRunRepository;
 use App\Repositories\PdoNotificationQueueRepository;
 use App\Repositories\PdoRestoreDrillRepository;
 use App\Repositories\PdoReferralRetentionRepository;
@@ -350,6 +352,8 @@ final class Application
     private ?RestoreDrillRepository $restoreDrills = null;
 
     private ?NotificationQueueRepository $notificationQueue = null;
+
+    private ?DispatchRunRepository $dispatchRuns = null;
 
     private ?AuditTrail $auditTrail = null;
 
@@ -1143,6 +1147,11 @@ final class Application
     public function notificationQueue(): NotificationQueueRepository
     {
         return $this->notificationQueue ??= new PdoNotificationQueueRepository($this->pdo());
+    }
+
+    public function dispatchRuns(): DispatchRunRepository
+    {
+        return $this->dispatchRuns ??= new PdoDispatchRunRepository($this->pdo());
     }
 
     public function restoreDrills(): RestoreDrillRepository

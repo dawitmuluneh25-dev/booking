@@ -182,6 +182,9 @@ switch ($command) {
     case 'notify:preflight':
         exit(notificationPreflight($app));
 
+    case 'notify:dispatch-check':
+        exit(notificationDispatchCheck($app, $options));
+
     case 'release:gates':
         exit(reportReleaseGates($app, $options));
 
@@ -233,6 +236,10 @@ switch ($command) {
           php bin/console backup:key-check     Check the backup key's custody against D-08
           php bin/console security:credentials [--require-recorded] [--today=YYYY-MM-DD]
                                               Print the D-10 credential register and what is overdue
+          php bin/console notify:preflight         Can the configured driver actually deliver?
+          php bin/console notify:queue-health      Is the outbox being drained?
+          php bin/console notify:dispatch-check [--interval=5]
+                                              Did the dispatcher run at all, and recently?
           php bin/console release:gates [--json]   Print the seven §3.2 release gates and their evidence
           php bin/console escalation:seed-register
                                               Create the five D-06 route categories, empty and inactive
@@ -1281,12 +1288,34 @@ function dispatchOutbox(Application $app, array $options): int
         return 1;
     }
 
+    $startedAt = gmdate('Y-m-d H:i:s');
+
     try {
         $result = $app->dispatcher()->dispatch($limit);
     } catch (Throwable $exception) {
         fwrite(STDERR, 'Dispatch failed: ' . $exception->getMessage() . PHP_EOL);
 
         return 1;
+    }
+
+    // Written after the work, not before it. A row here means the process reached
+    // its own end, which is what `notify:dispatch-check` is asking; a row written
+    // on entry would let a run that dies halfway report a healthy schedule.
+    try {
+        $app->dispatchRuns()->record(new \App\Domain\DispatchRun(
+            startedAtUtc: $startedAt,
+            finishedAtUtc: gmdate('Y-m-d H:i:s'),
+            claimed: $result['sent'] + $result['retrying'] + $result['dead'],
+            sent: $result['sent'],
+            retrying: $result['retrying'],
+            dead: $result['dead'],
+            host: (string) gethostname(),
+        ));
+    } catch (Throwable $exception) {
+        // The messages went out; failing the command now would make the schedule
+        // look broken for a bookkeeping problem. Say so loudly instead.
+        fwrite(STDERR, 'Dispatch succeeded but the run could not be recorded: '
+            . $exception->getMessage() . PHP_EOL);
     }
 
     printf(
@@ -2268,6 +2297,84 @@ function notificationPreflight(Application $app): int
     }
 
     return $readiness['ok'] ? 0 : 1;
+}
+
+/**
+ * Report whether the dispatcher has run at all, and recently.
+ *
+ * `notify:queue-health` reads the queue and can only report a missing schedule
+ * once something is queueing in it. This reads the record the dispatcher writes
+ * about itself, so an empty queue on a host with no cron entry is reported as a
+ * missing schedule rather than as a quiet one.
+ *
+ * @param array<int, string> $options Arguments after the command name.
+ */
+function notificationDispatchCheck(Application $app, array $options): int
+{
+    $interval = \App\Notifications\DispatchLiveness::DEFAULT_INTERVAL_MINUTES;
+
+    foreach ($options as $option) {
+        if (str_starts_with($option, '--interval=')) {
+            $interval = max(1, min((int) substr($option, 11), 1440));
+        }
+    }
+
+    try {
+        $lastRun = $app->dispatchRuns()->lastRun();
+    } catch (Throwable $exception) {
+        printf("UNKNOWN: the dispatch ledger could not be read: %s\n", $exception->getMessage());
+
+        return 1;
+    }
+
+    $liveness = \App\Notifications\DispatchLiveness::assess(
+        $lastRun?->finishedAtUtc,
+        gmdate('Y-m-d H:i:s'),
+        $interval,
+    );
+
+    printf("schedule    : every %d minutes (two missed intervals is late)\n", $interval);
+    printf(
+        "last run    : %s\n",
+        $lastRun === null
+            ? '(never)'
+            : sprintf('%s on %s', $lastRun->finishedAtUtc, $lastRun->host),
+    );
+    $counts = $lastRun === null
+        ? ['claimed' => 0, 'sent' => 0, 'retrying' => 0, 'dead' => 0]
+        : [
+            'claimed' => $lastRun->claimed,
+            'sent' => $lastRun->sent,
+            'retrying' => $lastRun->retrying,
+            'dead' => $lastRun->dead,
+        ];
+
+    printf(
+        "that run    : %d claimed, %d sent, %d retrying, %d dead\n",
+        $counts['claimed'],
+        $counts['sent'],
+        $counts['retrying'],
+        $counts['dead'],
+    );
+    printf(
+        "age         : %s\n",
+        $liveness['age_minutes'] === null ? '(no run to measure)' : sprintf('%.1f minutes', $liveness['age_minutes']),
+    );
+    echo PHP_EOL;
+
+    if ($liveness['state'] === \App\Notifications\DispatchLiveness::OK) {
+        echo 'OK: the dispatcher is running.' . PHP_EOL;
+
+        return 0;
+    }
+
+    printf("%s:\n", strtoupper($liveness['state']));
+
+    foreach ($liveness['reasons'] as $reason) {
+        echo '  ' . $reason . PHP_EOL;
+    }
+
+    return 1;
 }
 
 /**
