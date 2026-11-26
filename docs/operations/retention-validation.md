@@ -136,18 +136,24 @@ A period in the schedule and code that applies it are different things, and `ret
 the difference: a class with a declared period and no code read exactly like a class being emptied on
 schedule. It now prints a coverage line per class and names every one whose period nothing applies.
 
+Listed by the schedule's own class names. The first draft used table names (`bookings`, `referrals`)
+and produced a report that was wrong in both directions; running `retention:plan` against the real
+database is what caught it.
+
 | Class | Period | Enforced | Position |
 |---|---|---|---|
-| `bookings` | 2557 days | yes | redaction path |
-| `referrals` | 2557 days | yes | redaction path |
+| `appointment_and_administrative` | 2557 days | yes | `PdoRetentionRepository` redacts `bookings` |
+| `referral_and_intake` | 2557 days | yes | redacts `referrals` and deletes their tracking tokens |
 | `notification_and_outbox` | 365 days | yes | redaction, active only under the schedule |
+| `uploaded_clinical_documents` | 2557 days | **partly** | referral documents are redacted with their referral; uploads outside a referral are not reached |
+| `clinical_and_procedure` | 2557 days | **no** | declared, nothing applies it |
 | `security_and_audit` | 2557 days | **no** | declared, nothing applies it |
-| `dispatch_runs` | — | **no** | holds history with no period at all (added §54) |
+| `dispatch_runs` | — | **no** | delivery history with no period at all (added §54) |
 
-Both gaps are recorded rather than fixed, and the reason is the same for both: a period is a legal decision,
+Each gap above is recorded rather than fixed, and the reason is the same for all of them: a period is a legal decision,
 not an engineering one, and the mistake to avoid is an engineer choosing a number and calling it retention.
 
-- **`security_and_audit`** is the more serious of the two. An audit trail that is declared to expire and
+- **`security_and_audit`** is the more serious of those. An audit trail that is declared to expire and
   never does is a record kept beyond its stated basis. It also has an obvious tension to resolve first:
   deleting the evidence of who changed what is itself something a clinical system should think about
   deliberately, and legal hold has to exist before audit records can be removed.

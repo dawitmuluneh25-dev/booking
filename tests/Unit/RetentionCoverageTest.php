@@ -10,18 +10,34 @@ use PHPUnit\Framework\TestCase;
 /**
  * Telling a decision apart from an implementation.
  *
- * A class with a declared period and no purge path reads identically to a class
- * being emptied on schedule. These cases are the difference, and the reason the
- * report exists at all.
+ * The first version of this test asserted against table names (`bookings`,
+ * `referrals`) instead of the schedule's class names, so it agreed with a report
+ * that was wrong: four purged classes were shown as gaps and two implementation
+ * paths appeared as classes without a period. Running `retention:plan` against
+ * the real database is what caught it, which is why one case below takes the real
+ * schedule verbatim.
  */
 final class RetentionCoverageTest extends TestCase
 {
-    public function testAClassWithAPeriodAndACodePathIsNotAProblem(): void
+    /** The classes `RetentionSchedule` actually declares, in its own order. */
+    private const REAL_SCHEDULE = [
+        'clinical_and_procedure' => 2557,
+        'referral_and_intake' => 2557,
+        'uploaded_clinical_documents' => 2557,
+        'appointment_and_administrative' => 2557,
+        'notification_and_outbox' => 365,
+        'security_and_audit' => 2557,
+    ];
+
+    public function testAPurgedClassIsNotReportedAsAGap(): void
     {
-        $rows = RetentionCoverage::gaps(['bookings' => 2557]);
+        $rows = RetentionCoverage::gaps(['appointment_and_administrative' => 2557]);
 
         self::assertSame(RetentionCoverage::ENFORCED, $rows[0]['status']);
-        self::assertNotContains('bookings (enforced)', RetentionCoverage::problems($rows));
+        self::assertNotContains(
+            'appointment_and_administrative (enforced)',
+            RetentionCoverage::problems($rows),
+        );
     }
 
     public function testADeclaredPeriodWithNoCodeIsReportedAsSuch(): void
@@ -32,41 +48,51 @@ final class RetentionCoverageTest extends TestCase
         self::assertContains('security_and_audit (declared_only)', RetentionCoverage::problems($rows));
     }
 
+    public function testAPartlyCoveredClassSaysWhichPart(): void
+    {
+        // Referral documents are redacted with their referral; an upload outside a
+        // referral is not. Calling that "enforced" would be the false reassurance the
+        // whole report exists to avoid.
+        $rows = RetentionCoverage::gaps(['uploaded_clinical_documents' => 2557]);
+
+        self::assertSame(RetentionCoverage::PARTIAL, $rows[0]['status']);
+        self::assertStringContainsString('referral documents', (string) $rows[0]['note']);
+        self::assertStringContainsString('not', (string) $rows[0]['note']);
+    }
+
     public function testHistoryWithNoPeriodIsNamedRatherThanOmitted(): void
     {
-        // dispatch_runs is not in the schedule at all. Omitting it from a coverage
-        // report would make an unmade decision look like a covered class.
         $rows = RetentionCoverage::gaps([]);
-
         $classes = array_column($rows, 'status', 'class');
 
         self::assertArrayHasKey('dispatch_runs', $classes);
         self::assertSame(RetentionCoverage::UNSCHEDULED, $classes['dispatch_runs']);
     }
 
-    public function testARealScheduleYieldsExactlyTheKnownGaps(): void
+    public function testTheRealScheduleYieldsExactlyTheKnownGaps(): void
     {
-        $rows = RetentionCoverage::gaps([
-            'bookings' => 2557,
-            'referrals' => 2557,
-            'notification_and_outbox' => 365,
-            'security_and_audit' => 2557,
-        ]);
+        $problems = RetentionCoverage::problems(RetentionCoverage::gaps(self::REAL_SCHEDULE));
 
         self::assertSame(
-            ['security_and_audit (declared_only)', 'dispatch_runs (unscheduled)'],
-            RetentionCoverage::problems($rows),
+            [
+                'clinical_and_procedure (declared_only)',
+                'uploaded_clinical_documents (partial)',
+                'security_and_audit (declared_only)',
+                'dispatch_runs (unscheduled)',
+            ],
+            $problems,
+            'Three classes are purged or fully covered; only these four are not.',
         );
     }
 
-    public function testEnforcementWithoutADeclaredPeriodIsADisagreementNotSilence(): void
+    public function testNoPhantomClassAppearsForWorkThatIsAlreadyCounted(): void
     {
-        // Code that deletes on a period nobody adopted is worse than code that does
-        // nothing: it destroys records the decision did not cover.
-        $rows = RetentionCoverage::gaps([]);
-        $bookings = array_values(array_filter($rows, static fn (array $row): bool => $row['class'] === 'bookings'));
+        // `bookings` and `referrals` are tables, not classes. Reporting them as classes
+        // without a period is how the first version produced "bookings (enforced)" in a
+        // list of things that are not covered.
+        $classes = array_column(RetentionCoverage::gaps(self::REAL_SCHEDULE), 'class');
 
-        self::assertSame('enforced', $bookings[0]['status']);
-        self::assertStringContainsString('disagree', (string) $bookings[0]['note']);
+        self::assertNotContains('bookings', $classes);
+        self::assertNotContains('referrals', $classes);
     }
 }
