@@ -14,12 +14,13 @@ The validation covers the schedule as implemented, class by class:
 
 | Record class | Period | Applies to |
 |---|---|---|
-| `clinical_and_procedure` | 7 years (2,557 days) | Procedure records, clinical notes, milestones |
+| `clinical_and_procedure` | 5 years (1,825 days) | Procedure records, clinical notes, milestones |
 | `referral_and_intake` | 7 years | Referrals, assessments, decisions, consent |
-| `uploaded_clinical_documents` | 7 years | Documents attached to a referral |
+| `uploaded_clinical_documents` | 5 years (1,825 days) | Documents attached to a referral |
 | `appointment_and_administrative` | 7 years | Appointments, resources, scheduling history |
 | `notification_and_outbox` | 12 months (365 days) | Notification records and the outbox |
-| `security_and_audit` | 7 years | Audit trail, sign-in records, security events |
+| `dispatch_runs` | 5 years (1,825 days) | Delivery schedule history — added 26 November 2026 |
+| `security_and_audit` | 5 years (1,825 days) | Audit trail, sign-in records, security events |
 
 Backups: **35 days maximum**, which is a ceiling rather than a target — see §6.
 
@@ -145,10 +146,10 @@ database is what caught it.
 | `appointment_and_administrative` | 2557 days | yes | `PdoRetentionRepository` redacts `bookings` |
 | `referral_and_intake` | 2557 days | yes | redacts `referrals` and deletes their tracking tokens |
 | `notification_and_outbox` | 365 days | yes | redaction, active only under the schedule |
-| `uploaded_clinical_documents` | 2557 days | **partly** | referral documents are redacted with their referral; uploads outside a referral are not reached |
-| `clinical_and_procedure` | 2557 days | **no** | declared, nothing applies it |
-| `security_and_audit` | 2557 days | **no** | declared, nothing applies it |
-| `dispatch_runs` | — | **no** | delivery history with no period at all (added §54) |
+| `uploaded_clinical_documents` | 1825 days | **partly** | referral documents are redacted with their referral; uploads outside a referral are not reached |
+| `clinical_and_procedure` | 1825 days | **no** | declared, nothing applies it |
+| `security_and_audit` | 1825 days | **no** | declared, nothing applies it |
+| `dispatch_runs` | 1825 days | **no** | scheduled on 26 November; still no sweep |
 
 Each gap above is recorded rather than fixed, and the reason is the same for all of them: a period is a legal decision,
 not an engineering one, and the mistake to avoid is an engineer choosing a number and calling it retention.
@@ -172,3 +173,32 @@ the report is the record, not the absence of a report.
 
 Recorded by engineering from the approval given on 25 November 2026. If the schedule changes — a class
 added, a period altered — this validation does not carry over, and activation must be re-approved.
+
+## 7. Amendment of 26 November 2026 — four classes moved to five years
+
+Legal/Data Protection amended the schedule on 26 November 2026. This is the record of what changed and what
+it does to the validation above.
+
+| Class | Before | After |
+|---|---|---|
+| `clinical_and_procedure` | 2,557 days (7 years) | **1,825 days (5 years)** |
+| `uploaded_clinical_documents` | 2,557 days | **1,825 days** |
+| `security_and_audit` | 2,557 days | **1,825 days** |
+| `dispatch_runs` | not in the schedule | **1,825 days** |
+| `referral_and_intake` | 2,557 days | unchanged |
+| `appointment_and_administrative` | 2,557 days | unchanged |
+| `notification_and_outbox` | 365 days | unchanged |
+
+**This validation does not carry over.** §6 states the rule: a class added or a period altered means the
+validation is re-approved, not extended. Two consequences follow, and neither is engineering's to decide:
+
+1. **The audit trail now expires before the records it describes.** `security_and_audit` at five years is
+   shorter than `referral_and_intake` and `appointment_and_administrative` at seven. A deletion of a referral
+   in year six would leave no audit record of why it happened. Either the audit class returns to seven years,
+   or the two seven-year classes come down to five — but the current table has the evidence outliving nothing.
+2. **Activation is now running on periods nobody has signed.** Until the re-approval is recorded, the schedule
+   is executing amended figures. The check that reports this is `release:gates`: retention activation stays
+   PARTIAL, because the repository can confirm the schedule runs and cannot confirm it was validated.
+
+`dispatch_runs` moving from unscheduled to five years closes one of the gaps in §5a and leaves the other
+three: two classes with a period and no sweep, and uploads outside a referral with no path at all.

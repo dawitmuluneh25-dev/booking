@@ -21,12 +21,13 @@ final class RetentionCoverageTest extends TestCase
 {
     /** The classes `RetentionSchedule` actually declares, in its own order. */
     private const REAL_SCHEDULE = [
-        'clinical_and_procedure' => 2557,
+        'clinical_and_procedure' => 1825,
         'referral_and_intake' => 2557,
-        'uploaded_clinical_documents' => 2557,
+        'uploaded_clinical_documents' => 1825,
         'appointment_and_administrative' => 2557,
         'notification_and_outbox' => 365,
-        'security_and_audit' => 2557,
+        'security_and_audit' => 1825,
+        'dispatch_runs' => 1825,
     ];
 
     public function testAPurgedClassIsNotReportedAsAGap(): void
@@ -78,7 +79,7 @@ final class RetentionCoverageTest extends TestCase
                 'clinical_and_procedure (declared_only)',
                 'uploaded_clinical_documents (partial)',
                 'security_and_audit (declared_only)',
-                'dispatch_runs (unscheduled)',
+                'dispatch_runs (declared_only)',
             ],
             $problems,
             'Three classes are purged or fully covered; only these four are not.',

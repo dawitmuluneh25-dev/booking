@@ -41,6 +41,9 @@ final class RetentionSchedule
     /** Seven calendar years, including two leap days. The same figure the privacy notice states. */
     public const SEVEN_YEARS_DAYS = Config::DEFAULT_RETENTION_DAYS;
 
+    /** Five calendar years, excluding leap days: the period adopted for four classes on 26 Nov 2026. */
+    public const FIVE_YEARS_DAYS = 1825;
+
     /** D-02's "12 months", as a fixed 365 days. */
     public const TWELVE_MONTHS_DAYS = 365;
 
@@ -56,12 +59,13 @@ final class RetentionSchedule
      * @var array<string, int>
      */
     public const CLASSES = [
-        'clinical_and_procedure' => self::SEVEN_YEARS_DAYS,
+        'clinical_and_procedure' => self::FIVE_YEARS_DAYS,
         'referral_and_intake' => self::SEVEN_YEARS_DAYS,
-        'uploaded_clinical_documents' => self::SEVEN_YEARS_DAYS,
+        'uploaded_clinical_documents' => self::FIVE_YEARS_DAYS,
         'appointment_and_administrative' => self::SEVEN_YEARS_DAYS,
         'notification_and_outbox' => self::TWELVE_MONTHS_DAYS,
-        'security_and_audit' => self::SEVEN_YEARS_DAYS,
+        'security_and_audit' => self::FIVE_YEARS_DAYS,
+        'dispatch_runs' => self::FIVE_YEARS_DAYS,
     ];
 
     /**
