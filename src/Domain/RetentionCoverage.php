@@ -53,6 +53,11 @@ final class RetentionCoverage
         'uploaded_clinical_documents' => self::PARTIAL,
         'clinical_and_procedure' => self::DECLARED_ONLY,
         'security_and_audit' => self::DECLARED_ONLY,
+        // Added 26 November 2026. `PdoDispatchRunRetentionRepository` deletes the whole row rather than
+        // redacting it, because a run row is a timestamp, four counters and a hostname — there is
+        // nothing in it that identifies a person, so removal is the honest act and `enforced` is the
+        // honest status.
+        'dispatch_runs' => self::ENFORCED,
     ];
 
     /**
@@ -60,9 +65,22 @@ final class RetentionCoverage
      *
      * @var array<string, string>
      */
-    public const UNSCHEDULED_RECORDS = [
-        'dispatch_runs' => 'delivery history with no period in the schedule — a decision nobody has made',
-    ];
+    public const UNSCHEDULED_RECORDS = [];
+
+    /**
+     * Records that hold data and have no class in the schedule.
+     *
+     * Empty since 26 November 2026, when `dispatch_runs` entered the schedule and gained a sweep. It is
+     * a method rather than a bare constant so the concept survives the list being empty: this is where
+     * the next table with data and no period is declared, and a reader who finds `[]` here learns that
+     * nothing is currently in that state, which is different from the question never having been asked.
+     *
+     * @return array<string, string>
+     */
+    public static function unscheduledRecords(): array
+    {
+        return self::UNSCHEDULED_RECORDS;
+    }
 
     /**
      * @param array<string, int> $declared Classes with a period, and the period in days.
@@ -84,7 +102,7 @@ final class RetentionCoverage
             ];
         }
 
-        foreach (self::UNSCHEDULED_RECORDS as $recordClass => $note) {
+        foreach (self::unscheduledRecords() as $recordClass => $note) {
             if (array_key_exists($recordClass, $declared)) {
                 continue;
             }

@@ -61,13 +61,23 @@ final class RetentionCoverageTest extends TestCase
         self::assertStringContainsString('not', (string) $rows[0]['note']);
     }
 
-    public function testHistoryWithNoPeriodIsNamedRatherThanOmitted(): void
+    public function testAnEmptyScheduleReportsNoRowsAtAll(): void
     {
-        $rows = RetentionCoverage::gaps([]);
-        $classes = array_column($rows, 'status', 'class');
+        // `dispatch_runs` was the one `UNSCHEDULED` record until 26 November 2026, when it entered the
+        // schedule and got a sweep. With the list empty, an empty schedule now yields nothing — which is
+        // the correct answer, and the reason this test changed rather than being deleted.
+        self::assertSame([], RetentionCoverage::gaps([]));
+    }
 
-        self::assertArrayHasKey('dispatch_runs', $classes);
-        self::assertSame(RetentionCoverage::UNSCHEDULED, $classes['dispatch_runs']);
+    public function testCodeThatPurgesOutsideTheScheduleIsReported(): void
+    {
+        // The other direction, and the more dangerous one: a sweep deleting rows on a period nobody
+        // adopted destroys records the decision never covered. `problems()` has to say so.
+        $problems = RetentionCoverage::problems([
+            ['class' => 'dispatch_runs', 'status' => RetentionCoverage::ENFORCED, 'days' => null, 'note' => ''],
+        ]);
+
+        self::assertSame(['dispatch_runs (enforced)'], $problems);
     }
 
     public function testTheRealScheduleYieldsExactlyTheKnownGaps(): void
@@ -79,10 +89,10 @@ final class RetentionCoverageTest extends TestCase
                 'clinical_and_procedure (declared_only)',
                 'uploaded_clinical_documents (partial)',
                 'security_and_audit (declared_only)',
-                'dispatch_runs (declared_only)',
             ],
             $problems,
-            'Three classes are purged or fully covered; only these four are not.',
+            'Three classes are purged or fully covered; the rest are not. dispatch_runs left this list on'
+                . ' 26 November 2026 when its sweep was written.',
         );
     }
 

@@ -149,7 +149,7 @@ database is what caught it.
 | `uploaded_clinical_documents` | 1825 days | **partly** | referral documents are redacted with their referral; uploads outside a referral are not reached |
 | `clinical_and_procedure` | 1825 days | **no** | declared, nothing applies it |
 | `security_and_audit` | 2557 days | **no** | declared, nothing applies it — and now the longest period in the schedule |
-| `dispatch_runs` | 1825 days | **no** | scheduled on 26 November; still no sweep |
+| `dispatch_runs` | 1825 days | **yes** | `PdoDispatchRunRetentionRepository` deletes the row — added 26 November 2026, the first class whose act is removal rather than redaction |
 
 Each gap above is recorded rather than fixed, and the reason is the same for all of them: a period is a legal decision,
 not an engineering one, and the mistake to avoid is an engineer choosing a number and calling it retention.
@@ -158,12 +158,33 @@ not an engineering one, and the mistake to avoid is an engineer choosing a numbe
   never does is a record kept beyond its stated basis. It also has an obvious tension to resolve first:
   deleting the evidence of who changed what is itself something a clinical system should think about
   deliberately, and legal hold has to exist before audit records can be removed.
-- **`dispatch_runs`** is smaller in consequence — a delivery schedule and counts, no patient detail — but it
-  is still operational history, and at one row per five minutes it grows about 105,000 rows a year.
+- **`dispatch_runs`** — **closed on 26 November 2026.** The period arrived with the amendment and the sweep
+  followed the same day. It was the smaller of the two gaps in consequence: a delivery schedule and counts,
+  no patient detail, about 105,000 rows a year at one row per five minutes. It was also the only one that
+  needed no new legal decision, which is why it went first.
 
-**What is needed to close either:** a period approved by the same role that approved §6, and a purge path
+**What is needed to close the rest:** a period approved by the same role that approved §6, and a purge path
 that respects legal hold. Until then they appear in `retention:plan` under "Not covered", which is the point:
 the report is the record, not the absence of a report.
+
+### 5b. Why `dispatch_runs` deletes where the others redact
+
+Every other class overwrites the identifying fields and keeps the row. `dispatch_runs` removes the row, and
+that difference is deliberate rather than an oversight.
+
+A run row holds a start and finish time, four counters and a hostname. It holds no recipient, no case
+reference, no free text, and nothing unique. There is nothing in it to pseudonymise — a "redacted" run row
+would be a row that still says exactly what it said before, wearing a stamp that implies something was
+removed. Removal is the honest act, and `removed` is the honest verb in the run record.
+
+What is lost is the aggregate count of one dispatch invocation. What is not lost is the per-message record,
+which lives in `notification_outbox` with its provider message id and its status — that is what
+`outbox:receipt` reconciles against, and it is what the ledger's accounting value actually rests on. The
+ledger's own remaining purpose is liveness, and `notify:dispatch-check` reads the newest row, which a
+1,825-day window never reaches.
+
+The boundary is `started_at < cutoff`, not `<=`. A row written exactly on the cutoff is the oldest thing still
+inside the period, and an off-by-one there would remove a day of ledger at the edge of every run.
 
 ## 6. Signature
 
@@ -214,5 +235,10 @@ running on figures the 25 November signature does not cover.
 confirm the schedule runs and cannot confirm that a person validated it. That is the gate behaving correctly,
 not a defect to work around.
 
-`dispatch_runs` moving from unscheduled to five years closes one of the gaps in §5a and leaves the other
-three: two classes with a period and no sweep, and uploads outside a referral with no path at all.
+`dispatch_runs` moved from unscheduled to five years and gained a sweep the same day, which closes one of the
+gaps in §5a and leaves three: `clinical_and_procedure` and `security_and_audit` with a period and no sweep,
+and uploads outside a referral with no path at all.
+
+The two that remain are the ones that cannot be finished by writing code alone. Deleting audit rows is a
+decision a clinical system should take deliberately, and legal hold has to exist before it does; deleting
+procedure records is the same question pointed at the clinical record itself.

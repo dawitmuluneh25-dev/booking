@@ -1866,9 +1866,27 @@ function retentionPlan(Application $app): int
         );
     }
 
+    // The dispatch ledger followed the same path: a period on 26 November, no code applying it until
+    // now. Printed only under an active schedule, because a zero here while the schedule is off would
+    // read as "nothing to remove" instead of "nothing is watching".
+    $dispatchRuns = null;
+
+    if ($schedule->isActive()) {
+        $dispatchRuns = $app->dispatchRunRetention(
+            $schedule->daysFor('dispatch_runs')
+        )->plan();
+
+        printf(
+            "dispatch  : %d run row(s) past %d days\n",
+            $dispatchRuns['eligible'],
+            $dispatchRuns['days'],
+        );
+    }
+
     $pending = $plan['eligible'] > 0
         || $referrals['eligible'] > 0
-        || ($notifications !== null && $notifications['eligible'] > 0);
+        || ($notifications !== null && $notifications['eligible'] > 0)
+        || ($dispatchRuns !== null && $dispatchRuns['eligible'] > 0);
 
     if ($pending) {
         echo PHP_EOL . "Run: php bin/console retention:purge --yes" . PHP_EOL;
@@ -1976,6 +1994,10 @@ function retentionPurge(Application $app, array $options): int
             ? $app->notificationRetention($schedule->daysFor('notification_and_outbox'))
             : null;
 
+        $dispatchRunService = $schedule->isActive()
+            ? $app->dispatchRunRetention($schedule->daysFor('dispatch_runs'))
+            : null;
+
         if (!$confirmed) {
             $plan = $service->plan();
             $referrals = $referralService->plan();
@@ -1998,6 +2020,17 @@ function retentionPurge(Application $app, array $options): int
                 );
             }
 
+            if ($dispatchRunService !== null) {
+                $dispatchRuns = $dispatchRunService->plan();
+
+                printf(
+                    "         %d dispatch run row(s) would be removed (%d days, cutoff %s)\n",
+                    $dispatchRuns['eligible'],
+                    $dispatchRuns['days'],
+                    $dispatchRuns['cutoff'],
+                );
+            }
+
             echo "Nothing changed. Re-run with --yes to redact." . PHP_EOL;
 
             return 1;
@@ -2006,6 +2039,7 @@ function retentionPurge(Application $app, array $options): int
         $result = $service->purge('cli:retention', $batch);
         $documentResult = $referralService->purge('cli:retention', $batch);
         $notificationResult = $notificationService?->purge('cli:retention', $batch);
+        $dispatchRunResult = $dispatchRunService?->purge('cli:retention', $batch);
     } catch (Throwable $exception) {
         fwrite(STDERR, 'Retention failed: ' . $exception->getMessage() . PHP_EOL);
 
@@ -2030,6 +2064,15 @@ function retentionPurge(Application $app, array $options): int
             $notificationResult['redacted'],
             $notificationResult['batches'],
             $notificationResult['cutoff'],
+        );
+    }
+
+    if ($dispatchRunResult !== null) {
+        printf(
+            "removed %d dispatch run row(s) in %d batch(es), cutoff %s\n",
+            $dispatchRunResult['removed'],
+            $dispatchRunResult['batches'],
+            $dispatchRunResult['cutoff'],
         );
     }
 

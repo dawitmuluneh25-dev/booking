@@ -105,6 +105,8 @@ use App\Domain\TriageReferral;
 use App\Domain\UrgentCaseRepository;
 use App\Domain\RetentionService;
 use App\Domain\DispatchRunRepository;
+use App\Domain\DispatchRunRetentionRepository;
+use App\Domain\DispatchRunRetentionService;
 use App\Domain\UserRepository;
 use App\Notifications\BrevoTransport;
 use App\Notifications\MisconfiguredTransport;
@@ -128,6 +130,7 @@ use App\Repositories\PdoDocumentRepository;
 use App\Repositories\PdoNotificationRetentionRepository;
 use App\Repositories\PdoOperationalAppointmentRepository;
 use App\Repositories\PdoDispatchRunRepository;
+use App\Repositories\PdoDispatchRunRetentionRepository;
 use App\Repositories\PdoNotificationQueueRepository;
 use App\Repositories\PdoRestoreDrillRepository;
 use App\Repositories\PdoReferralRetentionRepository;
@@ -354,6 +357,8 @@ final class Application
     private ?NotificationQueueRepository $notificationQueue = null;
 
     private ?DispatchRunRepository $dispatchRuns = null;
+
+    private ?DispatchRunRetentionRepository $dispatchRunRetentionRepository = null;
 
     private ?AuditTrail $auditTrail = null;
 
@@ -1147,6 +1152,16 @@ final class Application
     public function notificationQueue(): NotificationQueueRepository
     {
         return $this->notificationQueue ??= new PdoNotificationQueueRepository($this->pdo());
+    }
+
+    public function dispatchRunRetention(int $days): DispatchRunRetentionService
+    {
+        $repository = $this->dispatchRunRetentionRepository ??= new PdoDispatchRunRetentionRepository($this->pdo());
+
+        // Same rule as the notification class: the period comes from `RetentionSchedule::daysFor()`,
+        // never from `retentionDays()`. `dispatch_runs` at 1,825 days and a default window of 2,557
+        // would disagree quietly, and the class would be retaining two more years than adopted.
+        return new DispatchRunRetentionService($repository, new RetentionPolicy($days));
     }
 
     public function dispatchRuns(): DispatchRunRepository
