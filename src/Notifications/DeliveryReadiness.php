@@ -107,6 +107,20 @@ final class DeliveryReadiness
                     ];
                 }
 
+                // The same activation rule the Brevo path obeys. A bridge URL and a
+                // token are configuration, not a decision to start messaging
+                // patients: without this, completing the setup would be the same
+                // act as switching delivery on, and nothing would record that
+                // anybody chose it.
+                if ($production && !$approved) {
+                    return [
+                        'ok' => false,
+                        'reason' => 'NOTIFY_PRODUCTION_APPROVED is not set. The bridge is configured but'
+                            . ' switched off, so every message fails loudly rather than reaching a patient.',
+                        'warnings' => [],
+                    ];
+                }
+
                 return ['ok' => true, 'reason' => null, 'warnings' => $warnings];
         }
 

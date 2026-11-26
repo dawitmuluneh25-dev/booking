@@ -69,7 +69,7 @@ return [
             'key' => 'NOTIFY_HTTP_TOKEN',
             'source' => 'env',
             'kind' => 'api',
-            'function' => 'Bearer token for the notification gateway bridge, when NOTIFY_DRIVER=http',
+            'function' => 'Bearer token for the notification gateway bridge; the adopted driver for D-09',
             'office' => 'Engineering Lead',
             'custodian' => null,
             'interval_days' => 90,

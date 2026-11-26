@@ -35,10 +35,27 @@ queued during the mistake; they should be retried once the configuration is fixe
 |---|---|---|
 | `log` | **Never in production.** In development: ready, with a warning that nothing is delivered | The warning is printed rather than implied |
 | `brevo` | API key + sender present; in production also `NOTIFY_PRODUCTION_APPROVED=true` | Outside production it warns that sends are real |
-| `http` | URL **and** token present | An unauthenticated bridge is not ready |
+| `http` | URL **and** token present; in production also `NOTIFY_PRODUCTION_APPROVED=true` | An unauthenticated bridge is not ready, and configuring one is not a decision to start messaging patients |
 | anything else | Never | A typo does not silently fall back to the log |
 
 ## 4. Turning it on — the order matters
+
+**The adopted path is the bridge (`http`).** It needs a URL and a token rather than an account and DNS, and
+its contract — payload, status codes, idempotency, what may be logged — is
+[notification-bridge-contract.md](notification-bridge-contract.md). Follow that document; the steps below are
+the Brevo path, kept because the driver is still implemented and may be chosen later.
+
+### Bridge path, in short
+
+1. Deploy `tools/notify-bridge/` to its own host with a random `BRIDGE_TOKEN`, on HTTPS.
+2. Set `NOTIFY_DRIVER=http`, `NOTIFY_HTTP_URL`, `NOTIFY_HTTP_TOKEN`.
+3. `php bin/console notify:preflight` → **NOT READY**, naming `NOTIFY_PRODUCTION_APPROVED`. Expected.
+4. One controlled message with `BRIDGE_GATEWAY=recording` → proves the wiring, not delivery.
+5. Implement a real `BridgeGateway`, send one message to a number the clinic controls, match it with
+   `outbox:receipt`.
+6. Set `NOTIFY_PRODUCTION_APPROVED=true`, re-run preflight → **READY**.
+
+### Brevo path
 
 1. Verify the sender domain in Brevo: **SPF and DKIM**. An unverified domain turns every confirmation
    into spam or a bounce, and the outbox will faithfully record the bounce.

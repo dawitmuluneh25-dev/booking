@@ -284,13 +284,15 @@ final class Config
     }
 
     /**
-     * Whether transactional email may actually send from a production
-     * environment.
+     * Whether a production environment may actually deliver notifications.
      *
-     * O-3-DEC-01 authorizes the integration but not the activation: production
-     * sending stays off until the mailbox, DNS, credential and staging evidence
-     * in section 8 has been reviewed. An unset flag means unapproved, which is
-     * the safe reading of a missing decision.
+     * The key name says mail because transactional email is where the question
+     * first arose (O-3-DEC-01), but the rule it enforces is about delivery, not
+     * about a medium: the HTTP bridge answers the same question and is gated by
+     * the same flag. O-3-DEC-01 authorizes the integration but not the
+     * activation, so production sending stays off until the evidence in section
+     * 8 has been reviewed. An unset flag means unapproved, which is the safe
+     * reading of a missing decision.
      */
     public function mailActivationApproved(): bool
     {

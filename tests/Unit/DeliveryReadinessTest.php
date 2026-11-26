@@ -77,6 +77,32 @@ final class DeliveryReadinessTest extends TestCase
         self::assertStringContainsString('NOTIFY_HTTP_TOKEN', (string) $result['reason']);
     }
 
+    public function testAFullyConfiguredProductionBridgeIsReady(): void
+    {
+        $result = DeliveryReadiness::assess('http', true, true, false, false, true, true);
+
+        self::assertTrue($result['ok']);
+        self::assertNull($result['reason']);
+    }
+
+    public function testTheBridgeWithoutProductionApprovalIsNotReady(): void
+    {
+        // Configuring a bridge is not a decision to start messaging patients. The
+        // http driver obeys the same activation rule as Brevo, so the two paths
+        // cannot disagree about what "approved" means.
+        $result = DeliveryReadiness::assess('http', true, false, false, false, true, true);
+
+        self::assertFalse($result['ok']);
+        self::assertStringContainsString('NOTIFY_PRODUCTION_APPROVED', (string) $result['reason']);
+    }
+
+    public function testTheBridgeWorksOutsideProductionWithoutApproval(): void
+    {
+        $result = DeliveryReadiness::assess('http', false, false, false, false, true, true);
+
+        self::assertTrue($result['ok']);
+    }
+
     public function testAnUnknownDriverIsRefusedRatherThanFallingBack(): void
     {
         $result = DeliveryReadiness::assess('smtp', true, true, true, true, false, false);

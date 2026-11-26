@@ -2248,8 +2248,19 @@ function notificationPreflight(Application $app): int
     printf("environment : %s\n", $production ? 'production' : 'not production');
     printf("driver      : %s\n", $driver);
     printf("approved    : %s\n", $config->mailActivationApproved() ? 'yes' : 'no');
-    printf("sender      : %s\n", $config->brevoSender() === '' ? '(unset)' : $config->brevoSender());
-    printf("api key     : %s\n", $config->brevoApiKey() === '' ? '(unset)' : 'set (value not shown)');
+
+    // Print the fields the chosen driver actually reads. Showing a Brevo key on
+    // an http deployment invites an operator to paste one and conclude the path
+    // is configured, and the reverse wastes a check on four empty variables.
+    if ($driver === 'http') {
+        printf("bridge url  : %s\n", $config->notificationUrl() === '' ? '(unset)' : $config->notificationUrl());
+        printf("bridge token: %s\n", $config->notificationToken() === '' ? '(unset)' : 'set (value not shown)');
+        printf("timeout     : %ds\n", $config->notificationTimeout());
+    } elseif ($driver === 'brevo') {
+        printf("sender      : %s\n", $config->brevoSender() === '' ? '(unset)' : $config->brevoSender());
+        printf("api key     : %s\n", $config->brevoApiKey() === '' ? '(unset)' : 'set (value not shown)');
+    }
+
     echo PHP_EOL;
 
     if ($readiness['ok']) {

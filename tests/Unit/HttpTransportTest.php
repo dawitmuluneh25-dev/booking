@@ -50,6 +50,29 @@ final class HttpTransportTest extends TestCase
         self::assertArrayNotHasKey('Authorization', $withoutToken->requests[0]['headers']);
     }
 
+    public function testItCarriesTheOutboxRowAsAnIdempotencyKey(): void
+    {
+        $client = new FakeHttpClient(202);
+
+        (new HttpTransport($client, 'https://bridge.test/send', 'secret-token'))
+            ->send($this->message()->withState(OutboxStatus::Sending, 1, null, 42));
+
+        // Both spellings, because a gateway in front of the bridge dedupes on the
+        // header while the bridge itself reads the field.
+        self::assertSame('msg-42', $client->requests[0]['headers']['Idempotency-Key']);
+        self::assertSame('msg-42', $client->decoded()['idempotency_key']);
+    }
+
+    public function testAMessageThatWasNeverStoredCarriesNoIdempotencyKey(): void
+    {
+        $client = new FakeHttpClient(202);
+
+        (new HttpTransport($client, 'https://bridge.test/send', 'secret-token'))->send($this->message());
+
+        self::assertArrayNotHasKey('Idempotency-Key', $client->requests[0]['headers']);
+        self::assertSame('', $client->decoded()['idempotency_key']);
+    }
+
     public function testItTreatsANonSuccessStatusAsAFailure(): void
     {
         $this->expectException(RuntimeException::class);
