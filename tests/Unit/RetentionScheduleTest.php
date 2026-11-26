@@ -40,7 +40,7 @@ final class RetentionScheduleTest extends TestCase
                 'uploaded_clinical_documents' => 1825,
                 'appointment_and_administrative' => 2557,
                 'notification_and_outbox' => 365,
-                'security_and_audit' => 1825,
+                'security_and_audit' => 2557,
                 'dispatch_runs' => 1825,
             ],
             (new RetentionSchedule())->classes(),
@@ -64,16 +64,44 @@ final class RetentionScheduleTest extends TestCase
     }
 
     /**
-     * Audit records moved from seven years to five on 26 November 2026, and this test records that
-     * rather than preserving the old figure: an audit trail is the evidence of every other deletion,
-     * so shortening it is a decision that should be visible in a diff and not only in a database.
+     * Audit records were cut to five years on 26 November 2026 and put back to seven the same day, so
+     * this test carries the second decision. It stays explicit rather than reverting to the original
+     * text: the round trip is the point. A five-year trail expired two years before the referrals it
+     * describes, and a record deleted in year six would have left no evidence of who authorised it.
      *
-     * It is no longer the longest period in the schedule — referral and appointment records keep seven
-     * years — which is worth knowing before the sweep for this class is written.
+     * The invariant worth asserting is not "seven" — it is that the audit trail is at least as long as
+     * every class it records decisions about. That is the next test.
      */
-    public function testAuditRecordsAreKeptForFiveYears(): void
+    public function testAuditRecordsAreKeptForSevenYears(): void
     {
-        self::assertSame(1825, (new RetentionSchedule())->daysFor('security_and_audit'));
+        self::assertSame(2557, (new RetentionSchedule())->daysFor('security_and_audit'));
+    }
+
+    /**
+     * The rule the round trip in the test above produced, stated as an invariant rather than a number:
+     * the audit trail must be at least as long as the longest-lived class it holds decisions about.
+     *
+     * Nothing enforced this before, which is how a schedule can look deliberate and still destroy the
+     * evidence of its own deletions. If a future amendment shortens audit or lengthens referrals, this
+     * fails and names both figures.
+     */
+    public function testTheAuditTrailOutlivesEveryClassItRecordsDecisionsAbout(): void
+    {
+        $schedule = new RetentionSchedule();
+
+        $audit = $schedule->daysFor('security_and_audit');
+        $classes = $schedule->classes();
+        // Guarded rather than assumed: an empty schedule would make max() raise, and a raised error in an
+        // invariant test reads like a broken test instead of a broken schedule.
+        $longest = $classes === [] ? 0 : max($classes);
+
+        self::assertGreaterThanOrEqual(
+            $longest,
+            $audit,
+            'The audit trail (' . $audit . ' days) expires before the longest-lived record class ('
+                . $longest . ' days), so the evidence of a deletion can be destroyed while the record it '
+                . 'describes still exists.',
+        );
     }
 
     public function testTheBackupRowIsAMaximumAgeAndACopyCap(): void

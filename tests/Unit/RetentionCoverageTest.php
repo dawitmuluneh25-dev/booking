@@ -26,7 +26,7 @@ final class RetentionCoverageTest extends TestCase
         'uploaded_clinical_documents' => 1825,
         'appointment_and_administrative' => 2557,
         'notification_and_outbox' => 365,
-        'security_and_audit' => 1825,
+        'security_and_audit' => 2557,
         'dispatch_runs' => 1825,
     ];
 

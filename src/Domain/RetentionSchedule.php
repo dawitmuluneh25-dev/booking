@@ -41,7 +41,7 @@ final class RetentionSchedule
     /** Seven calendar years, including two leap days. The same figure the privacy notice states. */
     public const SEVEN_YEARS_DAYS = Config::DEFAULT_RETENTION_DAYS;
 
-    /** Five calendar years, excluding leap days: the period adopted for four classes on 26 Nov 2026. */
+    /** Five calendar years, excluding leap days: the period adopted for three classes on 26 Nov 2026. */
     public const FIVE_YEARS_DAYS = 1825;
 
     /** D-02's "12 months", as a fixed 365 days. */
@@ -64,7 +64,10 @@ final class RetentionSchedule
         'uploaded_clinical_documents' => self::FIVE_YEARS_DAYS,
         'appointment_and_administrative' => self::SEVEN_YEARS_DAYS,
         'notification_and_outbox' => self::TWELVE_MONTHS_DAYS,
-        'security_and_audit' => self::FIVE_YEARS_DAYS,
+        // Back to seven years on 26 November 2026, reversing part of the same day's amendment. A
+        // five-year audit trail outlived nothing: referrals and appointments keep seven, so a record
+        // deleted in year six would leave no evidence of who authorised it.
+        'security_and_audit' => self::SEVEN_YEARS_DAYS,
         'dispatch_runs' => self::FIVE_YEARS_DAYS,
     ];
 
