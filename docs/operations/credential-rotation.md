@@ -48,9 +48,9 @@ owner's answer was that custody follows the domain rather than sitting with one 
 
 | Domain | Secrets | Accountable office | Named custodian |
 |---|---|---|---|
-| Application | `DB_PASSWORD`, `APP_SECRET`, `BACKUP_ENCRYPTION_KEY`, `NOTIFY_BREVO_API_KEY`, `NOTIFY_HTTP_TOKEN` | Engineering Lead | **Dawit Radiologist**, who also holds the Engineering Lead office |
+| Application | `DB_PASSWORD`, `APP_SECRET`, `BACKUP_ENCRYPTION_KEY`, `NOTIFY_BREVO_API_KEY`, `NOTIFY_HTTP_TOKEN` | Engineering Lead | **Dawit Muluneh**, who also holds the Engineering Lead office |
 | Hosting | `PANEL_PASSWORD`, `STAGING_BASIC_AUTH` | Operations Lead | **Bewnet**, holder of `operations_lead` since 26 November 2026 |
-| Login | `ADMIN_LOGIN` | Product Owner | **Dawit Radiologist**, the account owner |
+| Login | `ADMIN_LOGIN` | Product Owner | **Dawit Muluneh**, the account owner |
 
 The names came from the operational appointments approved on 26 November 2026 and from the owner naming
 themselves, not from engineering filling in a blank. That distinction is the whole reason the field is
