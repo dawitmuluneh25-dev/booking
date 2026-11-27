@@ -91,9 +91,11 @@ that sometimes echoes the recipient.
 an old row loses its recipient and payload while keeping its accounting, a fresh row is untouched, a
 second sweep counts zero, and the run lands in `retention_runs.notifications_redacted`.
 
-Residual risk, stated rather than hidden: `security_and_audit` has a seven-year period and **no sweep**.
-The audit trail is append-only by design, and a retention rule that deletes audit rows is a decision
-nobody has taken. The class is therefore declared and unenforced, and this document says so.
+Residual risk, stated rather than hidden: `security_and_audit` had a seven-year period and **no sweep**.
+The audit trail is append-only by design, and a retention rule that deletes audit rows is a decision nobody
+had taken — the decision was taken on 26 November 2026 (§5d) and the sweep landed the same day. The residual
+risk did not disappear with it: the sweep runs with no legal hold, so an audit record under investigation is
+removed at 2,557 days and only the run count survives.
 
 ## 3. How to activate in production
 
@@ -151,16 +153,18 @@ database is what caught it.
 | `notification_and_outbox` | 365 days | yes | redaction, active only under the schedule |
 | `uploaded_clinical_documents` | 1825 days | **yes** | `PdoClinicalDocumentRetentionRepository` sweeps documents on their own 1,825-day clock, independently of the parent referral — see §5c |
 | `clinical_and_procedure` | 1825 days | **no** | declared, nothing applies it |
-| `security_and_audit` | 2557 days | **no** | declared, nothing applies it — and now the longest period in the schedule |
+| `security_and_audit` | 2557 days | **yes** | `PdoSecurityAuditRetentionRepository` deletes from `audit_events` and `login_attempts` — added 26 November 2026, see §5d |
 | `dispatch_runs` | 1825 days | **yes** | `PdoDispatchRunRetentionRepository` deletes the row — added 26 November 2026, the first class whose act is removal rather than redaction |
 
 Each gap above is recorded rather than fixed, and the reason is the same for all of them: a period is a legal decision,
 not an engineering one, and the mistake to avoid is an engineer choosing a number and calling it retention.
 
-- **`security_and_audit`** is the more serious of those. An audit trail that is declared to expire and
-  never does is a record kept beyond its stated basis. It also has an obvious tension to resolve first:
-  deleting the evidence of who changed what is itself something a clinical system should think about
-  deliberately, and legal hold has to exist before audit records can be removed.
+- **`security_and_audit`** — **closed on 26 November 2026**, on the same day the amendment gave it 2,557
+  days. It was the more serious of the two gaps: an audit trail declared to expire and never expiring is a
+  record kept beyond its stated basis. What made it a decision rather than a task was legal hold — deleting
+  the evidence of who changed what is something a clinical system should do deliberately. The decision was
+  taken: sweep on the adopted period, with no hold mechanism, relying on the run record to say what was
+  removed. §5d states what that costs.
 - **`dispatch_runs`** — **closed on 26 November 2026.** The period arrived with the amendment and the sweep
   followed the same day. It was the smaller of the two gaps in consequence: a delivery schedule and counts,
   no patient detail, about 105,000 rows a year at one row per five minutes. It was also the only one that
@@ -169,6 +173,12 @@ not an engineering one, and the mistake to avoid is an engineer choosing a numbe
 **What is needed to close the rest:** a period approved by the same role that approved §6, and a purge path
 that respects legal hold. Until then they appear in `retention:plan` under "Not covered", which is the point:
 the report is the record, not the absence of a report.
+
+That leaves **one** class: `clinical_and_procedure`. `procedures` is a catalogue — a code, a label, a clinical
+code, a category and a duration, with no patient in it — and `procedure_milestones` belongs to appointments,
+which are kept two years longer. So the class has a period, a name, and nothing yet that is unambiguously its
+own to delete. Closing it needs a decision about what "a procedure record" is in this schema, not another
+sweep written against a table that happens to be nearby.
 
 ### 5b. Why `dispatch_runs` deletes where the others redact
 
@@ -237,6 +247,49 @@ is still protected, and redacting it here would destroy a record the schedule sa
 A document removed on its own period now leaves an access log behind, which is the same problem one table
 down. It needs a period decision before it needs code.
 
+### 5d. `security_and_audit` — swept on the adopted period, with no hold mechanism
+
+Closed on 26 November 2026, the same day §7 gave the class 2,557 days. The decision was taken as stated:
+**sweep on the adopted period, no legal hold, and let the run record say what was removed.** That is the
+decision this section documents, including its cost.
+
+**What the class is.** Two tables, not three:
+
+| Table | Time column | Why it is here |
+|---|---|---|
+| `audit_events` | `occurred_at` | who changed what, when — the trail the class exists for |
+| `login_attempts` | `created_at` | written on every sign-in, read for throttling; nothing purged it before |
+
+`account_request_attempts` was in the first draft and was removed: the rate-limit hygiene path at the end of
+`retention:purge` already empties it after one day, so a 2,557-day member would have been a table that is
+always empty. `procedures` was also removed — it is a catalogue (code, label, clinical code, category,
+duration) with no patient in it, and its `procedure_milestones` belong to appointments, which are kept two
+years longer. Neither belongs to this class on the evidence.
+
+**What the sweep does.** `PdoSecurityAuditRetentionRepository` reads the eligible ids `FOR UPDATE` ordered by
+the time column, then deletes by primary key — the same shape as the dispatch-ledger sweep and for the same
+reason: `DELETE ... WHERE occurred_at < x LIMIT n` makes "oldest first" a claim about the optimiser rather
+than a property of the statement. Batched, reporting `remaining`, so a backlog is emptied over several runs
+instead of inside one transaction that holds a lock past the request budget.
+
+The boundary is `occurred_at < cutoff`, not `<=`. A row written exactly on the cutoff is the oldest thing
+still inside the period.
+
+**The cost, stated rather than hidden.** With no hold mechanism, an audit record that is the subject of a
+complaint, an investigation or litigation is deleted when its period expires, like any other. There is no
+flag to protect it and no admin screen to mark one. What survives is the run record: `retention_runs` gains
+`audit_events_removed` and `login_attempts_removed` (migration 0053), so a later question about a deletion
+can be answered as "the sweep removed N rows on this date at this cutoff" rather than "we cannot say". It
+cannot answer *which* rows, because the rows are gone — that is what deletion means, and choosing it is why
+this was a decision rather than a task.
+
+If a hold becomes a requirement, it belongs here as a table consulted by the eligibility predicate, not as a
+pause of the whole sweep: a hold that stops the class would let every unrelated record drift past its period
+while one investigation runs.
+
+**What this does not cover.** `document_access_events` still has no class (§5c), and `clinical_and_procedure`
+is now the only class in "Not covered". Neither gap is affected by this sweep.
+
 ## 6. Signature
 
 | Role | Name | Date | Scope |
@@ -291,10 +344,12 @@ Two classes left §5a's gap list on 26 November 2026. `dispatch_runs` moved from
 gained a sweep the same day; `uploaded_clinical_documents` gained the sweep that applies its own period
 rather than inheriting its referral's.
 
-That leaves **two**: `clinical_and_procedure` and `security_and_audit`, both with a period and no sweep. They
-are the two that cannot be finished by writing code alone. Deleting audit rows is a decision a clinical
-system should take deliberately, and legal hold has to exist before it does; deleting procedure records is
-the same question pointed at the clinical record itself.
+That left **two**: `clinical_and_procedure` and `security_and_audit`, both with a period and no sweep. Neither
+could be finished by writing code alone. Deleting audit rows is a decision a clinical system should take
+deliberately — it was taken on 26 November 2026, without a hold mechanism, and the sweep followed the same day
+(§5d). Deleting procedure records is the same question pointed at the clinical record itself, and it is still
+open: `procedures` is a catalogue and `procedure_milestones` belongs to appointments, so the class needs a
+statement of what it covers before anything is written against it.
 ---
 
 ## 8. The validation record, and why the gate can now move
@@ -347,10 +402,11 @@ Legal / Data Protection confirm the periods, the lawful basis, the preservation 
 Ethiopian requirements against that table; then update `approved_on` and copy the printed fingerprint into
 `schedule_fingerprint`. Commit. The commit is the provenance.
 
-One thing a validator is entitled to be told before they sign: `clinical_and_procedure` and
-`security_and_audit` still have periods with no sweep behind them (§5c). The period is right and nothing
-applies it. That is a coverage gap, reported by `retention:plan` and distinct from this validation — but a
-confirmation given without knowing it would not be an informed one.
+One thing a validator is entitled to be told before they sign: `clinical_and_procedure` still has a period
+with no sweep behind it (§5a). The period is right and nothing applies it. That is a coverage gap, reported by
+`retention:plan` and distinct from this validation — but a confirmation given without knowing it would not be
+an informed one. (`security_and_audit` held the same position until the sweep landed on 26 November 2026; §5d
+records that it now runs with no legal hold, which a validator may also want to weigh.)
 
 ### 8c. Re-confirmation, 26 November 2026
 

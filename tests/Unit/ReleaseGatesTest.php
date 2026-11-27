@@ -181,9 +181,12 @@ final class ReleaseGatesTest extends TestCase
 
         self::assertSame('met', $gate['state']);
         self::assertStringContainsString('Gemechisa Dalu', $gate['detail']);
-        // Met is not the same as clean: the two unswept classes stay named in the row so a green gate
-        // cannot be read as "retention is finished".
+        // Met is not the same as clean: the remaining unswept class stays named in the row so a green
+        // gate cannot be read as "retention is finished". `security_and_audit` left this sentence on
+        // 26 November 2026 when its sweep landed; a row that still listed it would be describing a gap
+        // that no longer exists.
         self::assertStringContainsString('clinical_and_procedure', $gate['detail']);
+        self::assertStringNotContainsString('security_and_audit', $gate['detail']);
     }
 
     public function testAStaleValidationLeavesTheGatePartialAndSaysWhy(): void

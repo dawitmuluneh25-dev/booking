@@ -109,6 +109,8 @@ use App\Domain\ClinicalDocumentRetentionService;
 use App\Domain\DispatchRunRepository;
 use App\Domain\DispatchRunRetentionRepository;
 use App\Domain\DispatchRunRetentionService;
+use App\Domain\SecurityAuditRetentionRepository;
+use App\Domain\SecurityAuditRetentionService;
 use App\Domain\UserRepository;
 use App\Notifications\BrevoTransport;
 use App\Notifications\MisconfiguredTransport;
@@ -134,6 +136,7 @@ use App\Repositories\PdoOperationalAppointmentRepository;
 use App\Repositories\PdoClinicalDocumentRetentionRepository;
 use App\Repositories\PdoDispatchRunRepository;
 use App\Repositories\PdoDispatchRunRetentionRepository;
+use App\Repositories\PdoSecurityAuditRetentionRepository;
 use App\Repositories\PdoNotificationQueueRepository;
 use App\Repositories\PdoRestoreDrillRepository;
 use App\Repositories\PdoReferralRetentionRepository;
@@ -362,6 +365,8 @@ final class Application
     private ?DispatchRunRepository $dispatchRuns = null;
 
     private ?DispatchRunRetentionRepository $dispatchRunRetentionRepository = null;
+
+    private ?SecurityAuditRetentionRepository $securityAuditRetentionRepository = null;
 
     private ?ClinicalDocumentRetentionRepository $clinicalDocumentRetentionRepository = null;
 
@@ -1178,6 +1183,18 @@ final class Application
         // never from `retentionDays()`. `dispatch_runs` at 1,825 days and a default window of 2,557
         // would disagree quietly, and the class would be retaining two more years than adopted.
         return new DispatchRunRetentionService($repository, new RetentionPolicy($days));
+    }
+
+    public function securityAuditRetention(int $days): SecurityAuditRetentionService
+    {
+        $repository = $this->securityAuditRetentionRepository
+            ??= new PdoSecurityAuditRetentionRepository($this->pdo());
+
+        // The period comes from `RetentionSchedule::daysFor('security_and_audit')`, never from
+        // `retentionDays()`. This is the class whose period must stay at least as long as every class it
+        // describes, so a silent fallback to a shorter default would be the one substitution here that
+        // destroys evidence rather than keeping it too long.
+        return new SecurityAuditRetentionService($repository, new RetentionPolicy($days));
     }
 
     public function dispatchRuns(): DispatchRunRepository

@@ -207,9 +207,10 @@ final class ReleaseGates
             return [
                 'state' => self::MET,
                 'detail' => ($this->facts->retentionValidationDetail ?? 'The validation record matches the'
-                    . ' schedule this build executes.') . ' Two classes still have periods and no sweep'
-                    . ' (clinical_and_procedure, security_and_audit); that is a coverage gap reported by'
-                    . ' retention:plan, not a validation gap, and it does not make the period wrong.',
+                    . ' schedule this build executes.') . ' One class still has a period and no sweep'
+                    . ' (clinical_and_procedure, because `procedures` is a catalogue and its milestones belong'
+                    . ' to appointments); that is a coverage gap reported by retention:plan, not a validation'
+                    . ' gap, and it does not make the period wrong.',
             ];
         }
 

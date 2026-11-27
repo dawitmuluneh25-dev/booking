@@ -43,10 +43,12 @@ final class RetentionCoverageTest extends TestCase
 
     public function testADeclaredPeriodWithNoCodeIsReportedAsSuch(): void
     {
-        $rows = RetentionCoverage::gaps(['security_and_audit' => 2557]);
+        // `clinical_and_procedure` is the remaining example: it has a period and no code path applies it.
+        // `security_and_audit` held this role until 26 November 2026, when its sweep was written.
+        $rows = RetentionCoverage::gaps(['clinical_and_procedure' => 1825]);
 
         self::assertSame(RetentionCoverage::DECLARED_ONLY, $rows[0]['status']);
-        self::assertContains('security_and_audit (declared_only)', RetentionCoverage::problems($rows));
+        self::assertContains('clinical_and_procedure (declared_only)', RetentionCoverage::problems($rows));
     }
 
     public function testUploadedDocumentsAreEnforcedOnTheirOwnClock(): void
@@ -97,13 +99,13 @@ final class RetentionCoverageTest extends TestCase
         $problems = RetentionCoverage::problems(RetentionCoverage::gaps(self::REAL_SCHEDULE));
 
         self::assertSame(
-            [
-                'clinical_and_procedure (declared_only)',
-                'security_and_audit (declared_only)',
-            ],
+            ['clinical_and_procedure (declared_only)'],
             $problems,
-            'Two classes have a period and no sweep. dispatch_runs left this list on 26 November 2026 and'
-                . ' uploaded_clinical_documents followed the same day, both when their sweeps were written.',
+            'One class has a period and no sweep. dispatch_runs and uploaded_clinical_documents left this list'
+                . ' on 26 November 2026, and security_and_audit followed the same day. clinical_and_procedure'
+                . ' is the remaining one: `procedures` is a catalogue with no personal data, and its'
+                . ' milestones belong to appointments kept two years longer, so the class needs a decision'
+                . ' about what is being deleted before it needs code.',
         );
     }
 

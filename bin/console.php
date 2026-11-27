@@ -2044,6 +2044,12 @@ function retentionPurge(Application $app, array $options): int
             ? $app->clinicalDocumentRetention($schedule->daysFor('uploaded_clinical_documents'))
             : null;
 
+        // The audit trail and the sign-in attempts. No legal-hold check: that is a decided gap recorded
+        // in retention-validation.md §5d, not an omission to be quietly filled in here.
+        $securityService = $schedule->isActive()
+            ? $app->securityAuditRetention($schedule->daysFor('security_and_audit'))
+            : null;
+
         if (!$confirmed) {
             $plan = $service->plan();
             $referrals = $referralService->plan();
@@ -2088,6 +2094,20 @@ function retentionPurge(Application $app, array $options): int
                 );
             }
 
+            if ($securityService !== null) {
+                $security = $securityService->plan();
+
+                foreach ($security['by_table'] as $table => $rows) {
+                    printf(
+                        "         %d %s row(s) would be removed (%d days, cutoff %s)\n",
+                        $rows,
+                        str_replace('_', ' ', $table),
+                        $security['days'],
+                        $security['cutoff'],
+                    );
+                }
+            }
+
             echo "Nothing changed. Re-run with --yes to redact." . PHP_EOL;
 
             return 1;
@@ -2098,6 +2118,7 @@ function retentionPurge(Application $app, array $options): int
         $notificationResult = $notificationService?->purge('cli:retention', $batch);
         $dispatchRunResult = $dispatchRunService?->purge('cli:retention', $batch);
         $uploadResult = $uploadService?->purge('cli:retention', $batch);
+        $securityResult = $securityService?->purge('cli:retention', $batch);
     } catch (Throwable $exception) {
         fwrite(STDERR, 'Retention failed: ' . $exception->getMessage() . PHP_EOL);
 
@@ -2131,6 +2152,16 @@ function retentionPurge(Application $app, array $options): int
             $dispatchRunResult['removed'],
             $dispatchRunResult['batches'],
             $dispatchRunResult['cutoff'],
+        );
+    }
+
+    if ($securityResult !== null) {
+        printf(
+            "removed %d audit row(s) and %d sign-in attempt row(s) in %d batch(es), cutoff %s\n",
+            $securityResult['by_table']['audit_events'] ?? 0,
+            $securityResult['by_table']['login_attempts'] ?? 0,
+            $securityResult['batches'],
+            $securityResult['cutoff'],
         );
     }
 
@@ -2169,7 +2200,7 @@ function retentionPurge(Application $app, array $options): int
         ));
     }
 
-    if ($result['remaining'] || $documentResult['remaining']) {
+    if ($result['remaining'] || $documentResult['remaining'] || ($securityResult['remaining'] ?? false)) {
         echo "More rows remain; run the command again." . PHP_EOL;
     }
 

@@ -54,7 +54,11 @@ final class RetentionCoverage
         // their own 1,825. `PdoClinicalDocumentRetentionRepository` applies the period directly.
         'uploaded_clinical_documents' => self::ENFORCED,
         'clinical_and_procedure' => self::DECLARED_ONLY,
-        'security_and_audit' => self::DECLARED_ONLY,
+        // Enforced since 26 November 2026: `SecurityAuditRetentionService` sweeps `audit_events` on
+        // `occurred_at` and `login_attempts` on `created_at` at the class period. `login_attempts` was
+        // never purged by anything before this — it was written on every sign-in and read for throttling,
+        // so it grew without limit while nobody owned it.
+        'security_and_audit' => self::ENFORCED,
         // Added 26 November 2026. `PdoDispatchRunRetentionRepository` deletes the whole row rather than
         // redacting it, because a run row is a timestamp, four counters and a hostname — there is
         // nothing in it that identifies a person, so removal is the honest act and `enforced` is the
